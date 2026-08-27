@@ -1,0 +1,57 @@
+# styles.yaml — оформление и геометрия диаграмм uml_generator.
+#
+# themes.<имя>  — палитра. Выбирается параметром build_xml(..., theme=...).
+#   class / interface / struct  — заливка и обводка блоков (struct — также enum/record/union)
+#   header_font, member_font    — цвет текста заголовка и строк
+#   edge                        — цвет линий связей
+#   junction                    — точка слияния стрелок наследования
+#   object / summary            — блоки диаграммы объектов (obektis); summary — свёрнутая коллекция
+#   containment                 — рёбра «элемент коллекции» в диаграмме объектов
+#
+# layout — размеры в px. Любой ключ можно перегрузить через cfg_overrides.
+
+themes:
+  dark:
+    class:       {fill: "#1e293b", stroke: "#475569"}
+    interface:   {fill: "#0f1729", stroke: "#6366f1"}
+    struct:      {fill: "#172033", stroke: "#0ea5e9"}
+    header_font: "#f1f5f9"
+    member_font: "#94a3b8"
+    edge:        "#64748b"
+    junction:    "#64748b"
+    object:      {fill: "#1f2a44", stroke: "#7c84a8"}
+    summary:     {fill: "#2a1f44", stroke: "#a87cc4"}
+    slot_font:   "#cbd5e1"
+    containment: "#8b7fd0"
+  light:
+    class:       {fill: "#ffffff", stroke: "#334155"}
+    interface:   {fill: "#eef2ff", stroke: "#4f46e5"}
+    struct:      {fill: "#f0f9ff", stroke: "#0284c7"}
+    header_font: "#0f172a"
+    member_font: "#334155"
+    edge:        "#334155"
+    junction:    "#334155"
+    object:      {fill: "#f8fafc", stroke: "#475569"}
+    summary:     {fill: "#f5f3ff", stroke: "#7c3aed"}
+    slot_font:   "#1e293b"
+    containment: "#6d28d9"
+
+layout:
+  header_font:   12     # px, заголовок блока (bold)
+  member_font:   11     # px, строки членов / слотов
+  size_grid:     10     # округление ширины вверх до сетки
+  pad_x:         28     # горизонтальный padding внутри блока
+  min_w:         160    # минимальная ширина блока
+  h_gap:         60     # зазор между блоками в ряду
+  v_gap:         110    # зазор между рядами (в нём лежат коридоры и junction'ы)
+  header_h:      32
+  row_h:         22
+  sep_h:         8
+  min_h:         60
+  start_x:       60
+  start_y:       60
+  max_row_w:     1500   # ряд шире — переносим на следующий
+  route_margin:  18     # зазор вокруг блоков при обходе
+  junction_r:    4      # радиус точки слияния
+  junction_step: 14     # сдвиг по y для второго junction в том же коридоре
+  collapse_min:  4      # objektis: сворачивать коллекцию из N одинаковых элементов в один «[N]»

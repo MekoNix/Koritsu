@@ -1,33 +1,31 @@
 """
 Фасад objektis: выбор бэкенда по языку.
 
-Вынесен в отдельный файл (не в __init__.py), чтобы тесты могли импортировать
-его без триггера __init__.py пакета fragmos (который тянет drawpyo).
+Правило безопасности: пользовательский код НИКОГДА не выполняется.
+Бэкенды должны быть статическими (tree-sitter-трассировка main()).
+Динамические бэкенды 1.x (exec в subprocess, dotnet run) удалены.
 """
 from .model import ObjectGraph
 
+# язык → модуль статического бэкенда
+_BACKENDS: dict[str, str] = {"python": "py_static", "csharp": "cs_static", "cpp": "cpp_static"}
 
-def extract_objects(
-    source: str,
-    language: str,
-    *,
-    files: list[dict] | None = None,
-    timeout: float = 10.0,
-) -> ObjectGraph:
-    """См. описание в objektis/__init__.py."""
+
+def extract_objects(source: str, language: str, *, files: list[dict] | None = None) -> ObjectGraph:
+    """Построить ObjectGraph из исходника без его выполнения.
+
+    Для неизвестного языка возвращает пустой граф с заметкой. На любой ошибке бэкенда тоже возвращает граф с заметкой.
+    """
     lang = (language or "").lower()
-
+    mod_name = _BACKENDS.get(lang)
+    if mod_name is None:
+        return ObjectGraph(notes=[
+            f"objektis: статический разбор для языка {language!r} не реализован "
+            "(код не выполняется)",
+        ])
     try:
-        if lang == "python":
-            from .py_dynamic import extract as _extract_py
-            return _extract_py(source, timeout=timeout)
-        if lang == "csharp":
-            from .cs_dynamic import extract as _extract_cs
-            return _extract_cs(source, files=files, timeout=timeout)
-        if lang == "cpp":
-            from .cpp_static import extract as _extract_cpp
-            return _extract_cpp(source, files=files)
-    except Exception as e:
+        import importlib
+        mod = importlib.import_module(f".{mod_name}", __package__)
+        return mod.extract(source, files=files)
+    except Exception as e:  # noqa: BLE001 — бэкенд не должен ронять генератор
         return ObjectGraph(notes=[f"objektis: {type(e).__name__}: {e}"])
-
-    return ObjectGraph(notes=[f"objektis: язык {language!r} не поддерживается"])

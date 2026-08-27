@@ -1,41 +1,22 @@
 """
-Тесты UML Generator (бывш. klassis): extractor + builder.
+Тесты builder'а по сценариям слияния стрелок наследования (junction):
+несколько потомков одного родителя → один «ствол» к родителю и ветки от потомков.
 Запуск: python -m pytest tests/uml_generator
-Выходные XML открываются в draw.io для визуальной проверки.
+Выходные XML пишутся рядом (в .gitignore) — открыть в draw.io для визуальной проверки.
 """
-import os, sys
-
-_PACKAGES = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))), 'packages')
-if _PACKAGES not in sys.path:
-    sys.path.insert(0, _PACKAGES)
+import os
 
 from uml_generator.extractor import extract_cs, extract_cpp
 from uml_generator.builder import build_xml
 
-try:
-    from uml_generator._ts import get_parser as _
-    _HAS_TSL = True
-except ImportError:
-    _HAS_TSL = False
-
-def _skip_if_no_tsl():
-    if not _HAS_TSL:
-        raise RuntimeError("SKIP: tree-sitter-languages не установлен")
-
 _OUT = os.path.dirname(os.path.abspath(__file__))
+
 
 def _save(name: str, xml: str) -> str:
     path = os.path.join(_OUT, f"test_{name}.xml")
     with open(path, "w", encoding="utf-8") as f:
         f.write(xml)
     return path
-
-
-def _assert(cond: bool, msg: str):
-    if not cond:
-        raise AssertionError(msg)
-    print(f"  OK  {msg}")
 
 
 # ── 1. Merge: 3 потомка одного родителя ───────────────────────────────────────
@@ -75,22 +56,19 @@ public class Triangle : Shape {
 """
 
 def test_merge_three_children():
-    _skip_if_no_tsl()
-    print("\n[1] Merge: 3 потомка Shape")
     classes = extract_cs(CS_MERGE)
-    _assert(len(classes) == 4, f"4 класса (Shape + 3 потомка), got {len(classes)}")
+    assert len(classes) == 4, f"4 класса (Shape + 3 потомка), got {len(classes)}"
 
     xml = build_xml(classes)
-    path = _save("merge_3children", xml)
+    _save("merge_3children", xml)
 
     junctions = xml.count('ellipse;whiteSpace')
     trunks    = xml.count('id="jt')
     branches  = xml.count('endArrow=none;startArrow=none')
 
-    _assert(junctions == 1, f"1 junction, got {junctions}")
-    _assert(trunks    == 1, f"1 trunk,    got {trunks}")
-    _assert(branches  == 3, f"3 branches, got {branches}")
-    print(f"  XML → {path}")
+    assert junctions == 1, f"1 junction, got {junctions}"
+    assert trunks    == 1, f"1 trunk,    got {trunks}"
+    assert branches  == 3, f"3 branches, got {branches}"
 
 
 # ── 2. Merge: два родителя, у каждого по 2 потомка ───────────────────────────
@@ -122,21 +100,19 @@ public class ScalableRaster : IResizable {
 """
 
 def test_merge_two_interfaces():
-    print("\n[2] Merge: 2 интерфейса × 2 потомка каждый")
     classes = extract_cs(CS_TWO_PARENTS)
-    _assert(len(classes) == 6, f"6 классов, got {len(classes)}")
+    assert len(classes) == 6, f"6 классов, got {len(classes)}"
 
     xml = build_xml(classes)
-    path = _save("merge_2interfaces", xml)
+    _save("merge_2interfaces", xml)
 
     junctions = xml.count('ellipse;whiteSpace')
     trunks    = xml.count('id="jt')
     branches  = xml.count('endArrow=none;startArrow=none')
 
-    _assert(junctions == 2, f"2 junctions, got {junctions}")
-    _assert(trunks    == 2, f"2 trunks,    got {trunks}")
-    _assert(branches  == 4, f"4 branches,  got {branches}")
-    print(f"  XML → {path}")
+    assert junctions == 2, f"2 junctions, got {junctions}"
+    assert trunks    == 2, f"2 trunks,    got {trunks}"
+    assert branches  == 4, f"4 branches,  got {branches}"
 
 
 # ── 3. Одиночное наследование — merge НЕ должен срабатывать ──────────────────
@@ -154,17 +130,15 @@ public class Car : Vehicle {
 """
 
 def test_no_merge_single():
-    print("\n[3] Одиночное наследование — без merge")
     classes = extract_cs(CS_SINGLE)
     xml = build_xml(classes)
-    path = _save("no_merge_single", xml)
+    _save("no_merge_single", xml)
 
     junctions = xml.count('ellipse;whiteSpace')
     normal    = xml.count('endArrow=block')
 
-    _assert(junctions == 0, f"0 junctions, got {junctions}")
-    _assert(normal    == 1, f"1 обычная стрелка, got {normal}")
-    print(f"  XML → {path}")
+    assert junctions == 0, f"0 junctions, got {junctions}"
+    assert normal    == 1, f"1 обычная стрелка, got {normal}"
 
 
 # ── 4. Смешанный граф: merge + composition + dependency ───────────────────────
@@ -199,16 +173,14 @@ public class ConsoleLogger : ILogger {
 """
 
 def test_mixed_graph():
-    print("\n[4] Смешанный граф")
     classes = extract_cs(CS_MIXED)
-    _assert(len(classes) == 6, f"6 классов, got {len(classes)}")
+    assert len(classes) == 6, f"6 классов, got {len(classes)}"
 
     xml = build_xml(classes)
-    path = _save("mixed", xml)
+    _save("mixed", xml)
 
     junctions = xml.count('ellipse;whiteSpace')
-    _assert(junctions >= 1, f"минимум 1 junction, got {junctions}")
-    print(f"  XML → {path}")
+    assert junctions >= 1, f"минимум 1 junction, got {junctions}"
 
 
 # ── 5. C++: merge наследования ────────────────────────────────────────────────
@@ -253,33 +225,28 @@ public:
 """
 
 def test_cpp_merge():
-    print("\n[5] C++: 3 потомка Animal")
     classes = extract_cpp(CPP_MERGE)
-    _assert(len(classes) == 4, f"4 класса, got {len(classes)}")
+    assert len(classes) == 4, f"4 класса, got {len(classes)}"
 
     xml = build_xml(classes)
-    path = _save("cpp_merge", xml)
+    _save("cpp_merge", xml)
 
     junctions = xml.count('ellipse;whiteSpace')
     branches  = xml.count('endArrow=none;startArrow=none')
 
-    _assert(junctions == 1, f"1 junction, got {junctions}")
-    _assert(branches  == 3, f"3 branches, got {branches}")
-    print(f"  XML → {path}")
+    assert junctions == 1, f"1 junction, got {junctions}"
+    assert branches  == 3, f"3 branches, got {branches}"
 
 
 # ── 6. Граничные случаи ───────────────────────────────────────────────────────
 
 def test_empty():
-    print("\n[6] Граничные случаи")
     xml = build_xml([])
-    _assert('<mxCell id="0"' in xml, "пустой XML содержит базовые ячейки")
-    print("  OK  empty classes")
+    assert '<mxCell id="0"' in xml, "пустой XML содержит базовые ячейки"
 
     classes = extract_cs("public class Alone { private int x; }")
     xml = build_xml(classes)
-    _assert(xml.count('ellipse;whiteSpace') == 0, "одиночный класс — без junction")
-    print("  OK  single class no junction")
+    assert xml.count('ellipse;whiteSpace') == 0, "одиночный класс — без junction"
 
 
 # ── Runner ────────────────────────────────────────────────────────────────────
@@ -299,10 +266,6 @@ if __name__ == "__main__":
             t()
             passed += 1
         except Exception as e:
-            print(f"  FAIL  {e}")
             failed += 1
-
-    print(f"\n{'='*40}")
-    print(f"Passed: {passed}/{passed+failed}")
     if failed:
         sys.exit(1)

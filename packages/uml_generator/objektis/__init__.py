@@ -1,13 +1,15 @@
 """
 objektis — UML Object Diagram (диаграмма объектов) из исходного кода.
 
-Дополняет klassis: где klassis показывает структуру типов, objektis показывает
-снимок конкретных инстансов с заполненными слотами и links между ними.
+Дополняет диаграмму классов: там структура типов, здесь снимок конкретных
+экземпляров с заполненными слотами и связями между ними.
 
-Бэкенды:
-  - python  → py_dynamic   (запуск кода + gc walk)
-  - csharp  → cs_dynamic   (source-rewrite + run + reflection dump)  [TODO]
-  - cpp     → cpp_static   (tree-sitter tracer of main())            [TODO]
+Правило: пользовательский код не выполняется. Бэкенды — только статические:
+  python → py_static  (модуль / `__main__` / вызванная main())
+  csharp → cs_static  (тело Main())
+  cpp    → cpp_static (тело main())
+Общее состояние трассировки — _trace.py.
+IR (model.py) и builder.py принимают любой ObjectGraph.
 """
 from .model import ObjectGraph, ObjectInstance, ObjectLink, Slot
 from .builder import build_xml

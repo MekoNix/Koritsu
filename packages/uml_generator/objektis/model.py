@@ -1,7 +1,7 @@
 """
 Общий IR для диаграммы объектов (UML Object Diagram).
 
-Бэкенды (py_dynamic, cs_dynamic, cpp_static) возвращают ObjectGraph;
+Статические бэкенды возвращают ObjectGraph;
 builder.py превращает его в drawio XML.
 """
 from dataclasses import dataclass, field as dc_field
