@@ -1,0 +1,38 @@
+# styles.yaml — оформление hokoku. Любой ключ перегружается через render(..., style={...}).
+
+captions:
+  figure: "Рисунок {n} — {caption}"     # ГОСТ 7.32: "Рисунок {n} – {caption}" (короткое тире)
+  table:  "Таблица {n} — {caption}"
+  sheet:  " (лист {k} из {total})"       # суффикс для картинки, разрезанной на листы
+  fields: true                           # номер — поле SEQ (Word пересчитает при F9/печати)
+  figure_align: center
+  table_align: left
+  seq_figure: "Рисунок"                  # имя счётчика SEQ
+  seq_table: "Таблица"
+  seq_formula: "Формула"
+
+code:
+  font: "Courier New"
+  size_pt: 10
+  highlight: true                        # подсветка синтаксиса (pygments), если указан язык
+  line_numbers: false                    # нумерация строк по умолчанию
+  style: "default"                       # стиль pygments (default, friendly, bw …)
+
+table:
+  header_fill: "E7E6E6"                  # заливка шапки; "" — без заливки
+  header_center: true
+
+image:
+  default_width: natural                 # natural — по DPI файла; число — см
+  min_width_cm: 4
+  sheet_fraction: 0.8                    # лист = доля высоты страницы при нарезке
+  connectors: true                       # соединители ГОСТ 19.701-90 на разрезах
+  keep_intro: true                       # абзац с «:» перед картинкой прилипает к ней
+
+headings:                                # размеры, если в шаблоне нет стилей Heading N
+  1: 16
+  2: 14
+  3: 13
+  4: 12
+  5: 12
+  6: 12
