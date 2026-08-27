@@ -1,0 +1,197 @@
+# styles.yaml — текстовые стили блоков.
+#
+# Стиль описывает, КАК текст из кода превращается в подпись блока.
+# Режим (modes.yaml) описывает, КАКИЕ фигуры рисовать. Режим ссылается
+# на стиль полем `style:`.
+#
+# Секции стиля (каждая — упорядоченный список правил):
+#   io         — блоки ввода/вывода (print, cin, Console.WriteLine …)
+#   execute    — присваивания и выражения
+#   process    — вызовы процедур
+#   condition  — условия if / while
+#   for        — заголовок for: правило задаёт ДВА шаблона: start и end
+#   while      — заголовок while в режиме loop_limit: шаблоны start/end,
+#                доступны {var} (первое слово условия) и {cond}
+#   labels     — подписи Начало/Конец: {name} — имя функции,
+#                {signature} — полная сигнатура; yes/no — подписи выходов
+#                «решения» (п.4.3.1.2 ГОСТ 19.701-90); return — блок перед
+#                терминатором для `return X` ({value} — возвращаемое выражение)
+#
+# Правило:
+#   match:   регулярное выражение (Python re, DOTALL). Пиши в одинарных
+#            кавычках, якори ^…$ ставь сам.
+#   replace: шаблон замены, \1 \2 — группы.
+#   all:     true — заменить ВСЕ вхождения и продолжить к следующему
+#            правилу (по умолчанию: первое сработавшее правило —
+#            последнее, дальше не идём).
+#   find:    вместо match — буквальная подстрока, заменяются все вхождения.
+#   translate: (только for/while) — прогнать start/end через `condition`.
+#
+# Значение секции может быть строкой — именем другой секции того же
+# стиля (`condition: execute`).
+#
+# `extends: <стиль>` — наследовать секции; своя секция ЗАМЕНЯЕТ
+# унаследованную целиком (не дописывается).
+
+styles:
+
+  # ── plain: код как есть, IO без обёртки ─────────────────────────────
+  plain:
+    description: "Без перевода: print('123') → 123, операторы как в коде"
+    labels:
+      start_main: "Начало"
+      stop_main:  "Конец"
+      start_func: "{signature}"
+      stop_func:  "конец {name}"
+      yes: "Да"
+      no:  "Нет"
+      return: "return {value}"
+      return_void: "return"
+      break: "break"
+      continue: "continue"
+    io:
+      - {match: '^print\s*\((.*)\)$',                 replace: '\1'}
+      - {match: '^([\w\s,\*]+?)\s*=\s*.+\binput\s*\(', replace: '\1'}
+      - {match: '^input\s*\((.+)\)$',                 replace: '\1'}
+      - {match: '^input\s*\(\s*\)$',                  replace: 'данные'}
+      - {match: '^(?:std::)?cout\s*<<\s*(.*?)(?:\s*<<\s*(?:std::)?endl|\s*<<\s*"\\n"|\s*<<\s*''\\n'')?\s*;?$', replace: '\1'}
+      - {match: '^(?:std::)?cin\s*>>\s*(.*?)\s*;?$',  replace: '\1'}
+      - {match: '^(?:printf|puts|scanf)\s*\((.*)\)$', replace: '\1'}
+      - {match: '^Console\.Write(?:Line)?\s*\((.*)\)$', replace: '\1'}
+      - {match: '^Console\.Read',                     replace: 'данные'}
+    for:
+      - {match: '^(.*)$', start: '\1', end: '\1'}
+    while:
+      start: '{cond}'
+      end:   '{cond}'
+
+  # ── default: как plain, но IO с префиксом Ввод:/Вывод: ──────────────
+  default:
+    description: "Стандарт: IO с префиксами «Вывод:» / «Ввод:», код как есть"
+    extends: plain
+    labels:
+      start_main: "Начало"
+      stop_main:  "Конец"
+      start_func: "{signature}"
+      stop_func:  "конец {name}"
+      yes: "Да"
+      no:  "Нет"
+      return: "Вернуть {value}"
+      return_void: "Возврат"
+      break: "Выход из цикла"
+      continue: "Следующая итерация"
+    io:
+      # префиксы строк (f"…", rf"…", b"…", C# $"…" / @"…") — не часть текста
+      - {match: '(?<![\w."''])(?:[fFrRbBuU]{1,2}|\$@?|@\$?)(?=["''])', replace: '', all: true}
+      - {match: '^print\s*\((.*)\)$',                 replace: 'Вывод: \1'}
+      - {match: '^([\w\s,\*]+?)\s*=\s*.+\binput\s*\(', replace: 'Ввод: \1'}
+      - {match: '^input\s*\((.+)\)$',                 replace: 'Ввод: \1'}
+      - {match: '^input\s*\(\s*\)$',                  replace: 'Ввод: данные'}
+      - {match: '^(?:std::)?cout\s*<<\s*(.*?)(?:\s*<<\s*(?:std::)?endl|\s*<<\s*"\\n"|\s*<<\s*''\\n'')?\s*;?$', replace: 'Вывод: \1'}
+      - {match: '^(?:std::)?cin\s*>>\s*(.*?)\s*;?$',  replace: 'Ввод: \1'}
+      - {match: '^(?:printf|puts)\s*\((.*)\)$',       replace: 'Вывод: \1'}
+      - {match: '^scanf\s*\((.*)\)$',                 replace: 'Ввод: \1'}
+      - {match: '^Console\.Write(?:Line)?\s*\((.*)\)$', replace: 'Вывод: \1'}
+      - {match: '^Console\.Read',                     replace: 'Ввод: данные'}
+
+  # ── gost_19_701_90: ГОСТ 19.701-90 (ИСО 5807-85), ЕСПД ───────────────
+  # «Схемы алгоритмов, программ, данных и систем». Заменил ГОСТ 19.002-80
+  # и 19.003-80. Что стандарт требует от текста (и как это отражено ниже):
+  #   п.4.1.4   — внутри символа минимум текста, нужного для понимания
+  #               функции  → операторы кода переводятся в псевдокод.
+  #   п.3.2.2.6 — «граница цикла»: условия инициализации, приращения и
+  #               завершения помещаются в символ начала или конца цикла
+  #               → for/while: начало «Цикл i, i=1,n», конец «Цикл i».
+  #   п.4.3.1.2 — каждый выход из «решения» подписан значением условия
+  #               → подписи Да/Нет ставит рендерер.
+  #   п.3.4.2   — «терминатор»: вход/выход во внешнюю среду
+  #               → «Начало»/«Конец» (у функций — «Начало имя»/«Конец имя»).
+  #   п.3.1.1.1 — «данные» (ввод-вывод, носитель не определён)
+  #               → «Ввод: x» / «Вывод: x».
+  # Источник: https://docs.cntd.ru/document/9041994
+  gost_19_701_90:
+    description: "ГОСТ 19.701-90 (ИСО 5807-85): псевдокод, границы цикла «Цикл i, …»"
+    extends: default
+    labels:
+      start_main: "Начало"
+      stop_main:  "Конец"
+      start_func: "Начало {name}"
+      stop_func:  "Конец {name}"
+      yes: "Да"
+      no:  "Нет"
+      return: "{value}"
+      return_void: "Возврат"
+      break: "Выход из цикла"
+      continue: "Следующая итерация"
+    # п.3.1.1.1: параллелограмм сам означает ввод/вывод — без слов «Ввод:/Вывод:»
+    return_shape: io          # return X → параллелограмм с X и стрелка в «Конец»
+    io:
+      # префиксы строк (f"…", rf"…", b"…", C# $"…" / @"…") — не часть текста
+      - {match: '(?<![\w."''])(?:[fFrRbBuU]{1,2}|\$@?|@\$?)(?=["''])', replace: '', all: true}
+      - {match: '^print\s*\((.*)\)$',                 replace: '\1'}
+      - {match: '^([\w\s,\*]+?)\s*=\s*.+\binput\s*\(', replace: '\1'}
+      - {match: '^input\s*\((.+)\)$',                 replace: '\1'}
+      - {match: '^input\s*\(\s*\)$',                  replace: 'данные'}
+      - {match: '^(?:std::)?cout\s*<<\s*(.*?)(?:\s*<<\s*(?:std::)?endl|\s*<<\s*"\\n"|\s*<<\s*''\\n'')?\s*;?$', replace: '\1'}
+      - {match: '^(?:std::)?cin\s*>>\s*(.*?)\s*;?$',  replace: '\1'}
+      - {match: '^(?:printf|puts|scanf)\s*\((.*)\)$', replace: '\1'}
+      - {match: '^Console\.Write(?:Line)?\s*\((.*)\)$', replace: '\1'}
+      - {match: '^Console\.Read',                     replace: 'данные'}
+    execute:
+      # составные присваивания — до замены == и !=
+      - {match: '(\w+)\s*\+=\s*(.+)',  replace: '\1 = \1 + \2', all: true}
+      - {match: '(\w+)\s*-=\s*(.+)',   replace: '\1 = \1 - \2', all: true}
+      - {match: '(\w+)\s*\*=\s*(.+)',  replace: '\1 = \1 * \2', all: true}
+      - {match: '(\w+)\s*/=\s*(.+)',   replace: '\1 = \1 / \2', all: true}
+      # инкремент / декремент
+      - {match: '\+\+(\w+)', replace: '\1 = \1 + 1', all: true}
+      - {match: '(\w+)\+\+', replace: '\1 = \1 + 1', all: true}
+      - {match: '--(\w+)',   replace: '\1 = \1 - 1', all: true}
+      - {match: '(\w+)--',   replace: '\1 = \1 - 1', all: true}
+      # сравнения — порядок важен: != >= <= до ==
+      - {find: '!=', replace: '≠'}
+      - {find: '>=', replace: '≥'}
+      - {find: '<=', replace: '≤'}
+      - {find: '==', replace: '='}
+      # логические операторы (C-style и Python)
+      - {find: '&&', replace: 'и'}
+      - {find: '||', replace: 'или'}
+      - {match: '\band\b', replace: 'и',   all: true}
+      - {match: '\bor\b',  replace: 'или', all: true}
+      - {match: '\bnot\b', replace: 'не',  all: true}
+      - {match: '!(\w)',   replace: 'не \1', all: true}
+    condition: execute
+    for:
+      # Python: for i in range(stop)
+      - match: '^(\w+)\s+in\s+range\(([^,)]+)\)$'
+        start: 'Цикл \1, \1=1,\2'
+        end:   'Цикл \1'
+      # Python: for i in range(start, stop, step)
+      - match: '^(\w+)\s+in\s+range\(\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^,]+?)\s*\)$'
+        start: 'Цикл \1, \1=\2,\3,\4'
+        end:   'Цикл \1'
+      # Python: for i in range(start, stop)
+      - match: '^(\w+)\s+in\s+range\(\s*([^,]+?)\s*,\s*([^,]+?)\s*\)$'
+        start: 'Цикл \1, \1=\2,\3'
+        end:   'Цикл \1'
+      # Python: for x in iterable
+      - match: '^(\w+)\s+in\s+(.+)$'
+        start: 'Цикл \1, \1 из \2'
+        end:   'Цикл \1'
+      # C / C# / C++: for (int i = 0; i < n; i++)
+      - match: '^(?:[\w:<>\[\]]+\s+)?(\w+)\s*=\s*([^;]+?)\s*;\s*([^;]+?)\s*;\s*(.+)$'
+        start: 'Цикл \1, \1=\2, пока \3, \4'
+        end:   'Цикл \1'
+        translate: true
+      # C# foreach: (T x in items) → после парсера приходит как "T x in items"
+      - match: '^(?:\w+\s+)?(\w+)\s+in\s+(.+)$'
+        start: 'Цикл \1, \1 из \2'
+        end:   'Цикл \1'
+      # запасной вариант
+      - match: '^(.*)$'
+        start: '\1'
+        end:   '\1'
+        translate: true
+    while:
+      start: 'Цикл {var}, пока {cond}'
+      end:   'Цикл {var}'

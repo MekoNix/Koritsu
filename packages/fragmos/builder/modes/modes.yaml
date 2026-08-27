@@ -1,0 +1,40 @@
+# modes.yaml — режимы отображения: КАКИЕ фигуры рисовать.
+# Текст блоков задаёт стиль из styles.yaml (поле `style`).
+#
+# blocks:
+#   for:   for_default | loop_limit
+#   while: while       | loop_limit
+#   if:    if
+#   match: ifs         | switch      (match/switch → цепочка IF или switch-блок)
+
+modes:
+  plain:
+    description: "Без перевода: код как есть, print('123') → 123"
+    style: plain
+    blocks:
+      for: for_default
+      while: while
+      if: if
+      match: ifs
+
+  default:
+    description: "Стандартный режим: циклы как обычные блоки, IO с префиксами"
+    style: default
+    blocks:
+      for: for_default       # шестиугольник
+      while: while           # ромб с возвратной стрелкой
+      if: if                 # ромб с YES/NO ветками
+      match: ifs
+
+  # ГОСТ 19.701-90. `loopLimit` — исторический id, оставлен для API;
+  # `gost_19_701_90` — то же самое под именем стандарта.
+  loopLimit: &gost
+    description: "ГОСТ 19.701-90: for/while как «граница цикла», псевдокод по-русски"
+    style: gost_19_701_90
+    blocks:
+      for: loop_limit        # овал-открывашка + овал-закрывашка
+      while: loop_limit
+      if: if
+      match: switch
+
+  gost_19_701_90: *gost

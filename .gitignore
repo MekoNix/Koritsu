@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Окружения
+.venv/
+.env
+
+# Выход тестов uml_generator (пишутся рядом с тестами для глаз)
+tests/uml_generator/*.drawio
+tests/uml_generator/*.xml
+tests/uml_generator/*.png
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Claude Code
+**/.claude/settings.local.json
+.pytest_cache/
+
+# локальный скрипт коммита, в репозиторий не идёт
+commit.sh

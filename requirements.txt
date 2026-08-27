@@ -1,0 +1,8 @@
+# Koritsu — прод-зависимости пакетов (packages/*).
+# Источник истины — pyproject.toml; этот файл для `pip install -r`.
+drawpyo>=0.2.5
+PyYAML>=6.0
+tree-sitter>=0.23
+tree-sitter-python>=0.23
+tree-sitter-cpp>=0.23
+tree-sitter-c-sharp>=0.23
