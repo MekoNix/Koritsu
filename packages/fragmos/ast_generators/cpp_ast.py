@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from .base import ASTGenerator
 from .query import NodeQueries
 
@@ -14,6 +16,25 @@ Q = NodeQueries('cpp', {
 
 _IO_FUNCS = {'printf', 'scanf', 'cout', 'cin', 'fprintf', 'fscanf', 'puts', 'gets',
              'fwrite', 'fread', 'getline'}
+
+# Statement-ы, после которых поток из case не проваливается в следующий.
+_CLOSING_STMTS = frozenset(('return_statement', 'goto_statement',
+                            'throw_statement', 'continue_statement',
+                            'co_return_statement'))
+
+
+def _apply_fallthrough(cases: list) -> None:
+    """case без break продолжается телом следующего — дописываем копию.
+
+    Обратный проход: цепочка case1 → case2 → case3 разворачивается за
+    один заход, без рекурсии. Схема с дублем блоков честнее, чем схема,
+    где после case 1 поток молча уходит на слияние.
+    """
+    for i in range(len(cases) - 2, -1, -1):
+        if cases[i].pop('falls', False) and cases[i]['body']:
+            cases[i]['body'].extend(deepcopy(cases[i + 1]['body']))
+    for c in cases:
+        c.pop('falls', None)
 
 class CppAST(ASTGenerator):
     """C++ AST generator using tree-sitter."""
@@ -82,6 +103,15 @@ class CppAST(ASTGenerator):
             return self._visit_class(node)
         if t == 'union_specifier':
             return self._visit_class(node)
+
+        # Вложенный класс объявляется через field_declaration:
+        #   class Outer { class Inner { … }; };
+        # Без этой ветки Inner (и все его методы) терялись целиком.
+        if t == 'field_declaration':
+            for c in node.named_children:
+                if c.type in ('class_specifier', 'struct_specifier', 'union_specifier'):
+                    return self._visit_class(c)
+            return None
 
         # Function definition (top-level или in-class inline) и method вне
         # класса (`void A::m() {...}` — declarator = qualified_identifier).
@@ -230,10 +260,15 @@ class CppAST(ASTGenerator):
         parts = [self._clean(c.text(k)) for k in ('init', 'cond', 'upd') if c.one(k) is not None]
         return {'type': 'for', 'value': '; '.join(parts), 'body': self._visit_body(c.one('body'))}
     def _visit_for_range(self, node):
+        """`for (const auto& x : items)` → «x in items».
+
+        Раньше подпись была сырой строкой кода («auto x : v»). Тип
+        переменной в схеме не нужен (п.4.1.4 ГОСТ 19.701-90 — минимум
+        текста), а форма «x in items» — та же, что у Python for-in, и
+        стиль собирает из неё «Цикл x, x из items»."""
         c = Q.caps('for_range', node)
-        var = f"{c.text('type')} {c.text('var')}".strip()
-        var = var.replace(' &', '&').replace(' *', '*')      # `auto& v`, не `auto & v`
-        return {'type': 'for', 'value': f"{var} : {c.text('iter')}",
+        var = c.text('var').replace('&', '').replace('*', '').strip()
+        return {'type': 'for', 'value': f"{var} in {c.text('iter')}",
                 'body': self._visit_body(c.one('body'))}
     def _visit_while(self, node):
         c = Q.caps('while', node)
@@ -243,8 +278,8 @@ class CppAST(ASTGenerator):
         return [init, while_node] if init else while_node
     def _visit_do(self, node):
         c = Q.caps('do', node)
-        # condition — parenthesized_expression: снимаем внешние скобки
-        return {'type': 'do_while', 'value': c.text('cond').strip('()'),
+        # condition — parenthesized_expression: снимаем одну внешнюю пару
+        return {'type': 'do_while', 'value': self._unwrap_parens(c.text('cond')),
                 'body': self._visit_body(c.one('body'))}
     def _visit_switch(self, node):
         """C++ switch → fragmos `match`-узел.
@@ -257,8 +292,13 @@ class CppAST(ASTGenerator):
 
         Алгоритм: идём по детям compound_statement. Накапливаем
         patterns, пока встречаем «пустой» case (только `value` без
-        statements). Когда встречается case со statements (или default),
-        собираем pattern и тело в одну запись.
+        statements и без break). Когда встречается case со statements
+        (или default), собираем pattern и тело в одну запись.
+
+        case со statements, но без break/return/throw/goto — проваливается
+        в следующий: его тело дополняется копией тела следующего случая
+        (обратный проход в `_apply_fallthrough`), иначе схема молча врала
+        бы, показывая слияние сразу после case 1.
         """
         c = Q.caps('switch', node)
         subj = c.text('cond')
@@ -280,15 +320,19 @@ class CppAST(ASTGenerator):
 
                 # Statement-часть case_statement: всё, кроме самого value.
                 stmts: list = []
+                closed = False          # есть break/return/throw/goto — не проваливается
                 for kid in ch.named_children:
                     if kid is value_node:
                         continue
                     if kid.type == 'break_statement':
+                        closed = True
                         continue
+                    if kid.type in _CLOSING_STMTS:
+                        closed = True
                     stmts.extend(self._as_list(self._visit(kid)))
 
-                if not stmts:
-                    # Пустой case → fall-through: запоминаем pattern и
+                if not stmts and not closed:
+                    # Пустой case → общий вход: запоминаем pattern и
                     # ждём следующий case со statements.
                     pending.append(pat)
                 else:
@@ -296,6 +340,7 @@ class CppAST(ASTGenerator):
                     cases.append({
                         'pattern': ' | '.join(pending),
                         'body': stmts,
+                        'falls': not closed,
                     })
                     pending = []
             # Если в конце остались pending без тела — добавим как пустой.
@@ -303,7 +348,9 @@ class CppAST(ASTGenerator):
                 cases.append({
                     'pattern': ' | '.join(pending),
                     'body': [],
+                    'falls': False,
                 })
+            _apply_fallthrough(cases)
 
         match_node = {
             'type': 'match',

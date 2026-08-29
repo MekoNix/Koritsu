@@ -89,6 +89,10 @@ def _tokens(s: str) -> list[str]:
 #       ("frac", num, den) | ("rad", deg|None, body) | ("nary", char, sub, sup, body)
 #       ("delim", open, close, body) | ("acc", char, body) | ("bar", body) | ("func", name, arg)
 
+class OmmlError(ValueError):
+    """Формулу не удалось разобрать: незакрытая скобка, нет аргумента, окружение."""
+
+
 class _Parser:
     def __init__(self, s: str):
         self.t = _tokens(s)
@@ -113,14 +117,19 @@ class _Parser:
         return nodes
 
     def group(self) -> list:
-        """{…} или один атом."""
+        """{…} или один атом. Незакрытая группа — ошибка: раньше `\\frac{1}{` собирался
+        молча в дробь с пустым знаменателем, и формула тихо пропадала из отчёта."""
         if self.peek() == "{":
             self.next()
             body = self.parse(stop=("}",))
+            if self.peek() != "}":
+                raise OmmlError("не закрыта фигурная скобка")
             self.next()
             return body
         node = self.atom()
-        return [node] if node else []
+        if node is None:
+            raise OmmlError("не хватает аргумента после команды")
+        return [node]
 
     def scripts(self, base):
         sub = sup = None
@@ -145,6 +154,8 @@ class _Parser:
             return None
         if tok == "{":
             body = self.parse(stop=("}",))
+            if self.peek() != "}":
+                raise OmmlError("не закрыта фигурная скобка")
             self.next()
             return ("grp", body)
         if tok == "}":
@@ -199,6 +210,8 @@ class _Parser:
                 return ("r", _SYMBOLS[name])
             if name in ("\\",):
                 return ("r", " ")
+            if name in ("begin", "end"):                     # \\begin{matrix} рассыпался в буквы
+                raise OmmlError(f"окружения не поддерживаются: \\{name}")
             return ("r", name)                               # неизвестная команда — текстом
         if tok in ("*",):
             return ("r", "∗")
@@ -260,11 +273,17 @@ def _node(n) -> str:
     return ""
 
 
+def _descend(n: tuple) -> tuple:
+    """Тот же узел, но со вложенными списками, пропущенными через _attach_bodies:
+    сумма внутри дроби или под корнем — такой же оператор, как на верхнем уровне."""
+    return tuple(_attach_bodies(x) if isinstance(x, list) else x for x in n)
+
+
 def _attach_bodies(nodes: list) -> list:
     """Для ∑/∫: следующий за оператором фрагмент до знака +/-/=/, — тело оператора."""
     out, i = [], 0
     while i < len(nodes):
-        n = nodes[i]
+        n = _descend(nodes[i])
         if n[0] == "nary" and n[1] != "lim" and n[4] is None:
             body, j = [], i + 1
             while j < len(nodes) and not (nodes[j][0] == "r" and nodes[j][1] in ("+", "-", "=", ",", "±", "→", "≤", "≥", "<", ">")):

@@ -26,7 +26,14 @@ def test_two_objects_with_link():
     xml = build_xml(_graph_two_linked())
     assert xml.count('edge="1"') == 1
     assert "car : Car" in xml and "engine1 : Engine" in xml
-    assert "name = &#x27;Audi&#x27;" in xml
+    # двойной escape: XML-атрибут, внутри — HTML (стиль строки html=1)
+    assert "name = &amp;#x27;Audi&amp;#x27;" in xml
+
+
+def test_slot_value_with_angle_bracket_survives():
+    """`a<b` в значении слота: под html=1 без двойного escape draw.io съедает «<b …»."""
+    g = ObjectGraph(instances=[ObjectInstance("c", "Cmp", [Slot("expr", "a<b")])])
+    assert "expr = a&amp;lt;b" in build_xml(g)
 
 
 def test_collapse_collections():

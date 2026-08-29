@@ -278,7 +278,9 @@ def build_xml(graph: ObjectGraph, theme: str = "dark",
         cur_y = cfg["header_h"]
         for j, slot in enumerate(inst.slots):
             cells.append(
-                f'<mxCell id="{cid}_s{j}" value="{_esc(_slot_text(slot))}" '
+                # двойной escape: стиль строки — html=1, поэтому `a<b` иначе
+                # съедается разбором HTML (как и в заголовке выше)
+                f'<mxCell id="{cid}_s{j}" value="{_esc(_esc(_slot_text(slot)))}" '
                 f'style="{row_style}" vertex="1" parent="{cid}">'
                 f'<mxGeometry y="{cur_y}" width="{w}" height="{cfg["row_h"]}" as="geometry"/>'
                 f'</mxCell>'

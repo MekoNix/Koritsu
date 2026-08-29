@@ -568,7 +568,21 @@ def _collect_cs(node, src: bytes, result: list, outer: str | None = None):
                 if inner is not None:
                     cls.parents.append(_strip_generics(_text(inner, src)).split(".")[-1])
 
-    result.append(cls)
+    # `partial class X` в нескольких местах — один тип: члены дописываем в уже собранный
+    if "partial" in mods:
+        prev = next((c for c in result if c.name == cls.name and c.outer == outer
+                     and c.kind == cls.kind), None)
+        if prev is not None:
+            for p in cls.parents:
+                if p not in prev.parents:
+                    prev.parents.append(p)
+            prev.type_params = prev.type_params or cls.type_params
+            prev.is_abstract = prev.is_abstract or cls.is_abstract
+            cls = prev
+        else:
+            result.append(cls)
+    else:
+        result.append(cls)
 
     if kind == "enum":
         body = _child_of_type(node, "enum_member_declaration_list")
@@ -578,21 +592,28 @@ def _collect_cs(node, src: bytes, result: list, outer: str | None = None):
                 for m in body.named_children if m.type == "enum_member_declaration"]
         return
 
-    # record Point(int X, int Y) — позиционные параметры = публичные свойства
+    # record Point(int X, int Y) — позиционные параметры = публичные свойства.
+    # У class/struct (C# 12) те же скобки — это первичный конструктор: параметры
+    # захватываются в поля, свойств не создают, поэтому пишем только конструктор.
     plist = _child_of_type(node, "parameter_list")
     if plist is not None:
-        for p in plist.named_children:
-            if p.type != "parameter":
-                continue
-            ptype = _cs_type_of(p, src)
-            pname = p.child_by_field_name("name") or _children_of_type(p, "identifier")[-1:]
-            pname = pname[0] if isinstance(pname, list) and pname else pname
-            if pname is None or isinstance(pname, list):
-                continue
-            cls.fields.append(FieldInfo(
-                name=_text(pname, src),
-                type_str=(_text(ptype, src) if ptype else "?") + " { get; init; }",
-                access="public", is_readonly=True))
+        if node.type not in ("record_declaration", "record_struct_declaration"):
+            cls.methods.append(MethodInfo(
+                name=cls.name, return_type="", params=_params_text(plist, src),
+                access="public", is_constructor=True))
+            plist = None
+    for p in (plist.named_children if plist is not None else []):
+        if p.type != "parameter":
+            continue
+        ptype = _cs_type_of(p, src)
+        pname = p.child_by_field_name("name") or _children_of_type(p, "identifier")[-1:]
+        pname = pname[0] if isinstance(pname, list) and pname else pname
+        if pname is None or isinstance(pname, list):
+            continue
+        cls.fields.append(FieldInfo(
+            name=_text(pname, src),
+            type_str=(_text(ptype, src) if ptype else "?") + " { get; init; }",
+            access="public", is_readonly=True))
 
     body = node.child_by_field_name("body") or _child_of_type(node, "declaration_list")
     if body is not None:
@@ -678,19 +699,45 @@ def _py_add_field(cls: ClassInfo, name: str, type_str: str, is_static=False):
                                 is_static=is_static, is_readonly=name.isupper()))
 
 
+def _py_targets(node) -> list[tuple]:
+    """
+    Пары (левый узел, узел значения) одного присваивания.
+
+    Цепочка `a = b = 0` даёт две пары с общим значением, распаковка
+    `x, y = 1, 2` — по паре на элемент (значение None, если не сопоставилось).
+    """
+    lefts, right = [], node
+    while right is not None and right.type == "assignment":
+        lefts.append(right.child_by_field_name("left"))
+        right = right.child_by_field_name("right")
+    out: list[tuple] = []
+    for lt in lefts:
+        if lt is None:
+            continue
+        if lt.type in ("pattern_list", "tuple_pattern"):
+            vals = list(right.named_children) if (
+                right is not None and right.type in ("expression_list", "tuple")) else []
+            for i, t in enumerate(lt.named_children):
+                out.append((t, vals[i] if i < len(vals) else None))
+        else:
+            out.append((lt, right))
+    return out
+
+
 def _py_self_assignments(block, src: bytes, cls: ClassInfo, params: dict[str, str]):
     """self.x = … на любой глубине тела метода → поля."""
     stack = [block]
     while stack:
         n = stack.pop()
         if n.type == "assignment":
-            left = n.child_by_field_name("left")
-            if left is not None and left.type == "attribute" and \
-                    _text(left.child_by_field_name("object"), src) == "self":
+            type_node = n.child_by_field_name("type")
+            for left, value in _py_targets(n):
+                if left.type != "attribute" or \
+                        _text(left.child_by_field_name("object"), src) != "self":
+                    continue
                 name = _text(left.child_by_field_name("attribute"), src)
-                type_node = n.child_by_field_name("type")
                 type_str = _text(type_node, src) if type_node is not None else \
-                    _py_infer_type(n.child_by_field_name("right"), src, params)
+                    _py_infer_type(value, src, params)
                 _py_add_field(cls, name, type_str)
         elif n.type not in ("function_definition", "class_definition", "lambda"):
             stack.extend(reversed(n.named_children))

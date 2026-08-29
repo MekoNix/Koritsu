@@ -1,7 +1,13 @@
-"""images — размеры картинок, вписывание в страницу, нарезка высоких схем."""
+"""images — размеры картинок, вписывание в страницу, draw.io → PNG.
+
+Пиксельной нарезки высоких схем на листы здесь больше нет (2.0.0a2.5): резать
+растр вслепую значит рвать фигуры и рисовать соединители «на глаз». Листы даёт
+сам генератор схемы — многостраничный mxfile, где разрыв стоит в нужном месте.
+"""
 from __future__ import annotations
 
 import io
+import re
 
 from PIL import Image as PILImage
 
@@ -47,104 +53,39 @@ def fit(data: bytes, max_w_cm: float, max_h_cm: float, want_w_cm: float | None =
     return w, h
 
 
-def split_tall(data: bytes, max_ratio: float, tolerance: float = 0.25,
-               max_ink: float = 0.03, connectors: bool = True) -> list[bytes]:
-    """
-    Разрезать картинку на куски высотой ≤ max_ratio × ширина, выбирая в окне
-    [граница − tolerance·кусок, граница] строку с наименьшим числом «непустых»
-    пикселей: между фигурами блок-схемы идут только тонкие соединительные линии
-    (доля ≤ max_ink), а по самой фигуре резать не хочется. Если подходящей
-    строки нет — режем ровно по границе.
-    connectors=True — в месте разрыва рисуется символ «соединитель» ГОСТ 19.701-90
-    (кружок с номером) снизу листа и сверху следующего, на оси линии потока.
-    """
-    with PILImage.open(io.BytesIO(data)) as im:
-        im = im.convert("RGB")
-        w, h = im.size
-        chunk = int(w * max_ratio)
-        if h <= chunk or chunk <= 0:
-            return [data]
-        bg = im.getpixel((0, 0))
-        px = im.load()
-        xs = range(0, w, max(1, w // 600))
-
-        def ink(y: int) -> int:
-            return sum(1 for x in xs if abs(px[x, y][0] - bg[0]) + abs(px[x, y][1] - bg[1])
-                       + abs(px[x, y][2] - bg[2]) > 60)
-
-        pieces, top = [], 0
-        while h - top > chunk:
-            target = top + chunk
-            lo = max(top + chunk // 2, int(target - chunk * tolerance))
-            # цена строки: число «чернильных» отсчётов (линии) + штраф за удаление
-            # от границы: одна лишняя линия стоит как 1/8 листа
-            best_y, best_cost, best_ink = target, float("inf"), 1.0
-            for y in range(target, lo, -1):
-                n = ink(y)
-                cost = n + 8.0 * (target - y) / chunk
-                if cost < best_cost:
-                    best_y, best_cost, best_ink = y, cost, n / len(xs)
-                    if n == 0:
-                        break
-            cut = best_y if best_ink <= max_ink else target
-            pieces.append((im.crop((0, top, w, cut)), _line_x(px, w, cut, bg)))
-            top = cut
-        pieces.append((im.crop((0, top, w, h)), None))
-        if connectors:
-            pieces = _add_connectors(pieces, w, bg)
-        out = []
-        for p, _ in pieces:
-            buf = io.BytesIO()
-            p.save(buf, format="PNG")
-            out.append(buf.getvalue())
-        return out
+_PNG_CACHE: dict = {}                # ключ по содержимому → PNG
+_PNG_CACHE_MAX = 16                  # схем; при переполнении выбрасывается самая старая
 
 
-def _line_x(px, w: int, y: int, bg) -> int:
-    """x линии потока в строке разреза — медиана «чернильных» пикселей (или центр)."""
-    xs = [x for x in range(w) if sum(abs(px[x, y][i] - bg[i]) for i in range(3)) > 60]
-    return xs[len(xs) // 2] if xs else w // 2
+def clear_png_cache() -> None:
+    _PNG_CACHE.clear()
 
 
-def _add_connectors(pieces, w: int, bg):
-    """Кружок с номером: снизу листа k (после разреза) и сверху листа k+1."""
-    from PIL import ImageDraw, ImageFont
-    d = max(24, int(w * 0.045))            # диаметр кружка ~ высоте строки текста схемы
-    pad = d * 2                            # добавляемое поле (линия + кружок)
-    lw = max(1, d // 12)
-    try:
-        font = ImageFont.truetype("DejaVuSans.ttf", int(d * 0.6))
-    except OSError:
-        font = ImageFont.load_default()
-
-    def circle(draw, cx, cy, n):
-        draw.ellipse((cx - d // 2, cy - d // 2, cx + d // 2, cy + d // 2), outline="black", width=lw, fill=bg)
-        txt = str(n)
-        tw, th = draw.textbbox((0, 0), txt, font=font)[2:]
-        draw.text((cx - tw / 2, cy - th / 2 - d * 0.05), txt, fill="black", font=font)
-
-    out = []
-    for k, (piece, cut_x) in enumerate(pieces):
-        pw, ph = piece.size
-        top_pad = pad if k > 0 else 0
-        bot_pad = pad if cut_x is not None else 0
-        canvas = PILImage.new("RGB", (pw, ph + top_pad + bot_pad), bg)
-        canvas.paste(piece, (0, top_pad))
-        draw = ImageDraw.Draw(canvas)
-        if k > 0:                                  # вход: кружок сверху → линия вниз к схеме
-            x = pieces[k - 1][1]
-            draw.line((x, d, x, top_pad), fill="black", width=lw)
-            circle(draw, x, d // 2 + lw, k)
-        if cut_x is not None:                      # выход: линия вниз → кружок снизу
-            y0 = top_pad + ph
-            draw.line((cut_x, y0, cut_x, y0 + pad - d), fill="black", width=lw)
-            circle(draw, cut_x, y0 + pad - d // 2 - lw, k + 1)
-        out.append((canvas, cut_x))
-    return out
+_DIAGRAM_RE = re.compile(r"<diagram\b")
 
 
-def drawio_to_png(xml: str, page: int | None = None, scale: float = 2.0, timeout: float = 120) -> bytes:
-    """draw.io XML → PNG через drawio CLI (+ xvfb-run, если есть). Ошибка, если CLI нет."""
+def count_pages(xml: str) -> int:
+    """Сколько страниц в mxfile. Генератор схемы (fragmos) сам режет длинный алгоритм
+    на страницы и ставит на разрывах соединители — здесь достаточно их сосчитать."""
+    return max(1, len(_DIAGRAM_RE.findall(xml)))
+
+
+def drawio_to_png(xml: str, page: int | None = None, scale: float = 2.0, timeout: float = 120,
+                  cache: bool = True) -> bytes:
+    """draw.io XML → PNG через drawio CLI (+ xvfb-run, если есть). Ошибка, если CLI нет.
+    page — номер страницы mxfile, считая с 1 (None — первая). CLI при выходе за границу
+    молча отдаёт последнюю страницу, поэтому номер проверяется здесь.
+
+    Запуск стоит ~3 с (Electron под xvfb) и не зависит ни от чего, кроме содержимого,
+    поэтому результат кэшируется по хешу XML: одна и та же схема в двух тегах и повторная
+    сборка того же отчёта больше не платят. cache=False — считать заново."""
+    import hashlib
+    total = count_pages(xml)
+    if page is not None and not 1 <= page <= total:
+        raise ValueError(f"в схеме {total} стр., запрошена {page}")
+    key = (hashlib.sha1(xml.encode("utf-8")).hexdigest(), page, scale)
+    if cache and key in _PNG_CACHE:
+        return _PNG_CACHE[key]
     import os
     import shutil
     import subprocess
@@ -167,4 +108,9 @@ def drawio_to_png(xml: str, page: int | None = None, scale: float = 2.0, timeout
         if not os.path.isfile(out):
             raise ValueError(f"drawio не создал PNG: {(r.stderr or r.stdout).strip()[-300:]}")
         with open(out, "rb") as f:
-            return f.read()
+            png = f.read()
+    if cache:
+        if len(_PNG_CACHE) >= _PNG_CACHE_MAX:
+            del _PNG_CACHE[next(iter(_PNG_CACHE))]
+        _PNG_CACHE[key] = png
+    return png

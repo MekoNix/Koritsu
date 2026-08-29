@@ -8,7 +8,7 @@ builder — sub-package для генерации draw.io flowchart XML.
 """
 
 import os
-import drawpyo
+from ._drawpyo import drawpyo
 
 from .config import DEFAULT_CFG
 from .renderer import Renderer
@@ -50,12 +50,42 @@ def _split_functions(nodes):
     return result if result else [("Схема", nodes)]
 
 
+class _File(drawpyo.File):
+    """drawpyo.File с воспроизводимым заголовком.
+
+    Штатный `modified` — время записи, из-за него одинаковый вход давал
+    разные файлы (ни кэшировать, ни сравнить в тесте). Дата фиксированная:
+    draw.io атрибут не использует, а вывод становится побайтно стабильным.
+    """
+
+    @property
+    def modified(self) -> str:
+        return "1970-01-01T00:00:00"
+
+
+def _stable_ids(f):
+    """Сквозная нумерация id вместо адресов в памяти (`id(obj)` у drawpyo).
+
+    Служебные mxCell 0 и 1, создаваемые Page.__init__, не трогаем. Рёбра
+    ссылаются на объекты, а не на id, поэтому перенумеровать можно перед
+    самой записью."""
+    n = 0
+    for page_num, page in enumerate(f.pages, start=1):
+        page.id = page_num
+        page.diagram._id = f'page{page_num}'     # id вкладки <diagram …>
+        for obj in page.objects:
+            if getattr(obj, '_id', None) in (0, 1):
+                continue
+            n += 1
+            obj._id = f'n{n}'
+
+
 def _write_pages(nodes, cfg, out_path):
     """Рендерит nodes в drawpyo-файл (одна страница на функцию) и сохраняет."""
     if os.path.exists(out_path):
         os.remove(out_path)
 
-    f = drawpyo.File()
+    f = _File()
     f.file_name = os.path.basename(out_path)
     f.file_path = os.path.dirname(os.path.abspath(out_path))
 
@@ -67,6 +97,7 @@ def _write_pages(nodes, cfg, out_path):
         page = drawpyo.Page(file=f, name=page_name or "Схема")
         Renderer(page, cfg).render(func_nodes, cfg['page_center_x'], cfg['page_top_y'])
 
+    _stable_ids(f)
     f.write()
     return out_path
 

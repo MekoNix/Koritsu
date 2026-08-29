@@ -1,4 +1,4 @@
-from hokoku.images import fit, natural_width_cm, split_tall, size_px
+from hokoku.images import count_pages, fit, natural_width_cm, size_px
 
 
 def test_fit_and_natural(png):
@@ -12,20 +12,31 @@ def test_fit_and_natural(png):
     assert h == 2.0 and w == 4.0
 
 
-def test_split_tall_cuts_on_blank_rows(tall_png):
-    pieces = split_tall(tall_png, max_ratio=1.5, connectors=False)
-    assert len(pieces) >= 3
-    heights = [size_px(p)[1] for p in pieces]
-    assert sum(heights) == 2000
-    assert all(h <= 600 for h in heights)
-    assert split_tall(tall_png, max_ratio=10) == [tall_png]
+def test_drawio_png_is_cached_by_content(monkeypatch, png):
+    """Запуск drawio стоит секунды и зависит только от XML — второй раз берём из кэша."""
+    import shutil
+    import subprocess
 
+    from hokoku import images
+    images.clear_png_cache()
+    calls = []
+    monkeypatch.setattr(shutil, "which", lambda name: "/bin/true" if name == "drawio" else None)
 
-def test_split_connectors_add_margins(tall_png):
-    plain = split_tall(tall_png, max_ratio=1.5, connectors=False)
-    with_c = split_tall(tall_png, max_ratio=1.5, connectors=True)
-    assert len(plain) == len(with_c)
-    hp = [size_px(p)[1] for p in plain]
-    hc = [size_px(p)[1] for p in with_c]
-    assert hc[0] > hp[0] and hc[-1] > hp[-1]                     # снизу первого и сверху последнего — кружок
-    assert all(c - p >= 48 for p, c in zip(hp, hc))
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        with open(cmd[cmd.index("-o") + 1], "wb") as f:
+            f.write(png)
+        class R:
+            returncode, stdout, stderr = 0, "", ""
+        return R()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    try:
+        assert images.drawio_to_png("<mxfile>a</mxfile>") == png
+        assert images.drawio_to_png("<mxfile>a</mxfile>") == png
+        assert len(calls) == 1                                  # второй раз drawio не запускался
+        images.drawio_to_png("<mxfile>b</mxfile>")
+        images.drawio_to_png("<mxfile>a</mxfile>", cache=False)
+        assert len(calls) == 3                                  # другой XML и cache=False считаются
+    finally:
+        images.clear_png_cache()

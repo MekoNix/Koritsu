@@ -1,5 +1,5 @@
 """Определение связей между классами по типам полей и методов."""
-from uml_generator.extractor import extract_cs, extract_cpp
+from uml_generator.extractor import extract_cs, extract_cpp, extract_py
 from uml_generator.builder import _detect_relations, _type_refs, _param_types
 
 
@@ -16,6 +16,38 @@ def test_type_refs_nested_generics():
     assert [(r.name, r.many) for r in _type_refs("Task[]", names)] == [("Task", True)]
     assert [(r.name, r.ptr, r.many) for r in _type_refs("Task*", names)] == [("Task", True, False)]
     assert _type_refs("int { get; set; }", names) == []
+
+
+def test_type_refs_square_brackets_are_not_always_arrays():
+    """`Optional[T]` / `Callable[…]` — не коллекция; `list[T]`, `T[]`, `T[10]` — коллекция."""
+    names = {"Product"}
+    assert [(r.name, r.many) for r in _type_refs("Optional[Product]", names)] == [("Product", False)]
+    assert [(r.name, r.many) for r in _type_refs("Callable[[int], Product]", names)] == \
+        [("Product", False)]
+    assert [(r.name, r.many) for r in _type_refs("Product | None", names)] == [("Product", False)]
+    assert [(r.name, r.many) for r in _type_refs("list[Product]", names)] == [("Product", True)]
+    assert [(r.name, r.many) for r in _type_refs("dict[str, Product]", names)] == [("Product", True)]
+    assert [(r.name, r.many) for r in _type_refs("Optional[list[Product]]", names)] == \
+        [("Product", True)]
+    assert [(r.name, r.many) for r in _type_refs("Product[10]", names)] == [("Product", True)]
+    # `int[]` внутри обобщения не делает Product массивом
+    assert [(r.name, r.many) for r in _type_refs("Func<Product, int[]>", names)] == \
+        [("Product", False)]
+
+
+def test_py_optional_field_is_composition_not_aggregation():
+    rels = _rels(extract_py(
+        "class Product:\n"
+        "    pass\n"
+        "class Cart:\n"
+        "    def __init__(self):\n"
+        "        self.item: Optional[Product] = None\n"
+        "class Shelf:\n"
+        "    def __init__(self):\n"
+        "        self.rows: list[Product] = []\n"
+    ))
+    assert rels[("Cart", "Product")] == ("composition", "")
+    assert rels[("Shelf", "Product")] == ("aggregation", "0..*")
 
 
 def test_param_types():

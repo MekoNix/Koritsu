@@ -8,7 +8,8 @@ render — подстановка значений в шаблон.
      вырезается, блоки вставляются абзацами после абзаца с тегом;
      если абзац после вырезания опустел — он удаляется;
   3. тег без значения — вырезается, ключ попадает в RenderResult.unfilled.
-Ошибка в значении (битая картинка, нет файла) — HokokuError, рендер прерывается.
+Ошибка в значении (битая картинка, нет файла) — HokokuError и рендер прерывается;
+с on_error="skip" тег пропускается, беда пишется в RenderResult.errors, остальное собирается.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ import copy
 import io
 import os
 import re
+import subprocess
 import unicodedata
 
 from docx.oxml import OxmlElement
@@ -23,44 +25,51 @@ from docx.oxml.ns import qn
 
 from . import docx_ops as ops
 from . import markdown as md
-from .images import drawio_to_png, fit, natural_width_cm, split_tall, to_raster
+from .images import count_pages, drawio_to_png, fit, natural_width_cm, to_raster
 from .model import (Blocks, Code, Diagram, Formula, Image, Markdown, PageBreak, RenderResult, Table, Toc,
                     HokokuError, Text)
 from .styles import get_style
 from .safety import DocxValidationError, safe_join
 from .tags import find_tags, norm_key
-from .walker import ParaLoc, iter_paragraphs, open_document
+from .walker import ParaLoc, iter_paragraphs, marked_paragraphs, open_document
 
 DXA_PER_CM = 567
 
 
 class _Ctx:
     def __init__(self, doc, result: RenderResult, style: dict, images_dir: str | None,
-                 strict_paths: bool):
+                 strict_paths: bool, on_error: str = "raise"):
         self.doc = doc
         self.result = result
         self.style = style
         self.numbering = ops.Numbering(doc)
         self.images_dir = images_dir
         self.strict_paths = strict_paths
+        self.on_error = on_error
         self.page_w = ops.page_text_width_cm(doc)
         self.page_h = ops.page_text_height_cm(doc)
         self.ref_fields: list = []          # (w:t, имя) — кэш номеров ставим в конце
         self.current_key: str | None = None
+        self.used_keys: set = set()         # какие значения нашли свой тег
 
 
 def render(template, values: dict, output=None, *,
            images_dir: str | None = None, style: dict | None = None,
            strict_paths: bool = False, figure_caption: str | None = None,
-           table_caption: str | None = None) -> RenderResult:
+           table_caption: str | None = None, on_error: str = "raise") -> RenderResult:
     """
     template  — путь / bytes / Document (переданный Document не меняется — рендерится копия);
     values    — {ключ: str | int | float | bool | Text | Markdown | Code | Image | Table | Blocks};
+                значения без тега в шаблоне возвращаются в RenderResult.unknown_keys;
     output    — путь, file-like или None (тогда результат — RenderResult.data, bytes).
     images_dir — каталог файлов для `![…](имя)` в Markdown (пути наружу запрещены);
     strict_paths=True — и `Image(source=путь)` обязан лежать внутри images_dir.
     style — перегрузки styles.yaml, например {"captions": {"figure": "Рисунок {n} – {caption}"}}.
+    on_error — "raise" (по умолчанию: первая же битая картинка прерывает рендер) или "skip"
+    (собрать что можно; каждая беда — записью {key, message} в RenderResult.errors).
     """
+    if on_error not in ("raise", "skip"):
+        raise ValueError('on_error: "raise" или "skip"')
     st = get_style(style)
     if figure_caption:
         st["captions"]["figure"] = figure_caption
@@ -73,16 +82,24 @@ def render(template, values: dict, output=None, *,
     doc = open_document(template)
     values = {norm_key(str(k)): v for k, v in values.items()}
     result = RenderResult(output=output if isinstance(output, str) else None)
-    ctx = _Ctx(doc, result, st, images_dir, strict_paths)
+    ctx = _Ctx(doc, result, st, images_dir, strict_paths, on_error)
+    hot = marked_paragraphs(doc)
     for loc in iter_paragraphs(doc):
+        if loc.paragraph._p not in hot:
+            continue
         _process_paragraph(ctx, loc, values)
+        _process_static_refs(ctx, loc)
     result.unfilled = sorted(set(result.unfilled))
+    # значение, для которого в шаблоне нет тега: опечатка в ключе (в том числе у модели)
+    # раньше просто исчезала — ни в unfilled (там только объявленные теги), ни в errors
+    result.unknown_keys = sorted(set(values) - ctx.used_keys)
     if st["captions"]["fields"] and (result.figures or result.tables or result.formulas):
         ops.set_update_fields(doc)
     for t_elem, name in ctx.ref_fields:                    # кэш номеров для REF-полей
-        n = result.refs.get(name[len("_Ref_"):] if name.startswith("_Ref_") else name)
-        if n is None:
-            result.unresolved_refs.append(name)
+        plain = name[len("_Ref_"):] if name.startswith("_Ref_") else name
+        n = result.refs.get(plain)
+        if n is None and plain not in result.unresolved_refs:
+            result.unresolved_refs.append(plain)           # имя как в тексте, без «_Ref_»
         t_elem.text = str(n) if n is not None else "?"
     if output is None:
         buf = io.BytesIO()
@@ -98,6 +115,42 @@ def render(template, values: dict, output=None, *,
 
 # ── абзац с тегами ────────────────────────────────────────────────────────────
 
+def _span_map(runs) -> list:
+    """Карта «позиция в склеенном тексте абзаца → run»."""
+    spans, pos = [], 0
+    for r in runs:
+        t = r.text or ""
+        spans.append((pos, pos + len(t), r))
+        pos += len(t)
+    return spans
+
+
+REF_TEXT_RE = re.compile(r"\{ref:([^\s{}]+)\}")
+
+
+def _process_static_refs(ctx: _Ctx, loc: ParaLoc):
+    """`{ref:имя}`, написанная в самом шаблоне (не пришедшая со значением), — тоже поле REF.
+    Раньше такая ссылка оставалась в документе текстом и не попадала в unresolved_refs."""
+    para = loc.paragraph
+    if para._p.getparent() is None:                    # абзац удалён при подстановке
+        return
+    text = loc.text()
+    if "{ref:" not in text:
+        return
+    runs = loc.runs()
+    spans = _span_map(runs)
+    for m in reversed(list(REF_TEXT_RE.finditer(text))):
+        rpr = None
+        for s, e, r in spans:
+            if s <= m.start() < e:
+                found = r._r.find(qn("w:rPr"))
+                rpr = copy.deepcopy(found) if found is not None else None
+                break
+        _inline_replace(spans, m.start(), m.end(), "")
+        _inline_insert_spans(ctx, para, spans, m.start(), md.parse_inline(m.group(0)), rpr)
+        spans = _span_map(runs)
+
+
 def _process_paragraph(ctx: _Ctx, loc: ParaLoc, values: dict):
     para = loc.paragraph
     text = loc.text()
@@ -108,12 +161,7 @@ def _process_paragraph(ctx: _Ctx, loc: ParaLoc, values: dict):
         return
 
     runs = loc.runs()
-    spans = []
-    pos = 0
-    for r in runs:
-        t = r.text or ""
-        spans.append((pos, pos + len(t), r))
-        pos += len(t)
+    spans = _span_map(runs)
 
     def run_at(i: int):
         for s, e, r in spans:
@@ -130,6 +178,8 @@ def _process_paragraph(ctx: _Ctx, loc: ParaLoc, values: dict):
     for m in reversed(matches):
         key = norm_key(m.group("key"))
         v = values.get(key)
+        if key in values:
+            ctx.used_keys.add(key)
         if isinstance(v, bool):
             v = "да" if v else "нет"
         elif isinstance(v, (int, float)):
@@ -156,7 +206,7 @@ def _process_paragraph(ctx: _Ctx, loc: ParaLoc, values: dict):
             if other_text:
                 inline_spans, v = _split_leading_paragraph(ctx, v)
             if v is not None:
-                blocks.insert(0, v)
+                blocks.insert(0, (key, v))
         end = m.end()
         if replacement == "" and v is not None and not inline_spans:
             # блочное значение вырезано из строки: одинокий знак препинания сразу за ним
@@ -167,20 +217,23 @@ def _process_paragraph(ctx: _Ctx, loc: ParaLoc, values: dict):
         _inline_replace(spans, m.start(), end, replacement)
         if inline_spans:
             _inline_insert_spans(ctx, para, spans, m.start(), inline_spans, base_rpr)
-        # пересчитать карту после замены
-        spans, pos = [], 0
-        for r in runs:
-            t = r.text or ""
-            spans.append((pos, pos + len(t), r))
-            pos += len(t)
+        spans = _span_map(runs)                       # карта после замены
 
     if not blocks:
         return
     p_elem = para._p
     ppr = p_elem.find(qn("w:pPr"))
     ref = p_elem
-    for v in blocks:
-        ref = _emit_value(ctx, v, ref, para, ppr, base_rpr, loc)
+    for key, v in blocks:
+        ctx.current_key = key
+        try:
+            ref = _emit_value(ctx, v, ref, para, ppr, base_rpr, loc)
+        except Exception as e:                      # noqa: BLE001 — skip обязан собрать остальное
+            if ctx.on_error != "skip" or isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
+            ctx.result.errors.append({"key": key, "message": f"{type(e).__name__}: {e}"
+                                      if not isinstance(e, HokokuError) else str(e)})
+    vals = [v for _, v in blocks]
     if not _has_content(p_elem):
         parent = p_elem.getparent()
         siblings = [c for c in parent if c.tag == qn("w:p")]
@@ -189,9 +242,9 @@ def _process_paragraph(ctx: _Ctx, loc: ParaLoc, values: dict):
             parent.remove(p_elem)
             # «Блок-схема алгоритма:» перед картинкой — прилипает к ней
             if ctx.style["image"]["keep_intro"] and prev is not None and prev.tag == qn("w:p") \
-                    and _starts_with_picture(blocks) and _para_text(prev).rstrip().endswith(":"):
+                    and _starts_with_picture(vals) and _para_text(prev).rstrip().endswith(":"):
                 ops.keep_with_next(prev)
-    elif _starts_with_picture(blocks):
+    elif _starts_with_picture(vals):
         ops.keep_with_next(p_elem)
 
 
@@ -329,15 +382,17 @@ def _emit_value(ctx: _Ctx, v, ref, para, ppr, base_rpr, loc: ParaLoc):
     if isinstance(v, Image):
         return _emit_image(ctx, v, ref, para, ppr, loc)
     if isinstance(v, Diagram):
+        pages = [v.page] if v.page is not None else list(range(1, count_pages(v.xml) + 1))
         try:
-            pngs = [drawio_to_png(v.xml, v.page)] if v.page is not None else [drawio_to_png(v.xml)]
+            sheets = [drawio_to_png(v.xml, p) for p in pages]
+        except subprocess.TimeoutExpired:
+            raise HokokuError("drawio не уложился в таймаут")
         except (ValueError, OSError) as e:
             raise HokokuError(str(e))
-        for png in pngs:
-            ref = _emit_image(ctx, Image(png, caption=v.caption, width_cm=v.width_cm,
-                                         split_pages=v.split_pages, align=v.align, ref=v.ref),
-                              ref, para, ppr, loc)
-        return ref
+        # все страницы mxfile — листы одного рисунка: «Рисунок N (лист k из m)»
+        return _emit_image(ctx, Image(sheets[0], caption=v.caption, width_cm=v.width_cm,
+                                      align=v.align, ref=v.ref),
+                           ref, para, ppr, loc, sheets=sheets)
     if isinstance(v, Table):
         rows = [[md.parse_inline(str(c)) for c in row] for row in v.rows]
         return _emit_table(ctx, rows, v.header, v.caption, v.align, ref, para, ppr, base_rpr, loc,
@@ -350,21 +405,34 @@ def _emit_value(ctx: _Ctx, v, ref, para, ppr, base_rpr, loc: ParaLoc):
         return ops.add_toc(ctx.doc, ref, v.levels, v.title, ppr)
     if isinstance(v, Blocks):
         for item in v.items:
-            ref = _emit_value(ctx, item, ref, para, ppr, base_rpr, loc)
+            try:
+                ref = _emit_value(ctx, item, ref, para, ppr, base_rpr, loc)
+            except HokokuError as e:
+                if ctx.on_error != "skip":
+                    raise
+                # хвост Blocks не должен пропадать из-за одного битого элемента
+                ctx.result.errors.append({"key": ctx.current_key, "message": str(e)})
         return ref
     raise HokokuError(f"неподдерживаемый тип значения: {type(v).__name__}")
 
 
-def _add_spans(ctx, p, spans, base_rpr, part, **extra):
-    """add_spans + регистрация REF-полей для подстановки кэша номеров в конце."""
-    ops.add_spans(ctx.doc, p, spans, base_rpr, part, **extra)
-    for f in p.findall(qn("w:fldSimple")):
+def _register_ref_fields(ctx: _Ctx, elem):
+    """Найти в поддереве поля REF и запомнить их: кэш номеров ставится в конце рендера,
+    когда все номера известны. Ячейки таблицы-значения идут мимо _add_spans (их пишет
+    ops.add_table напрямую), поэтому обход именно по поддереву, а не по абзацу."""
+    for f in elem.iter(qn("w:fldSimple")):
         instr = f.get(qn("w:instr")) or ""
         if instr.strip().startswith("REF "):
             name = instr.split()[1]
             t = f.find(".//" + qn("w:t"))
             if t is not None and (t, name) not in ctx.ref_fields:
                 ctx.ref_fields.append((t, name))
+
+
+def _add_spans(ctx, p, spans, base_rpr, part, **extra):
+    """add_spans + регистрация REF-полей для подстановки кэша номеров в конце."""
+    ops.add_spans(ctx.doc, p, spans, base_rpr, part, **extra)
+    _register_ref_fields(ctx, p)
 
 
 def _emit_markdown(ctx, blocks, ref, para, ppr, base_rpr, loc, images_dir):
@@ -384,7 +452,7 @@ def _emit_markdown(ctx, blocks, ref, para, ppr, base_rpr, loc, images_dir):
                     extra["size_pt"] = ctx.style["headings"].get(int(b.kind[1]), extra["size_pt"])
                 _add_spans(ctx, p, b.spans, base_rpr if not extra else None, part, **extra)
             elif b.kind == "quote":
-                ops.style_quote(doc, p)
+                ops.style_quote(doc, p, b.level)
                 _add_spans(ctx, p, b.spans, base_rpr, part, italic=True)
             elif b.kind in ("ul", "ol"):
                 cur = lists.get(b.level)
@@ -461,31 +529,73 @@ def _resolve_image(src: str, images_dir: str | None) -> str:
         raise HokokuError(str(e))
 
 
+def _numbered(caption, loc: ParaLoc) -> bool:
+    """Нумеровать и подписывать? `caption=False` — картинка/таблица без подписи (логотип,
+    декоративная врезка); в колонтитулах не нумеруем никогда — иначе логотип в шапке
+    становится «Рисунок 1» и сдвигает нумерацию всего отчёта."""
+    return caption is not False and loc.where not in ("header", "footer")
+
+
+def _grid_span(tc) -> int:
+    gs = tc.find(qn("w:tcPr") + "/" + qn("w:gridSpan"))
+    try:
+        return max(1, int(gs.get(qn("w:val"))))
+    except (AttributeError, TypeError, ValueError):
+        return 1
+
+
+def _grid_width_cm(tc) -> float:
+    """Ширина ячейки по w:tblGrid — столбцы, которые она занимает (с учётом w:gridSpan)."""
+    tr = tc.getparent()
+    tbl = tr.getparent() if tr is not None else None
+    grid = tbl.find(qn("w:tblGrid")) if tbl is not None else None
+    if grid is None:
+        return 0.0
+    cells = tr.findall(qn("w:tc"))
+    if tc not in cells:
+        return 0.0
+    start = sum(_grid_span(c) for c in cells[:cells.index(tc)])
+    total = 0
+    for gc in grid.findall(qn("w:gridCol"))[start:start + _grid_span(tc)]:
+        try:
+            total += int(gc.get(qn("w:w")))
+        except (TypeError, ValueError):
+            return 0.0
+    return total / DXA_PER_CM
+
+
 def _cell_width_cm(loc: ParaLoc, ctx: _Ctx) -> float:
     tc = loc.paragraph._p.getparent()
     while tc is not None and tc.tag != qn("w:tc"):
         tc = tc.getparent()
-    if tc is not None:
-        tcw = tc.find(qn("w:tcPr") + "/" + qn("w:tcW"))
-        if tcw is not None and tcw.get(qn("w:type"), "dxa") == "dxa":
-            try:
-                return max(2.0, int(tcw.get(qn("w:w"))) / DXA_PER_CM - 0.5)
-            except (TypeError, ValueError):
-                pass
-    return ctx.page_w / 2
+    if tc is None:
+        return ctx.page_w / 2
+    tcw = tc.find(qn("w:tcPr") + "/" + qn("w:tcW"))
+    if tcw is not None and tcw.get(qn("w:type"), "dxa") == "dxa":
+        try:
+            return max(2.0, int(tcw.get(qn("w:w"))) / DXA_PER_CM - 0.5)
+        except (TypeError, ValueError):
+            pass
+    # ячейка без w:tcW (типовой титульник из Word): ширина — из сетки таблицы,
+    # а если и сетки нет — полоса набора, делённая на число ячеек строки
+    w = _grid_width_cm(tc)
+    if not w:
+        w = ctx.page_w / max(1, len(tc.getparent().findall(qn("w:tc"))))
+    return max(2.0, w - 0.5)
 
 
-def _emit_image(ctx: _Ctx, img: Image, ref, para, ppr, loc: ParaLoc):
+def _emit_image(ctx: _Ctx, img: Image, ref, para, ppr, loc: ParaLoc, sheets: list | None = None):
+    """sheets — готовые листы одного рисунка (страницы схемы); иначе картинка одна."""
     if ctx.strict_paths and isinstance(img.source, str):
         if not ctx.images_dir:
             raise HokokuError("strict_paths: не задан images_dir")
         try:
             img = Image(safe_join(ctx.images_dir, img.source), img.caption, img.width_cm,
-                        img.split_pages, img.align, img.ref)
+                        img.align, img.ref)
         except DocxValidationError as e:
             raise HokokuError(str(e))
     try:
-        data = to_raster(img.read())
+        pieces = [to_raster(s) for s in sheets] if sheets else [to_raster(img.read())]
     except ValueError as e:
         raise HokokuError(str(e))
     ist = ctx.style["image"]
@@ -496,28 +606,34 @@ def _emit_image(ctx: _Ctx, img: Image, ref, para, ppr, loc: ParaLoc):
     if want_w is None and ist["default_width"] != "natural":
         want_w = float(ist["default_width"])
     try:
-        if img.split_pages:
-            w_cm, _ = fit(data, max_w, 10 ** 6, want_w)               # ширина вставки без ограничения высоты
-            # лист — доля страницы: запас под заголовок раздела, подпись и соединители
-            pieces = split_tall(data, ctx.page_h * float(ist["sheet_fraction"]) / w_cm,
-                                connectors=bool(ist["connectors"]))
-        else:
-            pieces = [data]
         sizes = [fit(p, max_w, max_h, want_w) for p in pieces]
     except Exception as e:
         raise HokokuError(f"картинка не читается: {e}")
+    def put(piece, w, h, at):
+        try:
+            return ops.add_picture(ctx.doc, at, para._parent, piece, w, h, img.align)
+        except HokokuError:
+            raise
+        except Exception as e:                      # python-docx не знает формат (WEBP и т.п.)
+            raise HokokuError(f"картинка не вставлена: {type(e).__name__}: {e}")
+
+    if not _numbered(img.caption, loc):
+        for piece, (w, h) in zip(pieces, sizes):
+            ref = put(piece, w, h, ref)
+        return ref
     ctx.result.figures += 1
     n = ctx.result.figures
     name = img.ref or ctx.current_key
     if name:
         ctx.result.refs[name] = n
     for i, (piece, (w, h)) in enumerate(zip(pieces, sizes)):
-        ref = ops.add_picture(ctx.doc, ref, para._parent, piece, w, h, img.align)
+        ref = put(piece, w, h, ref)
         suffix = cap["sheet"].format(k=i + 1, total=len(pieces)) if len(pieces) > 1 else ""
         ref = ops.add_caption(ctx.doc, ref, cap["figure"], n, img.caption, align=img.align,
                               seq_name=cap["seq_figure"] if cap["fields"] else None,
                               bookmark=(f"_Ref_{name}" if name and i == 0 else None),
                               suffix=suffix, repeat=(i > 0))
+        _register_ref_fields(ctx, ref)        # «ср. {ref:схема}» в самой подписи
     return ref
 
 
@@ -525,20 +641,26 @@ def _emit_table(ctx: _Ctx, rows, header, caption, align, ref, para, ppr, base_rp
                 col_widths_cm=None, ref_name=None):
     if not rows:
         return ref
-    ctx.result.tables += 1
-    n = ctx.result.tables
     cap = ctx.style["captions"]
-    name = ref_name or ctx.current_key
-    if name:
-        ctx.result.refs[name] = n
-    ref = ops.add_caption(ctx.doc, ref, cap["table"], n, caption, align=cap["table_align"],
-                          seq_name=cap["seq_table"] if cap["fields"] else None,
-                          bookmark=(f"_Ref_{name}" if name else None))
-    ops.keep_with_next(ref)
-    max_w = _cell_width_cm(loc, ctx) if loc.in_table else ctx.page_w
+    if _numbered(caption, loc):
+        ctx.result.tables += 1
+        n = ctx.result.tables
+        name = ref_name or ctx.current_key
+        if name:
+            ctx.result.refs[name] = n
+        ref = ops.add_caption(ctx.doc, ref, cap["table"], n, caption, align=cap["table_align"],
+                              seq_name=cap["seq_table"] if cap["fields"] else None,
+                              bookmark=(f"_Ref_{name}" if name else None))
+        _register_ref_fields(ctx, ref)        # «см. {ref:рис}» в самой подписи
+        ops.keep_with_next(ref)
+    # тег в пункте списка: таблица встаёт под своим пунктом, а не у левого поля
+    indent = ops.left_indent_dxa(ctx.doc, para._p)
+    max_w = max(2.0, (_cell_width_cm(loc, ctx) if loc.in_table else ctx.page_w) - indent / DXA_PER_CM)
     ts = ctx.style["table"]
     tbl = ops.add_table(ctx.doc, ref, rows, header, para.part, align, base_rpr, col_widths_cm, max_w,
-                        header_fill=ts["header_fill"], header_center=bool(ts["header_center"]))
+                        header_fill=ts["header_fill"], header_center=bool(ts["header_center"]),
+                        min_col_cm=float(ts["min_col_cm"]), indent_dxa=indent)
+    _register_ref_fields(ctx, tbl)          # «см. {ref:рис}» в ячейке значения-таблицы
     # пустой абзац после таблицы, иначе Word склеивает соседние таблицы
     p = ops.new_paragraph_after(tbl, None)
     ops.set_spacing(p, before=0, after=0)

@@ -35,10 +35,13 @@ def find_tags(text: str) -> list[re.Match]:
 
 def extract_tags(template) -> list[Tag]:
     """Все теги документа в порядке появления, без повторов (первое место — в `where`)."""
-    from .walker import iter_paragraphs, open_document
+    from .walker import iter_paragraphs, marked_paragraphs, open_document
     doc = open_document(template)
     seen: dict[str, Tag] = {}
+    hot = marked_paragraphs(doc, ("{{",))
     for loc in iter_paragraphs(doc):
+        if loc.paragraph._p not in hot:
+            continue
         text = loc.text()
         if "{{" not in text:
             continue

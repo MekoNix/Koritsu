@@ -21,10 +21,13 @@ def docx_to_pdf(docx_path: str, pdf_path: str, timeout: float = 90.0) -> str:
     os.makedirs(os.path.dirname(os.path.abspath(pdf_path)), exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="hokoku_pdf_") as tmp:
         profile = pathlib.Path(tmp, "profile").as_uri()
-        r = subprocess.run(
-            [exe, f"-env:UserInstallation={profile}", "--headless", "--norestore",
-             "--nofirststartwizard", "--convert-to", "pdf", "--outdir", tmp, docx_path],
-            capture_output=True, text=True, timeout=timeout)
+        try:
+            r = subprocess.run(
+                [exe, f"-env:UserInstallation={profile}", "--headless", "--norestore",
+                 "--nofirststartwizard", "--convert-to", "pdf", "--outdir", tmp, docx_path],
+                capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise HokokuError(f"LibreOffice не уложился в {timeout:g} с")
         produced = os.path.join(tmp, os.path.splitext(os.path.basename(docx_path))[0] + ".pdf")
         if r.returncode != 0 or not os.path.isfile(produced):
             raise HokokuError(f"LibreOffice не создал PDF: {(r.stderr or r.stdout).strip()[-400:]}")

@@ -69,7 +69,8 @@ def test_value_type_in_every_place(template, tmp_path, png, vname):
     if vname == "Text_nl":
         assert full.count("строка 1") == len(PLACES) and full.count("строка 2") == len(PLACES)
     if vname == "Image":
-        assert _blips(d) == len(PLACES) and res.figures == len(PLACES)
+        # картинка вставляется везде, но в колонтитулах не нумеруется (логотип — не «Рисунок N»)
+        assert _blips(d) == len(PLACES) and res.figures == len(PLACES) - 2
     if vname in ("Table", "Markdown"):
         assert len(list(d.element.body.iter(qn("w:tbl")))) >= 2 + 4     # исходные 2 + в body/text/cell/list
         assert full.count("1") >= len(PLACES)

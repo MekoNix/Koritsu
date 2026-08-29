@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from itertools import groupby
 
 
 @dataclass
@@ -27,7 +28,7 @@ class Span:
 class Para:
     spans: list[Span]
     kind:  str = "p"        # p | h1..h6 | quote | ul | ol
-    level: int = 0          # вложенность списка
+    level: int = 0          # вложенность списка или цитаты («> >» — 1)
     ordered_start: int = 1
 
 
@@ -253,14 +254,18 @@ def parse(text: str) -> list[Block]:
         m = _QUOTE_RE.match(line)
         if m:
             flush()
-            q = [m.group(1)]
-            i += 1
+            q = []                                  # (глубина, строка)
             while i < len(lines) and _QUOTE_RE.match(lines[i]):
-                q.append(_QUOTE_RE.match(lines[i]).group(1))
+                rest, depth = _QUOTE_RE.match(lines[i]).group(1), 1
+                while (mm := _QUOTE_RE.match(rest)) is not None:   # вложенные «> >»
+                    rest, depth = mm.group(1), depth + 1
+                q.append((depth, rest.strip()))
                 i += 1
-            # вложенные «> >» — снимаем лишние маркеры, глубина не отражается
-            q = [re.sub(r"^(\s*>\s?)+", "", x) for x in q]
-            blocks.append(Para(parse_inline(" ".join(x.strip() for x in q if x.strip())), kind="quote"))
+            # строки одной глубины подряд — один абзац; смена глубины начинает новый
+            for depth, group in groupby(q, key=lambda x: x[0]):
+                text = " ".join(x for _, x in group if x)
+                if text:
+                    blocks.append(Para(parse_inline(text), kind="quote", level=depth - 1))
             continue
         m_ul, m_ol = _UL_RE.match(line), _OL_RE.match(line)
         if m_ul or m_ol:

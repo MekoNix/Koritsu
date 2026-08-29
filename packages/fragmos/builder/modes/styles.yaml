@@ -14,8 +14,9 @@
 #                доступны {var} (первое слово условия) и {cond}
 #   labels     — подписи Начало/Конец: {name} — имя функции,
 #                {signature} — полная сигнатура; yes/no — подписи выходов
-#                «решения» (п.4.3.1.2 ГОСТ 19.701-90); return — блок перед
-#                терминатором для `return X` ({value} — возвращаемое выражение)
+#                «решения» (п.4.3.1.2 ГОСТ 19.701-90), else — подпись ветки
+#                default у switch; return — блок перед терминатором для
+#                `return X` ({value} — возвращаемое выражение)
 #
 # Правило:
 #   match:   регулярное выражение (Python re, DOTALL). Пиши в одинарных
@@ -43,8 +44,9 @@ styles:
       stop_main:  "Конец"
       start_func: "{signature}"
       stop_func:  "конец {name}"
-      yes: "Да"
-      no:  "Нет"
+      "yes": "Да"          # в кавычках: без них YAML читает ключ как True
+      "no":  "Нет"
+      else:  "иначе"
       return: "return {value}"
       return_void: "return"
       break: "break"
@@ -74,8 +76,9 @@ styles:
       stop_main:  "Конец"
       start_func: "{signature}"
       stop_func:  "конец {name}"
-      yes: "Да"
-      no:  "Нет"
+      "yes": "Да"          # в кавычках: без них YAML читает ключ как True
+      "no":  "Нет"
+      else:  "иначе"
       return: "Вернуть {value}"
       return_void: "Возврат"
       break: "Выход из цикла"
@@ -117,8 +120,9 @@ styles:
       stop_main:  "Конец"
       start_func: "Начало {name}"
       stop_func:  "Конец {name}"
-      yes: "Да"
-      no:  "Нет"
+      "yes": "Да"          # в кавычках: без них YAML читает ключ как True
+      "no":  "Нет"
+      else:  "иначе"
       return: "{value}"
       return_void: "Возврат"
       break: "Выход из цикла"

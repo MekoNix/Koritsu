@@ -27,6 +27,10 @@ _COLLECTIONS = {
     "Dictionary", "IDictionary", "SortedDictionary", "SortedList", "IReadOnlyDictionary",
     "vector", "list", "deque", "array", "set", "map", "multiset", "multimap",
     "unordered_set", "unordered_map", "forward_list", "span", "initializer_list",
+    # python / typing: обобщения пишутся квадратными скобками — list[T], dict[str, T]
+    "dict", "tuple", "frozenset", "defaultdict", "deque", "Tuple", "Set", "FrozenSet",
+    "DefaultDict", "Deque", "Sequence", "MutableSequence", "Mapping", "MutableMapping",
+    "Iterable", "Iterator", "Collection",
 }
 _SHARED_PTRS = {"shared_ptr", "weak_ptr"}
 _OWNING_PTRS = {"unique_ptr"}
@@ -46,25 +50,35 @@ class TypeRef:
 def _type_refs(type_str: str, names: set[str]) -> list[TypeRef]:
     """
     Все известные классы, упомянутые в типе, с учётом обёрток:
-      `List<Task>`, `Task[]`            → many
-      `Task*`, `Task&`, `shared_ptr<Task>` → ptr (агрегация)
-      `Task`, `unique_ptr<Task>`        → по значению (композиция)
+      `List<Task>`, `Task[]`, `list[Task]`  → many
+      `Task*`, `Task&`, `shared_ptr<Task>`  → ptr (агрегация)
+      `Task`, `unique_ptr<Task>`, `Optional[Task]` → по значению (композиция)
+
+    Квадратная скобка неоднозначна: `Task[]`/`Task[10]` — массив (many),
+    а `Optional[Task]`/`Callable[[int], Task]` — обобщение по-питоновски,
+    и many зависит только от имени обёртки (`list`, `dict`, … из _COLLECTIONS).
     """
     s = _re.sub(r'\{.*\}', '', type_str)          # { get; set; }
-    tokens = _re.findall(r'[A-Za-z_]\w*|<|>|\[\]|[*&]', s)
+    tokens = _re.findall(r'[A-Za-z_]\w*|\d+|<|>|\[|\]|[*&]', s)
     refs: list[TypeRef] = []
     stack: list[str] = []                           # обёртки generic'ов
     prev = ""
-    has_array = "[" in s
     for i, tok in enumerate(tokens):
+        nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
         if tok == "<":
             stack.append(prev)
-        elif tok == ">":
+        elif tok == "[":
+            if nxt == "]" or nxt.isdigit():          # массив: Task[] / Task[10]
+                if refs and (prev in names or prev in ("*", "&", ">")):
+                    refs[-1].many = True
+                stack.append("[]")
+            else:                                    # обобщение: Optional[Task]
+                stack.append(prev)
+        elif tok in (">", "]"):
             if stack:
                 stack.pop()
         elif tok in names:
-            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
-            many = has_array or any(w.split("::")[-1] in _COLLECTIONS for w in stack)
+            many = any(w.split("::")[-1] in _COLLECTIONS for w in stack)
             ptr = nxt in ("*", "&") or any(w in _SHARED_PTRS for w in stack)
             owned = not ptr and not any(w in _SHARED_PTRS for w in stack)
             refs.append(TypeRef(tok, many=many, ptr=ptr, owned=owned))
@@ -110,14 +124,14 @@ def _field_text(fld: FieldInfo) -> str:
 
 
 def _method_text(mth: MethodInfo) -> str:
+    """`+ name() const: const std::string&` — const у сигнатуры, не у типа возврата."""
     sym = _ACCESS.get(mth.access, "#")
-    if mth.is_constructor or mth.is_destructor or not mth.return_type:
-        base = f"{sym} {mth.name}{mth.params}"
-    else:
-        base = f"{sym} {mth.name}{mth.params}: {mth.return_type}"
+    sig = f"{sym} {mth.name}{mth.params}"
     if mth.is_const:
-        base += " const"
-    return base
+        sig += " const"
+    if mth.is_constructor or mth.is_destructor or not mth.return_type:
+        return sig
+    return f"{sig}: {mth.return_type}"
 
 
 def _member_rows(cls: ClassInfo) -> tuple[list[tuple[str, bool, bool]], list[tuple[str, bool, bool]]]:
@@ -236,14 +250,29 @@ class Layout:
     col_corridors: list[int]       = dc_field(default_factory=list)
 
 
-def _levels(classes: list[ClassInfo], relations: list[Relation]) -> dict[str, int]:
+def _keys(classes: list[ClassInfo]) -> list[str]:
+    """
+    Ключ раскладки для каждого класса. Обычно это имя, но одноимённые классы
+    (разные namespace) затирали бы друг друга, поэтому второму и далее ключ
+    получает суффикс. Первый сохраняет чистое имя — связи ищутся по именам
+    и продолжают попадать в него.
+    """
+    seen: dict[str, int] = {}
+    out: list[str] = []
+    for c in classes:
+        n = seen.get(c.name, 0) + 1
+        seen[c.name] = n
+        out.append(c.name if n == 1 else f"{c.name}#{n}")
+    return out
+
+
+def _levels(names: list[str], relations: list[Relation]) -> dict[str, int]:
     """
     Уровень (ряд) каждого класса.
       1. По наследованию/реализации: родитель выше потомка (длиннейший путь от корня).
       2. Классы вне иерархии опускаются под те, на кого ссылаются (поля, параметры,
          внешний тип) — «использующий» ниже «используемого».
     """
-    names = [c.name for c in classes]
     parents: dict[str, list[str]] = {n: [] for n in names}
     children: dict[str, list[str]] = {n: [] for n in names}
     refs: dict[str, list[str]] = {n: [] for n in names}
@@ -294,11 +323,10 @@ def _order_level(level_nodes: list[str], prev_x: dict[str, float],
     return sorted(level_nodes, key=key)
 
 
-def _layout(classes: list[ClassInfo], relations: list[Relation],
+def _layout(names: list[str], relations: list[Relation],
             widths: dict[str, int], heights: dict[str, int], cfg: dict) -> Layout:
-    names = [c.name for c in classes]
     index = {n: i for i, n in enumerate(names)}
-    level = _levels(classes, relations)
+    level = _levels(names, relations)
     h_gap, v_gap = cfg["h_gap"], cfg["v_gap"]
 
     # ряды: уровень → упорядоченный список, при переполнении по ширине — новые ряды
@@ -515,16 +543,17 @@ def build_xml(classes: list[ClassInfo], theme: str = "dark",
     cfg = get_layout(cfg_overrides)
     pal = get_theme(theme)
 
-    widths  = {c.name: _class_width(c, cfg)  for c in classes}
-    heights = {c.name: _class_height(c, cfg) for c in classes}
+    keys = _keys(classes)
+    widths  = {k: _class_width(c, cfg)  for k, c in zip(keys, classes)}
+    heights = {k: _class_height(c, cfg) for k, c in zip(keys, classes)}
     relations = _detect_relations(classes)
-    lay = _layout(classes, relations, widths, heights, cfg)
+    lay = _layout(keys, relations, widths, heights, cfg)
     merged, singles = _hier_groups(relations, lay)
 
     cells: list[str] = []
-    ids = {c.name: f"c{i}" for i, c in enumerate(classes)}
-    for cls in classes:
-        cells.extend(_class_cells(cls, ids[cls.name], lay.rects[cls.name], pal, cfg))
+    ids = {k: f"c{i}" for i, k in enumerate(keys)}
+    for k, cls in zip(keys, classes):
+        cells.extend(_class_cells(cls, ids[k], lay.rects[k], pal, cfg))
 
     edge_color = pal["edge"]
     m = cfg["route_margin"]
@@ -547,6 +576,10 @@ def build_xml(classes: list[ClassInfo], theme: str = "dark",
         used_y.setdefault(prow, []).append((span[0], span[1], jy))
         junction_pos[(parent, kind)] = (jx, jy)
         reserved.setdefault((parent, "bottom"), []).append(jx)
+        # ветка к junction выходит из середины верха потомка; при множественном
+        # наследовании остальные рёбра того же потомка должны обойти эту точку
+        for kid in kids:
+            reserved.setdefault((kid, "top"), []).append(jx)
 
         jid = f"j{gi}"
         cells.append(

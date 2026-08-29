@@ -21,6 +21,7 @@ tests/uml_generator/*.png
 
 # Claude Code
 **/.claude/settings.local.json
+.claude/worktrees/
 .pytest_cache/
 
 # локальный скрипт коммита, в репозиторий не идёт

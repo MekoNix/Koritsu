@@ -1,5 +1,11 @@
+import re
+from copy import deepcopy
+
 from .base import ASTGenerator
 from .query import NodeQueries
+
+# `goto case 2;` / `goto default;` — переход к телу другого случая switch.
+_GOTO_CASE_RE = re.compile(r'^goto\s+(?:case\s+(?P<pat>.+?)|(?P<default>default))\s*;?$')
 
 Q = NodeQueries('c_sharp', {
     'if':      '(if_statement condition: (_) @cond consequence: (_) @then alternative: (_)? @else)',
@@ -76,17 +82,17 @@ class CSharpAST(ASTGenerator):
         if t in ('constructor_declaration', 'destructor_declaration'):
             return self._visit_constructor(node)
         if t == 'local_function_statement':
-            # Локальная функция (вложенная в другой метод). Если визитить
-            # её как function_def — внутри родительского метода появятся
-            # вложенные START/STOP, и `_split_functions` неправильно
-            # разрежет страницы. Поэтому показываем сам факт определения
-            # как process-блок (заголовок), но не перерисовываем тело.
+            # Локальная функция (вложенная в другой метод) — обычный
+            # function_def: parser оставит в теле родителя заголовок-process,
+            # а саму функцию вынесет отдельной страницей в конец.
             name_node = self._field(node, 'name')
             params_node = self._field(node, 'parameters')
             name = self._t(name_node) if name_node else 'local'
             params = self._t(params_node) if params_node else '()'
-            return {'type': 'process',
-                    'value': f'local {name}{params}'}
+            return {'type': 'function_def',
+                    'name': name,
+                    'value': f'{name}{params}',
+                    'body': self._extract_function_body(self._field(node, 'body'))}
         if t == 'property_declaration':
             return self._visit_property(node)
 
@@ -317,11 +323,41 @@ class CSharpAST(ASTGenerator):
                     cases.append({'pattern': ' | '.join(patterns), 'body': stmts})
             if pending:
                 cases.append({'pattern': ' | '.join(pending), 'body': []})
+            self._resolve_goto_cases(cases)
         return {
             'type': 'match',
             'value': subj,
             'cases': cases,
         }
+
+    def _resolve_goto_cases(self, cases: list) -> None:
+        """`goto case N` / `goto default` — переход к телу другого случая.
+
+        Блок «goto case N» сам по себе ничего не говорит о потоке: раньше
+        схема на нём просто обрывалась. Подставляем вместо него копию тела
+        цели — так поток на схеме честный. Если цель не нашлась или case-ы
+        ссылаются друг на друга по кругу, блок остаётся как был.
+        """
+        by_pattern: dict = {}
+        for c in cases:
+            for pat in c['pattern'].split(' | '):
+                by_pattern.setdefault(pat.strip(), c)
+
+        def resolve(case, seen):
+            body = case['body']
+            if not body or body[-1].get('type') != 'process':
+                return
+            m = _GOTO_CASE_RE.match((body[-1].get('value') or '').strip())
+            if m is None:
+                return
+            target = by_pattern.get('_' if m.group('default') else m.group('pat').strip())
+            if target is None or id(target) in seen:
+                return
+            resolve(target, seen | {id(target)})
+            body[-1:] = deepcopy(target['body'])
+
+        for c in cases:
+            resolve(c, {id(c)})
 
     @staticmethod
     def _has_break(sec) -> bool:

@@ -37,6 +37,7 @@ def parse_ast_to_flowchart(ast_dict: dict, mode_id: str = 'default') -> tuple[di
     labels = converter.style.labels
     cfg['label_yes'] = labels.get('yes', cfg['label_yes'])
     cfg['label_no'] = labels.get('no', cfg['label_no'])
+    cfg['label_else'] = labels.get('else', cfg['label_else'])
     return cfg, nodes
 
 
@@ -48,6 +49,8 @@ class _Converter:
     def __init__(self, mode: dict):
         self._blocks = mode.get('blocks') or {}
         self._style = get_style(mode.get('style', 'default'))
+        self._deferred = []       # локальные функции — отдельными страницами
+        self._in_function = False
 
     @property
     def style(self):
@@ -66,6 +69,9 @@ class _Converter:
         for node in ast_dict.get('body', []):
             (funcs if node.get('type') in ('function_def', 'class_def') else loose).extend(
                 self._convert(node))
+        # Локальные функции копятся во время обхода — их страницы идут последними.
+        funcs = funcs + self._deferred
+        self._deferred = []
         if not loose:
             return funcs
         st = self._style
@@ -79,10 +85,15 @@ class _Converter:
     def _convert(self, node: dict) -> list:
         t = node.get('type')
         val = node.get('value', '')
-        if t == 'function_def':
-            return self._function(node)
-        if t == 'class_def':
-            return self._class_def(node)
+        if t in ('function_def', 'class_def'):
+            build = self._function if t == 'function_def' else self._class_def
+            if not self._in_function:
+                return build(node)
+            # Определение внутри тела функции: в схему тела попадает только
+            # заголовок, сама функция — отдельной страницей в конце. Иначе
+            # её START/STOP разрезали бы страницу внешней функции пополам.
+            self._deferred.extend(build(node))
+            return [{'type': 'process', 'value': val or node.get('name', '')}]
         if t in ('if', 'try'):
             return [self._if_node(node)]
         if t == 'for':
@@ -101,7 +112,10 @@ class _Converter:
             return self._return(val)
         if t in ('assignment', 'expression'):
             return [{'type': 'execute', 'value': self._text('execute', val)}]
-        if t == 'call':
+        if t in ('call', 'process'):
+            # `process` порождают генераторы для raise / throw / del / yield /
+            # goto / delete / co_yield / lock / заголовка локальной функции —
+            # без этой ветки все они молча исчезали из схемы.
             return [{'type': 'process', 'value': self._text('process', val)}]
         if t == 'io':
             return [{'type': 'io', 'value': self._text('io', val)}]
@@ -135,8 +149,12 @@ class _Converter:
 
         # Терминатор «Конец» у функции ровно один — в самом конце. Все
         # return внутри тела — блоки «Вернуть X» со стрелкой к нему.
+        prev, self._in_function = self._in_function, True
+        body_nodes = self._convert_body(body)
+        self._in_function = prev
+
         nodes = [{'type': 'start', 'value': start_label, 'page_name': page_name}]
-        nodes.extend(self._convert_body(body))
+        nodes.extend(body_nodes)
         nodes.append({'type': 'stop', 'value': stop_label})
         return nodes
 
@@ -156,11 +174,16 @@ class _Converter:
     # ── class_def ─────────────────────────────────────────────────────────
 
     def _class_def(self, node: dict) -> list:
-        """Разворачиваем методы класса как обычные function_def."""
+        """Разворачиваем методы класса как обычные function_def, вложенные
+        классы — рекурсивно: раньше брались только прямые дети-function_def,
+        и `class Outer { class Inner { void M() } }` терял Inner.M целиком."""
         nodes = []
         for child in node.get('body', []):
-            if child.get('type') == 'function_def':
+            t = child.get('type')
+            if t == 'function_def':
                 nodes.extend(self._function(child))
+            elif t == 'class_def':
+                nodes.extend(self._class_def(child))
         return nodes
 
     # ── if / try ──────────────────────────────────────────────────────────

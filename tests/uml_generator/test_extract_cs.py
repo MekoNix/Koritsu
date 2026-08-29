@@ -68,6 +68,16 @@ def test_record_positional_params_are_properties():
         ("X", "int { get; init; }"), ("Y", "int { get; init; }")]
 
 
+def test_primary_constructor_of_class_is_not_properties():
+    """C# 12: `class Prim(int seed)` — первичный конструктор, а не свойства."""
+    c = _by_name(extract_cs("class Prim(int seed, string name) { public int Seed => seed; }"))["Prim"]
+    assert [f.name for f in c.fields] == ["Seed"]
+    assert [(m.name, m.params, m.is_constructor) for m in c.methods] == \
+        [("Prim", "(int seed, string name)", True)]
+    s = _by_name(extract_cs("struct Vec2(double x, double y) { }"))["Vec2"]
+    assert s.fields == [] and [m.name for m in s.methods] == ["Vec2"]
+
+
 def test_interface_members_are_public():
     i = _by_name(extract_cs(SRC))["IRunner"]
     assert _method(i, "Run").access == "public" and _method(i, "Run").is_abstract

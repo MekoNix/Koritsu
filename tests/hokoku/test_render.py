@@ -129,14 +129,20 @@ def test_image_with_caption_numbering(template, tmp_path, png):
     assert len(d.inline_shapes) == 2
 
 
-def test_tall_image_split(template, tmp_path, tall_png):
+def test_tall_image_fits_page(template, tmp_path, tall_png):
+    """Высокая картинка вписывается в страницу целиком: резать растр hokoku не умеет —
+    листы даёт генератор схемы многостраничным mxfile."""
+    from docx.shared import Emu
     out = str(tmp_path / "out.docx")
-    render(template(lambda d: d.add_paragraph("{{a}}")),
-           {"a": Image(tall_png, caption="Схема", split_pages=True)}, out)
+    res = render(template(lambda d: d.add_paragraph("{{a}}")),
+                 {"a": Image(tall_png, caption="Схема")}, out)
     d = Document(out)
     caps = [ptext(p) for p in d.paragraphs if p.style.name == "Caption"]
-    assert len(caps) >= 2 and caps[0] == f"Рисунок 1 — Схема (лист 1 из {len(caps)})"
-    assert len(d.inline_shapes) == len(caps)
+    assert caps == ["Рисунок 1 — Схема"] and res.figures == 1
+    assert len(d.inline_shapes) == 1
+    sec = d.sections[0]
+    page_h = sec.page_height - sec.top_margin - sec.bottom_margin
+    assert d.inline_shapes[0].height <= page_h
 
 
 def test_markdown_image_from_images_dir(template, tmp_path, png):
@@ -241,3 +247,87 @@ def test_block_value_removes_dangling_punctuation(template, tmp_path):
            {"цель": Markdown("## Заголовок\nтекст")}, out)
     ps = Document(out).paragraphs
     assert ptext(ps[0]) == "Цель: " and ptext(ps[1]) == "Заголовок"
+
+
+def test_nested_quote_is_a_separate_indented_paragraph(template, tmp_path):
+    """«> >» — своя цитата с дополнительным отступом; раньше вложенная строка
+    приклеивалась к внешней в один абзац и никакого отступа не получала."""
+    out = str(tmp_path / "out.docx")
+    render(template(lambda d: d.add_paragraph("{{m}}")),
+           {"m": Markdown("> внешняя\n> > вложенная\n> > и дальше\n")}, out)
+    qs = [p for p in Document(out).paragraphs if p.style.name == "Quote"]
+    assert [ptext(p) for p in qs] == ["внешняя", "вложенная и дальше"]
+    assert qs[0]._p.find(".//" + qn("w:ind")) is None
+    assert int(qs[1]._p.find(".//" + qn("w:ind")).get(qn("w:left"))) == 720
+
+
+def _grid(path):
+    """Ширины колонок из w:tblGrid и из w:tcW первой строки, в dxa."""
+    t = Document(path).element.body.find(".//" + qn("w:tbl"))
+    grid = [int(g.get(qn("w:w"))) for g in t.find(qn("w:tblGrid")).findall(qn("w:gridCol"))]
+    tr = t.findall(qn("w:tr"))[0]
+    tcw = [int(tc.find(qn("w:tcPr") + "/" + qn("w:tcW")).get(qn("w:w"))) for tc in tr.findall(qn("w:tc"))]
+    return grid, tcw
+
+
+def test_table_grid_matches_cell_widths(template, tmp_path):
+    """w:tblGrid переписывается по посчитанным ширинам: LibreOffice раскладывает колонки
+    по сетке, а не по w:tcW, и без этого в PDF колонки выходили равными."""
+    out = str(tmp_path / "out.docx")
+    render(template(lambda d: d.add_paragraph("{{t}}")),
+           {"t": Table([["№", "Наименование параметра", "Ед."],
+                        ["1", "Очень длинное наименование, которое надо перенести", "шт."]])}, out)
+    grid, tcw = _grid(out)
+    assert grid == pytest.approx(tcw, abs=2)
+    assert grid[1] > 5 * grid[0] and grid[1] > 5 * grid[2]
+
+
+def test_short_columns_are_not_squeezed_below_content(template, tmp_path):
+    """Ужимается только избыток над самым длинным словом: узкие колонки держат ширину,
+    рвётся длинный текст, которому перенос не страшен."""
+    out = str(tmp_path / "out.docx")
+    long = "Очень длинное описание параметра, которое всё равно переносится по словам"
+    render(template(lambda d: d.add_paragraph("{{t}}")),
+           {"t": Table([["№", "Идентификатор", "Описание"], ["1", "коэффициент_альфа", long]])}, out)
+    t = Document(out).tables[0]
+    assert t.cell(0, 0).width.cm > 1.1                      # было 0.79 — продавлено пропорцией
+    assert t.cell(0, 1).width.cm > 6.0                      # было 4.4 — слово не влезало
+    assert sum(c.width.cm for c in t.rows[0].cells) == pytest.approx(15.24, abs=0.1)
+
+
+def test_table_in_list_item_keeps_indent(template, tmp_path):
+    """Тег в пункте списка: таблица встаёт под пунктом (w:tblInd), а не у левого поля."""
+    out = str(tmp_path / "out.docx")
+    render(template(lambda d: d.add_paragraph("{{t}}", style="List Bullet")),
+           {"t": Table([["a", "b"], ["1", "2"]])}, out)
+    tbl = Document(out).element.body.find(".//" + qn("w:tbl"))
+    ind = tbl.find(qn("w:tblPr") + "/" + qn("w:tblInd"))
+    assert ind is not None and int(ind.get(qn("w:w"))) > 0
+
+
+def _table_xml(*cells, grid=("1701", "5000", "1943")):
+    """Таблица как её пишет Word: колонки заданы сеткой, w:tcW у ячеек нет."""
+    from docx.oxml import parse_xml
+    tcs = "".join(f"<w:tc><w:p><w:r><w:t>{c}</w:t></w:r></w:p></w:tc>" for c in cells)
+    return parse_xml(
+        '<w:tbl xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid>'
+        + "".join(f'<w:gridCol w:w="{w}"/>' for w in grid)
+        + f"</w:tblGrid><w:tr>{tcs}</w:tr></w:tbl>")
+
+
+def test_image_in_cell_without_tcw_uses_grid(template, tmp_path, png):
+    """Титульник из Word: у ячеек нет w:tcW — ширину берём из w:tblGrid, иначе логотип
+    рисовался в полстраницы и вылезал за таблицу."""
+    out = str(tmp_path / "out.docx")
+    render(template(lambda d: d.element.body.insert(0, _table_xml("{{лого}}", "МГТУ", "2026"))),
+           {"лого": Image(png, caption=False, width_cm=8)}, out)
+    assert Document(out).inline_shapes[0].width.cm == pytest.approx(1701 / 567 - 0.5, abs=0.05)
+
+
+def test_table_outside_list_has_no_indent(template, tmp_path):
+    """Обычный абзац — отступа у таблицы нет."""
+    out = str(tmp_path / "out.docx")
+    render(template(lambda d: d.add_paragraph("{{t}}")), {"t": Table([["a", "b"]])}, out)
+    tbl = Document(out).element.body.find(".//" + qn("w:tbl"))
+    assert tbl.find(qn("w:tblPr") + "/" + qn("w:tblInd")) is None

@@ -68,6 +68,30 @@ def f(xs):
         self.assertEqual(types(body[0]['body'][0]['body']), ['continue'])
         self.assertEqual(body[1]['body'], [])
 
+    def test_loop_else_after_loop(self):
+        """`for … else` / `while … else`: тело else выполняется после цикла,
+        а не внутри него."""
+        body = func_body('python', '''
+def f(xs):
+    for x in xs:
+        g(x)
+    else:
+        h()
+''')
+        self.assertEqual(types(body), ['for', 'call'])
+        self.assertEqual(types(body[0]['body']), ['call'])
+        self.assertEqual(body[1]['value'], 'h()')
+
+        body = func_body('python', '''
+def f(n):
+    while n:
+        n = n - 1
+    else:
+        h()
+''')
+        self.assertEqual(types(body), ['while', 'call'])
+        self.assertEqual(types(body[0]['body']), ['assignment'])
+
     def test_return_and_ternary(self):
         body = func_body('python', '''
 def f(x):
@@ -156,6 +180,24 @@ int f(int n) {
         self.assertEqual(body[4]['value'], 'n > 0')
         self.assertEqual(body[4]['body'][0], {'type': 'return', 'value': '1'})
 
+    def test_do_while_keeps_inner_parens(self):
+        """`strip('()')` снимал скобки с обоих концов: `next(i)` → `next(i`."""
+        for src, cond in [('do { i++; } while (next(i));', 'next(i)'),
+                          ('do { i++; } while ((a) && (b));', '(a) && (b)'),
+                          ('do { i++; } while (i < 3);', 'i < 3')]:
+            with self.subTest(src):
+                body = func_body('cpp', 'int f(int i, int a, int b) { %s return i; }' % src)
+                self.assertEqual(body[0]['value'], cond)
+
+    def test_for_range_header(self):
+        """range-for подписывался сырым «auto x : v»."""
+        src = 'void f() { for (const auto& x : items) { g(x); } }'
+        self.assertEqual(func_body('cpp', src)[0]['value'], 'x in items')
+        # …и стиль собирает из этого человеческую подпись границы цикла
+        _, nodes = parse_ast_to_flowchart(get_ast_generator('cpp').generate(src),
+                                          'gost_19_701_90')
+        self.assertEqual(nodes[1]['value'], 'Цикл x, x из items')
+
     def test_switch_fallthrough(self):
         body = func_body('cpp', '''
 void f(int c) {
@@ -169,6 +211,30 @@ void f(int c) {
         self.assertEqual(types(body), ['match'])
         self.assertEqual([x['pattern'] for x in body[0]['cases']], ['1 | 2', '_'])
         self.assertEqual(len(body[0]['cases'][0]['body']), 1)
+
+    def test_switch_real_fallthrough(self):
+        """case без break проваливается в следующий: тело дописывается копией,
+        иначе после case 1 поток молча уходил на слияние."""
+        def cases(src):
+            body = func_body('cpp', 'int f(int x) { %s return 0; }' % src)
+            return [(c['pattern'], [n['value'] for n in c['body']])
+                    for c in body[0]['cases']]
+
+        self.assertEqual(
+            cases('switch (x) { case 1: a(); case 2: b(); break; default: c(); break; }'),
+            [('1', ['a()', 'b()']), ('2', ['b()']), ('_', ['c()'])])
+        # цепочка из трёх разворачивается за один проход
+        self.assertEqual(
+            cases('switch (x) { case 1: a(); case 2: b(); case 3: c(); break; }'),
+            [('1', ['a()', 'b()', 'c()']), ('2', ['b()', 'c()']), ('3', ['c()'])])
+        # return / throw закрывают case — провала нет
+        self.assertEqual(
+            cases('switch (x) { case 1: return 1; case 2: b(); break; }'),
+            [('1', ['1']), ('2', ['b()'])])
+        # `case 3: break;` — пустой случай, а не вход в default
+        self.assertEqual(
+            cases('switch (x) { case 3: break; default: c(); break; }'),
+            [('3', []), ('_', ['c()'])])
 
     def test_io_stream(self):
         body = func_body('cpp', '''
@@ -222,6 +288,24 @@ class P { static void F(int c) {
         pats = [x['pattern'] for x in body[0]['cases']]
         self.assertEqual(pats, ['1 | 2', 'int n when n > 5', '_'])
         self.assertTrue(all(len(x['body']) == 1 for x in body[0]['cases']))
+
+    def test_goto_case(self):
+        """`goto case N` раньше просто выбрасывался — поток на схеме обрывался."""
+        def cases(src):
+            body = func_body('csharp', 'class P { void M(int x) { %s } }' % src)
+            return [(c['pattern'], [n['value'] for n in c['body']])
+                    for c in body[0]['cases']]
+
+        self.assertEqual(
+            cases('switch (x) { case 1: A(); goto case 2; case 2: B(); break; }'),
+            [('1', ['A()', 'B()']), ('2', ['B()'])])
+        self.assertEqual(
+            cases('switch (x) { case 1: A(); goto default; default: C(); break; }'),
+            [('1', ['A()', 'C()']), ('_', ['C()'])])
+        # цикл `goto case` друг на друга — блок остаётся, рекурсия не виснет
+        self.assertIn('goto case 1',
+                      cases('switch (x) { case 1: A(); goto case 2; '
+                            'case 2: B(); goto case 1; }')[0][1])
 
     def test_members(self):
         nodes = ast('csharp', '''
@@ -279,6 +363,79 @@ int f(int i) { do { i++; } while (i < 3); return i; }
         self.assertEqual(nodes[1]['end_value'], 'Цикл i, пока i < 3')
         self.assertEqual(nodes[1]['children'][0]['value'], 'i = i + 1')
         self.assertEqual((nodes[2]['type'], nodes[2]['value']), ('io', 'i'))
+
+    def test_nested_classes_keep_methods(self):
+        """`class Outer { class Inner { void M() } }` терял Inner.M целиком."""
+        cases = [
+            ('csharp', 'class Outer { class Inner { void M() { int a = 1; } } }'),
+            ('cpp',    'class Outer { class Inner { public: void M() { int a = 1; } }; };'),
+            ('python', 'class Outer:\n    class Inner:\n        def M(self):\n            a = 1\n'),
+        ]
+        for lang, code in cases:
+            with self.subTest(lang):
+                _, nodes = parse_ast_to_flowchart(get_ast_generator(lang).generate(code), 'plain')
+                self.assertEqual([n['type'] for n in nodes], ['start', 'execute', 'stop'])
+                self.assertEqual(nodes[0]['page_name'], 'M()' if lang != 'python' else 'M(self)')
+
+    def test_nested_function_becomes_own_page(self):
+        """Вложенная функция: в теле родителя — заголовок, сама она —
+        отдельной страницей в конце (её START/STOP раньше разрезали
+        страницу родителя пополам)."""
+        _, nodes = parse_ast_to_flowchart(get_ast_generator('python').generate('''
+def outer(x):
+    def inner(y):
+        return y + 1
+    return inner(x)
+'''), 'plain')
+        self.assertEqual([n['type'] for n in nodes],
+                         ['start', 'process', 'execute', 'stop', 'start', 'execute', 'stop'])
+        self.assertEqual(nodes[1]['value'], 'inner(y)')       # заголовок в теле outer
+        self.assertEqual(nodes[4]['page_name'], 'inner(y)')   # своя страница
+
+    def test_csharp_local_function_body_visible(self):
+        _, nodes = parse_ast_to_flowchart(get_ast_generator('csharp').generate('''
+class K { void M() { int Loc(int a) { return a + 1; } N(Loc(1)); } }
+'''), 'plain')
+        pages = [n['page_name'] for n in nodes if n['type'] == 'start']
+        self.assertEqual(pages, ['M()', 'Loc(int a)'])
+        self.assertIn('return a + 1', [n.get('value') for n in nodes])
+
+    def test_process_nodes_reach_flowchart(self):
+        """raise / del / yield / throw / goto / delete / co_yield / lock /
+        заголовок локальной функции — узлы `process`; диспетчер их терял."""
+        def flat(lang, code, mode='plain'):
+            _, nodes = parse_ast_to_flowchart(get_ast_generator(lang).generate(code), mode)
+            out = []
+
+            def walk(ns):
+                for n in ns:
+                    out.append((n['type'], n.get('value')))
+                    walk(n.get('children') or [])
+                    walk(n.get('else_children') or [])
+            walk(nodes)
+            return out
+
+        py = flat('python', '''
+def f(x):
+    if x < 0:
+        raise ValueError('neg')
+    del x
+    yield 1
+''')
+        self.assertIn(('process', "raise ValueError('neg')"), py)
+        self.assertIn(('process', 'del x'), py)
+        self.assertIn(('process', 'yield 1'), py)
+
+        cpp = flat('cpp', 'void f(int* p) { throw 1; delete p; goto end; }')
+        for v in ('throw 1', 'delete p', 'goto end'):
+            self.assertIn(('process', v), cpp)
+
+        cs = flat('csharp', '''
+class K { void M(object o) { lock (o) { N(); } void Loc(int a) { } throw null; } }
+''')
+        self.assertIn(('process', 'lock (o)'), cs)
+        self.assertIn(('process', 'Loc(int a)'), cs)     # заголовок локальной функции
+        self.assertIn(('process', 'throw null'), cs)
 
     def test_labels_from_style(self):
         cfg, _ = parse_ast_to_flowchart({'type': 'program', 'body': []}, 'plain')

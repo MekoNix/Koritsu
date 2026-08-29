@@ -82,6 +82,31 @@ class _Tracer(TraceState):
             return "[" + ", ".join(self.fmt(i) for i in items) + "]"
         return self.text(node)
 
+    def targets(self, e) -> list[tuple]:
+        """
+        Пары (левый узел, узел значения) присваивания: цепочка `a = b = v` даёт
+        две пары с общим значением, распаковка `x, y = 1, 2` — по паре на элемент.
+        """
+        lefts, right = [], e
+        while right is not None and right.type == "assignment":
+            lefts.append(right.child_by_field_name("left"))
+            right = right.child_by_field_name("right")
+        out: list[tuple] = []
+        for lt in lefts:
+            if lt is None:
+                continue
+            if lt.type in ("pattern_list", "tuple_pattern"):
+                vals = list(right.named_children) if (
+                    right is not None and right.type in ("expression_list", "tuple")) else []
+                if len(vals) != len(lt.named_children):
+                    self.note("objektis/python: распаковка кортежа не разобрана "
+                              "(значения не сопоставились по числу)")
+                for i, t in enumerate(lt.named_children):
+                    out.append((t, vals[i] if i < len(vals) else None))
+            else:
+                out.append((lt, right))
+        return out
+
     def bind(self, m: Method, arglist, env: dict[str, str]) -> dict[str, str]:
         bound = dict(m.defaults)
         pos = 0
@@ -106,6 +131,14 @@ class _Tracer(TraceState):
         return obj
 
     def run_method(self, obj: Obj, m: Method, local: dict[str, str]):
+        if not self.enter_call():
+            return
+        try:
+            self._run_method(obj, m, local)
+        finally:
+            self.leave_call()
+
+    def _run_method(self, obj: Obj, m: Method, local: dict[str, str]):
         env = dict(local)
         for st in (m.body.named_children if m.body is not None else []):
             if st.type != "expression_statement" or not st.named_children:
@@ -115,16 +148,23 @@ class _Tracer(TraceState):
                 continue
             e = st.named_children[0]
             if e.type == "assignment":
-                left, right = e.child_by_field_name("left"), e.child_by_field_name("right")
-                if left is None or right is None:
-                    continue
-                if left.type == "attribute":
-                    owner = self.obj_of(left.child_by_field_name("object"), env, obj)
-                    if owner is not None:
+                done: dict[tuple, str] = {}      # значение цепочки вычисляем один раз
+                for left, right in self.targets(e):
+                    if left is None or right is None:
+                        continue
+                    key = (right.start_byte, right.end_byte)
+                    if left.type == "attribute":
+                        owner = self.obj_of(left.child_by_field_name("object"), env, obj)
+                        if owner is None:      # значение не вычисляем: иначе `x.a = M()`
+                            continue           # с неизвестным x породит объект без связей
+                        if key not in done:
+                            done[key] = self.value(right, env, obj)
                         self.set_slot(owner, self.text(left.child_by_field_name("attribute")),
-                                      self.value(right, env, obj))
-                elif left.type == "identifier":
-                    env[self.text(left)] = self.value(right, env)
+                                      done[key])
+                    elif left.type == "identifier":
+                        if key not in done:
+                            done[key] = self.value(right, env, obj)
+                        env[self.text(left)] = done[key]
             elif e.type == "call":
                 self.call(e, env, self_obj=obj)
 
@@ -203,28 +243,34 @@ class _Tracer(TraceState):
         return None
 
     def assign(self, e):
-        left, right = e.child_by_field_name("left"), e.child_by_field_name("right")
-        if left is None or right is None:
-            return
-        if left.type == "identifier":
-            name = self.text(left)
-            ctor = self._ctor_of(right)
-            if ctor:
-                self.construct(name, ctor[0], ctor[1], {})
-            elif right.type in ("list", "tuple"):
-                for i, item in enumerate(right.named_children):
-                    c = self._ctor_of(item)
-                    if c:
-                        self.construct(f"{name}[{i}]", c[0], c[1], {})
-            elif right.type == "identifier":
-                self.alias(name, self.text(right))
-        elif left.type == "attribute":
-            owner = self.obj_of(left.child_by_field_name("object"), {}, None)
-            if owner is not None:
-                self.set_slot(owner, self.text(left.child_by_field_name("attribute")),
-                              self.value(right, {}))
-        elif left.type in ("pattern_list", "tuple_pattern"):
-            self.note("objektis/python: распаковка кортежей не трассируется")
+        done: dict[tuple, str] = {}      # узел значения → уже полученное значение/объект
+        for left, right in self.targets(e):
+            if left is None or right is None:
+                continue
+            key = (right.start_byte, right.end_byte)
+            if left.type == "identifier":
+                name = self.text(left)
+                if key in done:                       # `a = b = M()` — объект один
+                    self.alias(name, done[key])
+                    continue
+                ctor = self._ctor_of(right)
+                if ctor:
+                    done[key] = self.construct(name, ctor[0], ctor[1], {}).name
+                elif right.type in ("list", "tuple"):
+                    done[key] = ""
+                    for i, item in enumerate(right.named_children):
+                        c = self._ctor_of(item)
+                        if c:
+                            self.construct(f"{name}[{i}]", c[0], c[1], {})
+                elif right.type == "identifier":
+                    self.alias(name, self.text(right))
+            elif left.type == "attribute":
+                owner = self.obj_of(left.child_by_field_name("object"), {}, None)
+                if owner is None:
+                    continue
+                if key not in done:
+                    done[key] = self.value(right, {})
+                self.set_slot(owner, self.text(left.child_by_field_name("attribute")), done[key])
 
 
 def extract(source: str, *, files=None) -> ObjectGraph:
@@ -237,5 +283,8 @@ def extract(source: str, *, files=None) -> ObjectGraph:
     tr.collect(root)
     if not tr.classes:
         return ObjectGraph(notes=["objektis/python: в коде нет классов"])
-    tr.run_block(root)
+    try:
+        tr.run_block(root)
+    except Exception as e:  # noqa: BLE001 — уже построенные объекты не выбрасываем
+        tr.note(f"objektis/python: трассировка прервана ({type(e).__name__})")
     return tr.graph("objektis/python: экземпляры пользовательских классов не найдены")

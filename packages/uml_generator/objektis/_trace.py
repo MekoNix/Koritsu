@@ -11,6 +11,7 @@ from dataclasses import dataclass, field as dc_field
 from .model import ObjectGraph, ObjectInstance, ObjectLink, Slot
 
 MAX_VALUE_LEN = 60
+MAX_CALL_DEPTH = 24     # глубже не заходим: рекурсивный метод иначе не остановить
 
 
 @dataclass
@@ -48,6 +49,20 @@ class TraceState:
         self.links: list[ObjectLink] = []
         self.notes: list[str] = []
         self.counters: dict[str, int] = {}
+        self.depth = 0
+
+    # ── глубина трассировки ──
+    def enter_call(self) -> bool:
+        """Можно ли войти в тело метода. False — исчерпана глубина (рекурсия)."""
+        if self.depth >= MAX_CALL_DEPTH:
+            self.note("objektis: рекурсия или слишком глубокие вызовы — "
+                      "часть тел методов не трассирована")
+            return False
+        self.depth += 1
+        return True
+
+    def leave_call(self):
+        self.depth -= 1
 
     # ── утилиты ──
     def text(self, node) -> str:
@@ -63,11 +78,16 @@ class TraceState:
         return f"{cls[:1].lower()}{cls[1:]}{n}"
 
     def is_obj(self, v: str) -> bool:
-        return v in self.objs and self.objs[v].name == v
+        return v in self.objs
+
+    def canon(self, v: str) -> str:
+        """Алиас (`y = m`) → каноническое имя объекта; прочий текст — как есть."""
+        o = self.objs.get(v)
+        return o.name if o is not None else v
 
     def fmt(self, v: str) -> str:
         if self.is_obj(v):
-            return f"→{v}"
+            return f"→{self.canon(v)}"
         return v if len(v) <= MAX_VALUE_LEN else v[:MAX_VALUE_LEN - 3] + "..."
 
     # ── классы ──
@@ -114,6 +134,7 @@ class TraceState:
         return self.objs.get(name)
 
     def set_slot(self, obj: Obj, attr: str, value: str):
+        value = self.canon(value)
         self.links = [l for l in self.links if not (l.source == obj.name and l.label == attr)]
         if self.is_obj(value) and value != obj.name:
             self.links.append(ObjectLink(obj.name, value, attr))
@@ -130,6 +151,7 @@ class TraceState:
             self.append(obj, attr, it)
 
     def append(self, obj: Obj, attr: str, value: str):
+        value = self.canon(value)
         items = obj.lists.setdefault(attr, [])
         items.append(value)
         if self.is_obj(value):
@@ -152,7 +174,7 @@ class TraceState:
             seen.add(name)
             instances.append(ObjectInstance(
                 name=obj.name, type_name=obj.type,
-                slots=[Slot(k, f"→ {v}" if self.is_obj(v) else self.fmt(v))
+                slots=[Slot(k, f"→ {self.canon(v)}" if self.is_obj(v) else self.fmt(v))
                        for k, v in obj.slots.items()]))
         if not instances and not self.notes:
             self.notes.append(empty_note)

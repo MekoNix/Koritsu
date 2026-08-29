@@ -112,3 +112,74 @@ o = Order()
 ann.place(o)
 """)
     assert _slots(inst["o"])["customer"] == "→ ann" and links[("o", "ann", "customer")] == "association"
+
+
+def test_alias_resolves_to_object():
+    """`y = m` — тот же объект; слот должен ссылаться на него, а не на текст «y»."""
+    inst, links, _ = _g(CLASSES + 'm = Manager()\ny = m\nt = Task("a")\nt.owner = y\n')
+    assert _slots(inst["t"])["owner"] == "→ m"
+    assert links[("t", "m", "owner")] == "association"
+    assert "y" not in inst
+
+
+def test_recursive_method_keeps_built_objects():
+    """Рекурсия обрывается по глубине; уже собранные объекты остаются."""
+    inst, _, notes = _g("""
+class A:
+    def __init__(self):
+        self.x = 1
+    def f(self):
+        self.f()
+a = A()
+a.f()
+""")
+    assert _slots(inst["a"]) == {"x": "1"}
+    assert any("рекурсия" in n for n in notes)
+
+
+def test_chained_and_tuple_assignment():
+    """`self.a = self.b = 0` даёт оба слота, `self.x, self.y = 1, 2` — тоже."""
+    inst, _, _ = _g("""
+class P:
+    def __init__(self):
+        self.a = self.b = 0
+        self.x, self.y = 1, 2
+p = P()
+""")
+    assert _slots(inst["p"]) == {"a": "0", "b": "0", "x": "1", "y": "2"}
+
+
+def test_chained_assignment_builds_one_object():
+    """`t.a = t.b = M()` — один экземпляр на два слота, а не два."""
+    inst, links, _ = _g("""
+class M:
+    def __init__(self):
+        self.v = 1
+class T:
+    def __init__(self):
+        self.a = None
+        self.b = None
+t = T()
+t.a = t.b = M()
+""")
+    assert [i.type_name for i in inst.values()].count("M") == 1
+    m = next(n for n, i in inst.items() if i.type_name == "M")
+    assert links[("t", m, "a")] == "association" and links[("t", m, "b")] == "association"
+
+
+def test_unattachable_assignment_in_method_makes_no_phantom_object():
+    """`self.xs[0] = M()` / `unknown.a = M()` не должны рождать объект без связей."""
+    inst, _, _ = _g("""
+class M:
+    def __init__(self):
+        self.v = 1
+class Box:
+    def __init__(self):
+        self.xs = []
+    def fill(self):
+        self.xs[0] = M()
+        unknown.attr = M()
+b = Box()
+b.fill()
+""")
+    assert [i.type_name for i in inst.values()] == ["Box"]

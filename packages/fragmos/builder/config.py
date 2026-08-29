@@ -49,6 +49,7 @@ DEFAULT_CFG = {
     # parser кладёт его сюда. Значения ниже — запасные.
     "label_yes":            "Да",
     "label_no":             "Нет",
+    "label_else":           "иначе",   # подпись ветки default у switch
     "label_w":              44,
     "label_h":              20,
     "label_gap":            4,   # отступ подписи от угла фигуры

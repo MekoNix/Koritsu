@@ -43,12 +43,13 @@ class Code:
 @dataclass
 class Image:
     """Картинка: путь или bytes. Ширина в см (по умолчанию — вписать в поле страницы).
-    caption — подпись под рисунком; {n} в ней заменяется на номер по документу.
-    split_pages — высокую картинку резать на страницы по пустым горизонтальным полосам."""
+    caption — подпись под рисунком ({n} — номер по документу); None — подпись «Рисунок N»
+    без текста; False — без подписи и без номера (логотип, врезка). В колонтитулах
+    не нумеруется никогда. Слишком высокая картинка вписывается в страницу целиком:
+    резать её на листы hokoku больше не умеет — листы даёт генератор схемы (см. Diagram)."""
     source: str | bytes
-    caption: str | None = None
+    caption: str | bool | None = None
     width_cm: float | None = None
-    split_pages: bool = False
     align: str = "center"            # left | center | right
     ref: str | None = None           # имя для ссылок {ref:имя} в тексте (по умолчанию — ключ тега)
 
@@ -66,7 +67,7 @@ class Table:
     """Таблица: rows — строки ячеек (строки с inline-markdown). header — первая строка жирная."""
     rows: list[list[str]]
     header: bool = True
-    caption: str | None = None       # «Таблица {n} — …» над таблицей
+    caption: str | bool | None = None  # «Таблица {n} — …» над таблицей; False — без номера
     col_widths_cm: list[float] | None = None
     align: list[str] | None = None   # по колонкам: left | center | right
     ref: str | None = None
@@ -74,14 +75,16 @@ class Table:
 
 @dataclass
 class Diagram:
-    """Схема draw.io (XML) → PNG через drawio CLI (нужен `drawio` и `xvfb-run`)."""
+    """Схема draw.io (XML) → PNG через drawio CLI (нужен `drawio` и `xvfb-run`).
+    Многостраничный mxfile — это листы одного рисунка: «Рисунок N (лист k из m)»,
+    номер и закладка общие. Где рвать длинный алгоритм и куда ставить соединители,
+    решает генератор схемы, а не hokoku."""
     xml: str
-    caption: str | None = None
+    caption: str | bool | None = None
     width_cm: float | None = None
-    split_pages: bool = True
     align: str = "center"
     ref: str | None = None
-    page: int | None = None          # номер страницы draw.io (None — все, каждая отдельным рисунком)
+    page: int | None = None          # один лист, считая с 1 (None — все листы схемы)
 
 
 @dataclass
@@ -133,3 +136,5 @@ class RenderResult:
     formulas: int = 0
     refs:     dict = field(default_factory=dict)         # имя → номер (рисунки и таблицы)
     unresolved_refs: list[str] = field(default_factory=list)
+    errors:   list[dict] = field(default_factory=list)   # on_error="skip": [{key, message}]
+    unknown_keys: list[str] = field(default_factory=list)  # значения, для которых нет тега

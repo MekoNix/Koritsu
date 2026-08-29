@@ -190,22 +190,23 @@ class PythonAST(ASTGenerator):
             tmp = f"{left.replace(',', '_').replace(' ', '')}_list"
             prelude = self._comprehension_nodes(tmp, right_node)
             right = tmp
-        # for-else: хвостовой блок (без учёта break) дописываем в тело —
-        # содержимое важнее, чем точная семантика.
-        body.extend(self._loop_else(node))
+        # for-else: тело else выполняется ПОСЛЕ цикла (если не было break),
+        # поэтому идёт следом за циклом, а не внутрь него.
+        tail = self._loop_else(node)
         loop = {'type': 'for', 'value': f'{left} in {right}', 'body': body}
-        return [*prelude, loop] if prelude else loop
+        return [*prelude, loop, *tail] if (prelude or tail) else loop
     def _loop_else(self, node) -> list:
         for k in node.named_children:
             if k.type == 'else_clause':
                 return self._visit_block(Q.caps('else', k).one('body'))
         return []
 
-    def _visit_while(self, node) -> dict:
+    def _visit_while(self, node) -> dict | list:
         c = Q.caps('while', node)
         body = self._visit_block(c.one('body'))
-        body.extend(self._loop_else(node))
-        return {'type': 'while', 'value': c.text('cond'), 'body': body}
+        tail = self._loop_else(node)          # while-else — тоже после цикла
+        loop = {'type': 'while', 'value': c.text('cond'), 'body': body}
+        return [loop, *tail] if tail else loop
     def _visit_with(self, node) -> list:
         """`with X() as y:` → пометка-assignment + тело.
 

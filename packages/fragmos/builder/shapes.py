@@ -7,9 +7,22 @@ shapes.py — Все фигуры draw.io для flowchart-диаграмм, и�
 никогда не расходятся.
 """
 
+import html
 import math
 
-import drawpyo
+from ._drawpyo import drawpyo
+
+
+def _esc(s) -> str:
+    """Подпись фигуры → HTML-текст.
+
+    Все стили фигур содержат `html=1`, поэтому draw.io разбирает `value`
+    как HTML: `i<n` показывалось как «i» (`<n` съедалось как начало тега),
+    `vector<int>` — как «vector». XML-экранирование делает сам drawpyo,
+    здесь — именно HTML-слой поверх него. Кавычки не трогаем: в тексте
+    они безопасны, а подпись остаётся читаемой.
+    """
+    return html.escape(str(s if s is not None else ''), quote=False)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -137,8 +150,9 @@ class Shape(drawpyo.diagram.Object):
 
     def __init__(self, page, value, cx, y, cfg=None):
         super().__init__(page=page)
-        self.value = value
+        # Размер считаем по сырому тексту, в фигуру кладём экранированный.
         self.width, self.height = self.dims(value, cfg)
+        self.value = _esc(value)
         self.position = (cx - self.width // 2, y)
         self.apply_style_string(self.STYLE)
 
@@ -208,7 +222,7 @@ class LabelShape(drawpyo.diagram.Object):
     """Текстовая подпись (без рамки)."""
     def __init__(self, page, text, x, y, w=44, h=20):
         super().__init__(page=page)
-        self.value = text
+        self.value = _esc(text)
         self.width = w
         self.height = h
         self.position = (x, y)

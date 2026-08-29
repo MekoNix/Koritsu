@@ -62,6 +62,26 @@ class ASTGenerator(ABC):
     def _clean(text: str) -> str:
         return text.strip().rstrip(';').strip()
 
+    @staticmethod
+    def _unwrap_parens(text: str) -> str:
+        """Снимает ровно одну внешнюю пару скобок, если она парная.
+
+        `strip('()')` снимал скобки с обоих концов подряд и портил текст:
+        `(next(i))` → `next(i`, `((a) && (b))` → `a) && (b`."""
+        s = text.strip()
+        if not (s.startswith('(') and s.endswith(')')):
+            return s
+        depth = 0
+        for i, ch in enumerate(s):
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+                if depth == 0:
+                    # внешняя скобка закрылась раньше конца — пара не внешняя
+                    return s[1:-1].strip() if i == len(s) - 1 else s
+        return s
+
     def _visit_block(self, node, skip: frozenset = frozenset()) -> list:
         """Все named-дети контейнера → плоский список узлов."""
         result = []

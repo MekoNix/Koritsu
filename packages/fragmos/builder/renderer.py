@@ -12,7 +12,7 @@ renderer.py — Двухпроходный рендерер списка узл�
 """
 
 from .shapes import (
-    SHAPES, Execute, IfShape, WhileShape, ForDefault,
+    SHAPES, IfShape, WhileShape, ForDefault, text_width,
     WaypointShape, LabelShape, BBoxShape, LoopLimitEnd,
     _edge, _bot, _cx,
     _DOWN, _FROM_BOTTOM, _FROM_RIGHT, _FROM_LEFT,
@@ -70,12 +70,24 @@ class Item:
 
 
 class Case:
-    """Колонка switch: прямоугольник с образцом + тело."""
-    __slots__ = ('pattern', 'rw', 'rh', 'body', 'half', 'dx')
+    """Колонка switch: подпись-образец на линии + тело."""
+    __slots__ = ('pattern', 'lw', 'body', 'half', 'dx')
 
-    def __init__(self, pattern, rw, rh, body, half):
-        self.pattern, self.rw, self.rh, self.body, self.half = pattern, rw, rh, body, half
+    def __init__(self, pattern, lw, body, half):
+        self.pattern, self.lw, self.body, self.half = pattern, lw, body, half
         self.dx = 0
+
+
+def _case_text(cfg, pattern) -> str:
+    """Текст образца для схемы: `_` (default) — «иначе» из стиля.
+    В модели узлов сентинел `_` остаётся: на него смотрят _terminates
+    и разворот match в цепочку IF."""
+    return cfg['label_else'] if pattern == '_' else pattern
+
+
+def _case_label_w(cfg, pattern) -> int:
+    """Ширина подписи образца (LabelShape не переносит текст сам)."""
+    return int(text_width(_case_text(cfg, pattern), cfg['font_size'])) + cfg['label_gap']
 
 
 def _corridor(cfg, depth):
@@ -149,10 +161,12 @@ def _layout_switch(it, cfg, depth):
     it.cases = []
     for raw in it.node.get('cases', []):
         pattern = raw.get('pattern', '')
-        rw, rh = Execute.dims(pattern, cfg)
+        lw = _case_label_w(cfg, pattern)
         body = layout(raw.get('body', []), cfg, depth + 1)
-        half = max(body.L, body.R, rw // 2, min_half)
-        it.cases.append(Case(pattern, rw, rh, body, half))
+        # Подпись стоит справа от вертикали колонки — её ширина тоже
+        # раздвигает соседей, иначе длинные образцы налезут друг на друга.
+        half = max(body.L, body.R, cfg['label_gap'] + lw, min_half)
+        it.cases.append(Case(pattern, lw, body, half))
 
     if not it.cases:
         return
@@ -163,8 +177,10 @@ def _layout_switch(it, cfg, depth):
         c.dx = cur + c.half
         cur += 2 * c.half + case_gap
 
+    # Тело колонки начинается там, где раньше стоял прямоугольник образца;
+    # сам образец теперь — подпись на линии в зазоре над ним.
     it.case_dy = it.h + gap
-    col_h = max(c.rh + (gap + c.body.H if c.body else 0) for c in it.cases)
+    col_h = max((c.body.H if c.body else 0) for c in it.cases)
     it.merge_dy = it.case_dy + col_h + gap
     it.L = it.R = max(total_w, it.w) // 2
     it.H = it.merge_dy
@@ -322,8 +338,8 @@ class Renderer:
         """Свободна ли вертикаль x на отрезке [y0, y1]: не задевает фигур и
         не пересекает горизонтальных / не ложится на вертикальные отрезки рёбер."""
         for o in self.page.objects:
-            if o is skip:
-                continue
+            if o is skip or isinstance(o, BBoxShape):
+                continue                     # отладочные рамки — не препятствие
             pos = getattr(o, 'position', None)
             if pos is not None and getattr(o, 'width', None) is not None:
                 ox, oy = pos
@@ -399,9 +415,9 @@ class Renderer:
             _edge(self.page, prev_obj, obj, _DOWN)
         return obj
 
-    def _label(self, text, x, y):
+    def _label(self, text, x, y, w=None):
         cfg = self.cfg
-        LabelShape(self.page, text, x, y, cfg['label_w'], cfg['label_h'])
+        LabelShape(self.page, text, x, y, w or cfg['label_w'], cfg['label_h'])
 
     def _bbox(self, cx, y, it, color, opacity):
         """Отладочный bbox поддерева Item."""
@@ -415,8 +431,8 @@ class Renderer:
         и не пересекает вертикальных отрезков рёбер."""
         x0, x1 = min(x0, x1), max(x0, x1)
         for o in self.page.objects:
-            if o is skip:
-                continue
+            if o is skip or isinstance(o, BBoxShape):
+                continue                     # отладочные рамки — не препятствие
             pos = getattr(o, 'position', None)
             if pos is not None and getattr(o, 'width', None) is not None:
                 ox, oy = pos
@@ -543,24 +559,32 @@ class Renderer:
             self._bbox(cx, y, it, "#fff2cc", 22)
 
         last_objs = []
+        empty_cx = []                        # колонки без тела — сразу к слиянию
         fan_y = y + it.h + gap // 2          # явные точки веера: их видят _column_free/_row_free
         for c in it.cases:
             ccx = cx + c.dx
-            rect = Execute(self.page, c.pattern, ccx, case_y, cfg)
-            _edge(self.page, rh, rect, _SWITCH_CASE, pts=[(cx, fan_y), (ccx, fan_y)])
-            if c.body:
-                _, last_b = self.emit(c.body, ccx, _bot(rect) + gap, rect)
-                if _terminates(c.body):
-                    continue                 # return/break — к слиянию не идёт
-                last_objs.append(last_b or rect)
-            else:
-                last_objs.append(rect)
+            # Образец случая — подпись НА ЛИНИИ выхода из «решения»
+            # (п.4.3.1.2 ГОСТ 19.701-90), а не прямоугольник «процесс»:
+            # сам case ничего не выполняет.
+            self._label(_case_text(cfg, c.pattern), ccx + cfg['label_gap'], fan_y, c.lw)
+            if not c.body:
+                empty_cx.append(ccx)
+                continue
+            first_b, last_b = self.emit(c.body, ccx, case_y)
+            _edge(self.page, rh, first_b, _SWITCH_CASE, pts=[(cx, fan_y), (ccx, fan_y)])
+            if _terminates(c.body):
+                continue                     # return/break — к слиянию не идёт
+            if last_b is not None:
+                last_objs.append(last_b)
 
-        if not last_objs:
+        if not last_objs and not empty_cx:
             return rh, None                  # все ветки ушли — слияния нет
         wp = WaypointShape(self.page, cx, merge_y)
         for lo in last_objs:
             _edge(self.page, lo, wp, _FROM_BOTTOM, pts=[(_cx(lo), merge_y), (cx, merge_y)])
+        for ccx in empty_cx:
+            _edge(self.page, rh, wp, _SWITCH_CASE,
+                  pts=[(cx, fan_y), (ccx, fan_y), (ccx, merge_y), (cx, merge_y)])
         return rh, wp
 
     # ── WHILE / FOR ──────────────────────────────────────────────────────
@@ -695,9 +719,15 @@ class Renderer:
         # левее — левый. continue — во внутреннюю полосу коридора к верху
         # нижнего символа, break — во внешнюю, под него.
         def side(obj, inner):
+            # Внутренняя полоса — ближе к оси на полширины коридора. Раньше
+            # для правой стороны флаг `inner` терялся из-за порядка разбора
+            # тернарника, и break с continue из одной ветки ложились на одну
+            # вертикаль.
             right = _cx(obj) >= cx
             x = cx + it.exit_dx if right else cx - it.back_dx
-            return x - it.wc // 2 if right else x + it.wc // 2 if inner else x
+            if not inner:
+                return x
+            return x - it.wc // 2 if right else x + it.wc // 2
 
         cont_y = end_y - gap // 2
         for obj in ctx['continue']:

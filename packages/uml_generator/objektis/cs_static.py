@@ -35,6 +35,7 @@ class _Tracer(TraceState):
     def __init__(self, src: bytes):
         super().__init__(src)
         self.main = None
+        self.top: list = []          # операторы верхнего уровня (C# 9), если Main() нет
 
     def ma_parts(self, node):
         """member_access_expression → (узел базы | "this", имя члена)."""
@@ -47,6 +48,10 @@ class _Tracer(TraceState):
 
     # ── классы ──
     def collect(self, node):
+        if node.type == "global_statement":      # C# 9: код без class Program / Main()
+            if node.named_children:
+                self.top.append(node.named_children[0])
+            return
         if node.type in ("class_declaration", "struct_declaration", "record_declaration"):
             self._collect_class(node)
         for c in node.named_children:
@@ -239,9 +244,14 @@ class _Tracer(TraceState):
             self.set_slot(obj, attr, self.value(right, env, self_obj))
 
     def run_method(self, obj: Obj, m: Method, local: dict[str, str]):
-        env = dict(local)
-        for st in (m.body.named_children if m.body is not None else []):
-            self.statement(st, env, obj, in_method=True)
+        if not self.enter_call():
+            return
+        try:
+            env = dict(local)
+            for st in (m.body.named_children if m.body is not None else []):
+                self.statement(st, env, obj, in_method=True)
+        finally:
+            self.leave_call()
 
     def obj_of(self, node, env, self_obj: Obj | None) -> Obj | None:
         if node is None:
@@ -393,9 +403,14 @@ def extract(source: str, *, files=None) -> ObjectGraph:
     tr.collect(root)
     if not tr.classes:
         return ObjectGraph(notes=[f"{_LANG}: в коде нет классов"])
-    if tr.main is None:
-        return ObjectGraph(notes=[f"{_LANG}: метод Main() не найден"])
+    if tr.main is None and not tr.top:
+        return ObjectGraph(notes=[f"{_LANG}: ни Main(), ни операторов верхнего уровня не найдено"])
+    where = "Main()" if tr.main is not None else "операторах верхнего уровня"
+    body = list(tr.main.named_children) if tr.main is not None else tr.top
     env: dict[str, str] = {}
-    for st in tr.main.named_children:
-        tr.statement(st, env, None)
-    return tr.graph(f"{_LANG}: в Main() не создаются экземпляры пользовательских классов")
+    try:
+        for st in body:
+            tr.statement(st, env, None)
+    except Exception as e:  # noqa: BLE001 — уже построенные объекты не выбрасываем
+        tr.note(f"{_LANG}: трассировка прервана ({type(e).__name__})")
+    return tr.graph(f"{_LANG}: в {where} не создаются экземпляры пользовательских классов")

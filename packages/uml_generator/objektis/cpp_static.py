@@ -220,9 +220,14 @@ class _Tracer(TraceState):
         self.run_method(obj, ctor, local)
 
     def run_method(self, obj: Obj, m: Method, local: dict[str, str]):
-        env = dict(local)
-        for st in (m.body.named_children if m.body is not None else []):
-            self.statement(st, env, obj, in_method=True)
+        if not self.enter_call():
+            return
+        try:
+            env = dict(local)
+            for st in (m.body.named_children if m.body is not None else []):
+                self.statement(st, env, obj, in_method=True)
+        finally:
+            self.leave_call()
 
     def obj_of(self, node, env, self_obj: Obj | None) -> Obj | None:
         if node is None:
@@ -398,6 +403,9 @@ def extract(source: str, *, files=None) -> ObjectGraph:
     if tr.main is None:
         return ObjectGraph(notes=[f"{_LANG}: функция main() не найдена"])
     env: dict[str, str] = {}
-    for st in tr.main.named_children:
-        tr.statement(st, env, None)
+    try:
+        for st in tr.main.named_children:
+            tr.statement(st, env, None)
+    except Exception as e:  # noqa: BLE001 — уже построенные объекты не выбрасываем
+        tr.note(f"{_LANG}: трассировка прервана ({type(e).__name__})")
     return tr.graph(f"{_LANG}: в main() не создаются экземпляры пользовательских классов")

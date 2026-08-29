@@ -75,6 +75,15 @@ class P { static void Main() { var c = new Circle("c1", 2); } }
     assert _slots(inst["c"]) == {"Fill": '"red"', "Name": '"c1"', "R": "2"}
 
 
+def test_top_level_statements_without_main():
+    """C# 9: кода `class Program { Main }` нет — трассируем операторы верхнего уровня."""
+    inst, links, _ = _g(CLASSES + 'var m = new Manager("ops");\n'
+                                  'var t = new Task("a");\n'
+                                  'm.Add(t);\n')
+    assert _slots(inst["t"])["Title"] == '"a"'
+    assert links[("m", "t", "tasks[0]")] == "containment"
+
+
 def test_compound_assignment_shown_as_expression():
     inst, _, notes = _g(_main('var t = new Task("a");\nt.Title += "!";'))
     assert _slots(inst["t"])["Title"] == '"a" + "!"' and any("+=" in n for n in notes)

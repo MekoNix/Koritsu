@@ -39,3 +39,20 @@ def test_nary_body_stops_at_operator():
 
 def test_display_para():
     assert latex_to_omml("x", display=True).startswith("<m:oMathPara")
+
+
+def test_nary_inside_frac_keeps_its_body():
+    """Сумма в числителе дроби: тело оператора должно быть внутри неё, а не рядом."""
+    el = parse_xml(latex_to_omml(r"\frac{\sum_{i=1}^{n} x_i}{n}"))
+    nary = next(e for e in el.iter(M + "nary"))
+    body = "".join(t.text for t in nary.find(M + "e").iter(M + "t"))
+    assert body == "xi"
+    num = next(e for e in el.iter(M + "num"))
+    assert "".join(t.text for t in num.iter(M + "t")) == "i=1nxi"      # всё внутри числителя
+
+
+def test_nary_inside_sqrt_and_delim():
+    for latex in (r"\sqrt{\sum_{i=1}^{n} x_i}", r"\left( \sum_{i=1}^{n} x_i \right)"):
+        el = parse_xml(latex_to_omml(latex))
+        nary = next(e for e in el.iter(M + "nary"))
+        assert "".join(t.text for t in nary.find(M + "e").iter(M + "t")) == "xi", latex

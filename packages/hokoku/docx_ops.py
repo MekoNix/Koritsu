@@ -103,20 +103,29 @@ def set_child(parent, tag: str, **attrs):
     return insert_ordered(parent, el)
 
 
+def style_ids(doc) -> dict:
+    """Словарь «имя стиля → id», один раз на документ. python-docx ищет стиль по имени
+    XPath'ом по всему styles.xml, а спрашиваем мы его на каждый заголовок, пункт списка
+    и таблицу — на отчёте это была четверть времени рендера."""
+    ids = getattr(doc, "_hokoku_style_ids", None)
+    if ids is None:
+        ids = {s.name: s.style_id for s in doc.styles if s.name}
+        try:
+            doc._hokoku_style_ids = ids
+        except AttributeError:                       # экзотический объект документа — без кэша
+            pass
+    return ids
+
+
 def has_style(doc, name: str) -> bool:
-    try:
-        doc.styles[name]
-        return True
-    except KeyError:
-        return False
+    return name in style_ids(doc)
 
 
 def set_style(doc, p_elem, name: str) -> bool:
-    if not has_style(doc, name):
+    style_id = style_ids(doc).get(name)
+    if style_id is None:
         return False
-    style_id = doc.styles[name].style_id
-    ppr = get_ppr(p_elem)
-    set_child(ppr, "w:pStyle", val=style_id)
+    set_child(get_ppr(p_elem), "w:pStyle", val=style_id)
     return True
 
 
@@ -208,7 +217,7 @@ def add_spans(doc, p_elem, spans: list[Span], base_rpr=None, part=None, **extra)
                     rpr = OxmlElement("w:rPr")
                     r.insert(0, rpr)
                 rs = OxmlElement("w:rStyle")
-                rs.set(qn("w:val"), doc.styles["Hyperlink"].style_id)
+                rs.set(qn("w:val"), style_ids(doc)["Hyperlink"])
                 insert_ordered(rpr, rs)
             h.append(r)
             p_elem.append(h)
@@ -312,6 +321,67 @@ def _create_numbering_part(doc):
     return part
 
 
+def _ind_left(ind) -> int:
+    try:
+        return int(ind.get(qn("w:left")))
+    except (AttributeError, TypeError, ValueError):
+        return 0
+
+
+def _num_ind_dxa(doc, numpr) -> int:
+    """Отступ уровня списка из numbering.xml по w:numPr."""
+    num_id = numpr.find(qn("w:numId"))
+    if num_id is None:
+        return 0
+    ilvl = numpr.find(qn("w:ilvl"))
+    lvl = ilvl.get(qn("w:val")) if ilvl is not None else "0"
+    try:
+        numbering = doc.part.numbering_part.element
+    except (NotImplementedError, KeyError):
+        return 0
+    num = next((n for n in numbering.findall(qn("w:num"))
+                if n.get(qn("w:numId")) == num_id.get(qn("w:val"))), None)
+    abs_id = num.find(qn("w:abstractNumId")) if num is not None else None
+    if abs_id is None:
+        return 0
+    absn = next((a for a in numbering.findall(qn("w:abstractNum"))
+                 if a.get(qn("w:abstractNumId")) == abs_id.get(qn("w:val"))), None)
+    node = next((l for l in absn.findall(qn("w:lvl")) if l.get(qn("w:ilvl")) == lvl), None) \
+        if absn is not None else None
+    return _ind_left(node.find(qn("w:pPr") + "/" + qn("w:ind"))) if node is not None else 0
+
+
+def left_indent_dxa(doc, p_elem) -> int:
+    """Отступ абзаца слева в dxa: прямой w:ind, иначе уровень списка (w:numPr → numbering.xml),
+    иначе стиль абзаца. Word держит отступ пункта списка в трёх разных местах, а таблица,
+    вставленная на место тега, иначе убегает к левому полю из-под своего пункта."""
+    ppr = p_elem.find(qn("w:pPr"))
+    if ppr is None:
+        return 0
+    for src in (ppr, _style_ppr(doc, ppr)):
+        if src is None:
+            continue
+        left = _ind_left(src.find(qn("w:ind")))
+        if left:
+            return left
+        numpr = src.find(qn("w:numPr"))
+        if numpr is not None:
+            left = _num_ind_dxa(doc, numpr)
+            if left:
+                return left
+    return 0
+
+
+def _style_ppr(doc, ppr):
+    """w:pPr стиля абзаца (без basedOn — глубже Word и сам редко ходит за отступом)."""
+    pstyle = ppr.find(qn("w:pStyle"))
+    if pstyle is None:
+        return None
+    sid = pstyle.get(qn("w:val"))
+    el = next((s for s in doc.styles.element.findall(qn("w:style")) if s.get(qn("w:styleId")) == sid), None)
+    return el.find(qn("w:pPr")) if el is not None else None
+
+
 def set_list_item(doc, p_elem, num_id: int | None, level: int, ordered: bool = False, index: int = 1):
     """Пункт списка. num_id=None — запасной вариант без numbering.xml: маркер текстом + отступ."""
     set_style(doc, p_elem, "List Paragraph")
@@ -341,11 +411,15 @@ def style_heading(doc, p_elem, level: int, base_rpr=None):
     return {"bold": True, "size_pt": HEADING_SIZES[level]}
 
 
-def style_quote(doc, p_elem):
+def style_quote(doc, p_elem, level: int = 0):
+    """Цитата; level — вложенность «> >»: каждый уровень добавляет отступ к отступу стиля."""
     if set_style(doc, p_elem, "Quote"):
+        if level:
+            base = doc.styles["Quote"].paragraph_format.left_indent
+            set_child(get_ppr(p_elem), "w:ind", left=int(base.twips if base else 0) + 720 * level)
         return
     ppr = get_ppr(p_elem)
-    set_child(ppr, "w:ind", left=720)
+    set_child(ppr, "w:ind", left=720 * (level + 1))
     bdr = OxmlElement("w:pBdr")
     left = OxmlElement("w:left")
     for k, v in (("val", "single"), ("sz", "12"), ("space", "8"), ("color", "BBBBBB")):
@@ -448,7 +522,16 @@ def add_picture(doc, ref_elem, parent_proxy, data: bytes, w_cm: float, h_cm: flo
     return p
 
 
-_bookmark_id = [100]
+def _next_bookmark_id(doc) -> int:
+    """Номер закладки свой у каждого документа: общий на процесс счётчик делал вывод
+    невоспроизводимым (два рендера подряд давали разные w:id) и мог разорвать пару
+    bookmarkStart/bookmarkEnd, если два рендера идут одновременно."""
+    n = getattr(doc, "_hokoku_bookmark_id", 100)
+    try:
+        doc._hokoku_bookmark_id = n + 1
+    except AttributeError:
+        pass
+    return n
 
 
 def _field(instr: str, cached: str):
@@ -459,10 +542,26 @@ def _field(instr: str, cached: str):
     return f
 
 
+_CAPTION_REF_RE = re.compile(r"\{ref:([^\s{}]+)\}")
+
+
+def _caption_text(p, text: str):
+    """Текст подписи: «ср. {ref:схема}» → поле REF вместо литерала. Остальную разметку
+    в подписи не разбираем — звёздочка в «Рисунок 1 — сложность O(n*log n)» не курсив."""
+    pos = 0
+    for m in _CAPTION_REF_RE.finditer(text):
+        if m.start() > pos:
+            p.append(make_run(text[pos:m.start()], None))
+        p.append(ref_field("_Ref_" + m.group(1), "?"))
+        pos = m.end()
+    if text[pos:]:
+        p.append(make_run(text[pos:], None))
+
+
 def add_caption(doc, ref_elem, fmt: str, n: int, caption: str | None, *, align: str = "center",
                 ppr_template=None, seq_name: str | None = None, bookmark: str | None = None,
                 suffix: str = "", repeat: bool = False):
-    """
+    r"""
     Подпись «Рисунок N — текст». seq_name → номер полем SEQ (repeat=True: `\c` — тот же
     номер, для листов одной картинки); bookmark → закладка вокруг номера для ссылок REF.
     """
@@ -475,10 +574,11 @@ def add_caption(doc, ref_elem, fmt: str, n: int, caption: str | None, *, align: 
     before, _, after = fmt.partition("{n}")
     after = after.replace("{caption}", caption or "") + suffix
     if before:
-        p.append(make_run(before, None))
+        _caption_text(p, before)
+    bm_id = _next_bookmark_id(doc) if bookmark else 0
     if bookmark:
         bs = OxmlElement("w:bookmarkStart")
-        bs.set(qn("w:id"), str(_bookmark_id[0]))
+        bs.set(qn("w:id"), str(bm_id))
         bs.set(qn("w:name"), bookmark)
         p.append(bs)
     if seq_name:
@@ -487,11 +587,10 @@ def add_caption(doc, ref_elem, fmt: str, n: int, caption: str | None, *, align: 
         p.append(make_run(str(n), None))
     if bookmark:
         be = OxmlElement("w:bookmarkEnd")
-        be.set(qn("w:id"), str(_bookmark_id[0]))
-        _bookmark_id[0] += 1
+        be.set(qn("w:id"), str(bm_id))
         p.append(be)
     if after:
-        p.append(make_run(after, None))
+        _caption_text(p, after)
     return p
 
 
@@ -517,16 +616,16 @@ def add_formula(doc, ref_elem, latex: str, *, numbered: bool, n: int, seq_name: 
         p.append(make_run("\t", None))
         p.append(omml_element(latex))
         p.append(make_run("\t(", None))
+        bm_id = _next_bookmark_id(doc) if bookmark else 0
         if bookmark:
             bs = OxmlElement("w:bookmarkStart")
-            bs.set(qn("w:id"), str(_bookmark_id[0]))
+            bs.set(qn("w:id"), str(bm_id))
             bs.set(qn("w:name"), bookmark)
             p.append(bs)
         p.append(_field(f" SEQ {seq_name} \\* ARABIC ", str(n)) if seq_name else make_run(str(n), None))
         if bookmark:
             be = OxmlElement("w:bookmarkEnd")
-            be.set(qn("w:id"), str(_bookmark_id[0]))
-            _bookmark_id[0] += 1
+            be.set(qn("w:id"), str(bm_id))
             p.append(be)
         p.append(make_run(")", None))
     else:
@@ -603,48 +702,95 @@ HEADER_SHADE = "E7E6E6"
 
 
 def _doc_font_pt(doc) -> float:
-    try:
-        sz = doc.styles["Normal"].font.size
-        if sz:
-            return sz.pt
-    except KeyError:
-        pass
-    return 12.0
+    pt = getattr(doc, "_hokoku_font_pt", None)
+    if pt is None:
+        pt = 12.0
+        try:
+            sz = doc.styles["Normal"].font.size
+            if sz:
+                pt = sz.pt
+        except KeyError:
+            pass
+        try:
+            doc._hokoku_font_pt = pt
+        except AttributeError:
+            pass
+    return pt
 
 
-def _auto_col_widths(rows, ncols: int, max_w_cm: float, font_pt: float = 12.0) -> list[float]:
-    """Ширины колонок по самому длинному содержимому (+ отступы), не шире max_w."""
+def _auto_col_widths(rows, ncols: int, max_w_cm: float, font_pt: float = 12.0,
+                     min_col_cm: float = 1.2) -> list[float]:
+    """Ширины колонок по самому длинному содержимому (+ отступы), не шире max_w.
+    Если в полосу не влезает, ужимается только избыток над полом (самое длинное слово —
+    переносить его всё равно некуда): пропорциональное ужатие продавливало короткие
+    колонки, хотя рвался в итоге длинный текст, которому перенос не страшен."""
     font_px = font_pt * 96 / 72
-    need = []
+    space = text_width(" ", font_px, bold=True)
+
+    def cm(px: float) -> float:
+        return px * 1.2 / 37.8 + 0.8                       # px→cm при 96 dpi + поля ячейки
+
+    need, floor = [], []
     for ci in range(ncols):
-        w = 1.2
+        w = fl = min_col_cm
         for row in rows:
             if ci < len(row):
-                t = "".join(sp.text for sp in row[ci])
-                w = max(w, text_width(t, font_px, bold=True) * 1.2 / 37.8 + 0.8)   # px→cm при 96 dpi
+                # ширина всей ячейки складывается из ширин слов — заодно самое длинное слово
+                words = [text_width(x, font_px, bold=True)
+                         for x in "".join(sp.text for sp in row[ci]).split()]
+                if words:
+                    w = max(w, cm(sum(words) + space * (len(words) - 1)))
+                    fl = max(fl, cm(max(words)))
         need.append(min(w, max_w_cm))
+        floor.append(min(fl, need[-1]))
     total = sum(need)
-    if total > max_w_cm:                      # ужать пропорционально
-        need = [w * max_w_cm / total for w in need]
+    if total > max_w_cm:
+        room, surplus = max_w_cm - sum(floor), total - sum(floor)
+        if room > 0 and surplus > 0:
+            need = [f + (w - f) * room / surplus for w, f in zip(need, floor)]
+        else:                                 # одни только неразрывные слова — ужать пропорционально
+            need = [w * max_w_cm / total for w in need]
     return [round(w, 2) for w in need]
 
 
 def add_table(doc, ref_elem, rows: list[list[list[Span]]], header: bool, part,
               align: list[str] | None = None, base_rpr=None, col_widths_cm: list[float] | None = None,
-              max_w_cm: float | None = None, header_fill: str = HEADER_SHADE, header_center: bool = True):
+              max_w_cm: float | None = None, header_fill: str = HEADER_SHADE, header_center: bool = True,
+              min_col_cm: float = 1.2, indent_dxa: int = 0):
     """Таблица после ref_elem: стиль Table Grid если есть, иначе рамки вручную."""
     ncols = max(len(r) for r in rows) if rows else 1
     tbl = doc.add_table(rows=len(rows), cols=ncols)
     tbl_elem = tbl._tbl
     if not col_widths_cm:
-        col_widths_cm = _auto_col_widths(rows, ncols, max_w_cm or 16.0, _doc_font_pt(doc))
+        col_widths_cm = _auto_col_widths(rows, ncols, max_w_cm or 16.0, _doc_font_pt(doc), min_col_cm)
+    cols = [float(w) for w in col_widths_cm[:ncols]]
+    if len(cols) < ncols:                     # ширин задали меньше, чем колонок — добрать остатком
+        rest = max(0.0, (max_w_cm or sum(cols)) - sum(cols))
+        cols += [max(min_col_cm, rest / (ncols - len(cols)))] * (ncols - len(cols))
     tbl.autofit = False
-    set_child(tbl_elem.tblPr, "w:tblW", w=int(sum(col_widths_cm) * DXA_PER_CM), type="dxa")
-    for ci, wcm in enumerate(col_widths_cm[:ncols]):
-        for row in tbl.rows:
-            row.cells[ci].width = Emu(int(wcm * EMU_PER_CM))
-    if has_style(doc, "Table Grid"):
-        tbl.style = doc.styles["Table Grid"]
+    set_child(tbl_elem.tblPr, "w:tblW", w=int(sum(cols) * DXA_PER_CM), type="dxa")
+    if indent_dxa:
+        set_child(tbl_elem.tblPr, "w:tblInd", w=indent_dxa, type="dxa")
+    # LibreOffice раскладывает колонки по w:tblGrid, а не по w:tcW: без этой строки посчитанные
+    # ширины видны в Word, но в PDF колонки выходят равными (сетку python-docx делит поровну)
+    grid = tbl_elem.find(qn("w:tblGrid"))
+    if grid is not None:
+        for gc, wcm in zip(grid.findall(qn("w:gridCol")), cols):
+            gc.set(qn("w:w"), str(int(wcm * DXA_PER_CM)))
+    # tbl.cell(r, c) и row.cells каждый раз заново строят всю матрицу ячеек (учёт gridSpan
+    # и vMerge), поэтому наполнение таблицы росло квадратично: 400 строк — 42 с, 98 % времени
+    # внутри python-docx. Матрица нужна одна на таблицу; объединённых ячеек мы не делаем,
+    # поэтому строгий порядок «строка за строкой» верен.
+    cells = tbl._cells
+    for ci, wcm in enumerate(cols):
+        w = Emu(int(wcm * EMU_PER_CM))
+        for ri in range(len(rows)):
+            cells[ri * ncols + ci].width = w
+    grid_id = style_ids(doc).get("Table Grid")
+    if grid_id:
+        # напрямую в w:tblStyle: сеттер python-docx на каждую таблицу заново ищет стиль
+        # по имени и «стиль по умолчанию» XPath'ом — это была пятая часть времени рендера
+        set_child(tbl_elem.tblPr, "w:tblStyle", val=grid_id)
     else:
         tblpr = tbl_elem.tblPr
         borders = OxmlElement("w:tblBorders")
@@ -656,7 +802,7 @@ def add_table(doc, ref_elem, rows: list[list[list[Span]]], header: bool, part,
         insert_ordered(tblpr, borders)
     for ri, row in enumerate(rows):
         for ci in range(ncols):
-            cell = tbl.cell(ri, ci)
+            cell = cells[ri * ncols + ci]
             p = cell.paragraphs[0]._p
             spans = row[ci] if ci < len(row) else []
             if align and ci < len(align):

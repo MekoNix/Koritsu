@@ -81,6 +81,18 @@ def test_init_fields_and_access():
     assert _field(b, "size").type_str == "int"                # @property → поле
 
 
+def test_chained_and_tuple_self_assignment():
+    """`self.a = self.b = 0` и `self.x, self.y = 1, 2` — четыре поля, не одно."""
+    c = extract_py(
+        "class P:\n"
+        "    def __init__(self):\n"
+        "        self.a = self.b = 0\n"
+        "        self.x, self.y = 1, 2\n"
+        "        (self.p, self.q) = 'a', 'b'\n")[0]
+    assert [(f.name, f.type_str) for f in c.fields] == [
+        ("a", "int"), ("b", "int"), ("x", "int"), ("y", "int"), ("p", "str"), ("q", "str")]
+
+
 def test_methods():
     b = _by_name(extract_py(SRC))["Base"]
     assert _method(b, "__init__").is_constructor and _method(b, "__init__").access == "public"

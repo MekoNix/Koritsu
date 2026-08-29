@@ -75,12 +75,14 @@ def test_captions_are_seq_fields_with_bookmarks_and_refs(template, tmp_path, png
         d.add_paragraph("{{текст}}")
     out = str(tmp_path / "o.docx")
     res = render(template(build), {
-        "схема": Image(png, caption="Схема", split_pages=False),
+        "схема": Image(png, caption="Схема"),
         "таб": Table([["a"], ["1"]], caption="Т"),
         "текст": Markdown("см. рисунок {ref:схема} и таблицу {ref:таб}"),
     }, out)
     d = Document(out)
-    assert res.refs == {"схема": 1, "таб": 1} and res.unresolved_refs == []
+    # {ref:} в тексте самого шаблона — тоже поле REF; несуществующее имя видно программно
+    assert res.refs == {"схема": 1, "таб": 1} and res.unresolved_refs == ["нет"]
+    assert "Схема на 1, таблица 1, см. также ?." in texts(out)
     seq = _fields(d, "SEQ")
     assert any("SEQ Рисунок" in f for f in seq) and any("SEQ Таблица" in f for f in seq)
     names = [b.get(qn("w:name")) for b in d.element.body.iter(qn("w:bookmarkStart"))]
@@ -91,14 +93,47 @@ def test_captions_are_seq_fields_with_bookmarks_and_refs(template, tmp_path, png
     assert any("_Ref_схема" in f for f in refs)
 
 
-def test_split_sheets_share_number(template, tmp_path, tall_png):
+def test_diagram_pages_are_sheets_of_one_figure(template, tmp_path, png, monkeypatch):
+    """Многостраничный mxfile — один рисунок в несколько листов: номер и закладка общие."""
+    calls = []
+
+    def fake(xml, page=None, **kw):
+        calls.append(page)
+        return png
+
+    import sys
+    monkeypatch.setattr(sys.modules["hokoku.render"], "drawio_to_png", fake)   # hokoku.render — функция
+    xml = "<mxfile>" + "".join(f'<diagram name="Л{i}"/>' for i in range(1, 4)) + "</mxfile>"
     out = str(tmp_path / "o.docx")
-    render(template(lambda d: d.add_paragraph("{{a}}")), {"a": Image(tall_png, caption="С", split_pages=True)}, out)
+    res = render(template(lambda d: d.add_paragraph("{{схема}}")),
+                 {"схема": Diagram(xml, caption="Алгоритм")}, out)
+    assert calls == [1, 2, 3]                                   # запрошены все листы
+    assert res.figures == 1 and res.refs == {"схема": 1}        # номер один на всю схему
+    caps = [t for t in texts(out) if t.startswith("Рисунок")]
+    assert caps == ["Рисунок 1 — Алгоритм (лист 1 из 3)",
+                    "Рисунок 1 — Алгоритм (лист 2 из 3)",
+                    "Рисунок 1 — Алгоритм (лист 3 из 3)"]
     d = Document(out)
     seq = _fields(d, "SEQ Рисунок")
-    assert len(seq) >= 2 and "\\c" not in seq[0] and all("\\c" in f for f in seq[1:])
-    caps = [t for t in texts(out) if t.startswith("Рисунок")]
-    assert caps[0].startswith("Рисунок 1 — С (лист 1 из")
+    assert len(seq) == 3 and "\\c" not in seq[0] and all("\\c" in f for f in seq[1:])
+    names = [b.get(qn("w:name")) for b in d.element.body.iter(qn("w:bookmarkStart"))]
+    assert names.count("_Ref_схема") == 1                       # закладка одна, ссылка не двоится
+    assert len(d.inline_shapes) == 3
+
+
+def test_diagram_single_page_and_bad_page(template, tmp_path, png, monkeypatch):
+    import sys
+    monkeypatch.setattr(sys.modules["hokoku.render"], "drawio_to_png", lambda xml, page=None, **kw: png)
+    xml = '<mxfile><diagram name="A"/><diagram name="B"/></mxfile>'
+    out = str(tmp_path / "o.docx")
+    res = render(template(lambda d: d.add_paragraph("{{схема}}")),
+                 {"схема": Diagram(xml, caption="Один лист", page=2)}, out)
+    assert res.figures == 1
+    assert [t for t in texts(out) if t.startswith("Рисунок")] == ["Рисунок 1 — Один лист"]
+    from hokoku.images import count_pages, drawio_to_png
+    assert count_pages(xml) == 2 and count_pages("<mxfile><diagram/></mxfile>") == 1
+    with pytest.raises(ValueError, match="запрошена 5"):        # CLI молча отдал бы последнюю
+        drawio_to_png(xml, 5)
 
 
 def test_captions_without_fields_style_override(template, tmp_path, png):
@@ -225,7 +260,22 @@ def test_formula_value_and_markdown_math(template, tmp_path):
     assert any(x.strip().startswith("(") and x.strip().endswith(")") for x in t)   # «(1)» у формулы
     assert "Энергия  по формуле 1; и ещё:" in t
     assert d.settings.element.find(qn("w:updateFields")) is not None
-    render(template(lambda d: d.add_paragraph("{{f}}")), {"f": Formula("\\frac{a")}, out)   # обрывок не роняет
+
+
+def test_broken_formula_is_an_error_not_silence(template, tmp_path):
+    """Обрывок формулы раньше собирался молча — в отчёт уходили пустые скобки «(1)»,
+    и человек узнавал об этом, только открыв документ."""
+    from hokoku import Formula
+    out = str(tmp_path / "o.docx")
+    for latex in (r"\frac{1}{", r"\sqrt", r"x^{", r"\begin{matrix} a"):
+        with pytest.raises(HokokuError, match="формула не разобрана"):
+            render(template(lambda d: d.add_paragraph("{{f}}")), {"f": Formula(latex)}, out)
+    res = render(template(lambda d: (d.add_paragraph("{{f}}"), d.add_paragraph("{{ок}}"))),
+                 {"f": Formula(r"\frac{1}{"), "ок": Markdown("остальное на месте")},
+                 out, on_error="skip")
+    assert [e["key"] for e in res.errors] == ["f"] and "остальное на месте" in "\n".join(texts(out))
+    render(template(lambda d: d.add_paragraph("{{f}}")),      # неизвестная команда — по-прежнему текстом
+           {"f": Formula(r"\unknowncmd{x}")}, out)
 
 
 def test_toc(template, tmp_path):
@@ -238,3 +288,164 @@ def test_toc(template, tmp_path):
     assert 'TOC \\o "1-2"' in instr
     assert "Содержание" in texts(out)
     assert d.settings.element.find(qn("w:updateFields")).get(qn("w:val")) == "true"
+
+
+def test_caption_false_and_headers_are_not_numbered(template, tmp_path, png):
+    """Логотип — не «Рисунок 1»: caption=False убирает подпись, колонтитул не нумеруется."""
+    def build(d):
+        d.sections[0].header.paragraphs[0].text = "{{лого}}"
+        d.add_paragraph("{{без_подписи}}")
+        d.add_paragraph("{{с_подписью}}")
+        d.add_paragraph("{{таблица}}")
+    out = str(tmp_path / "o.docx")
+    res = render(template(build), {
+        "лого": Image(png),
+        "без_подписи": Image(png, caption=False),
+        "с_подписью": Image(png, caption="Схема"),
+        "таблица": Table([["a"], ["1"]], caption=False),
+    }, out)
+    d = Document(out)
+    caps = [t for t in texts(out) if t.startswith(("Рисунок", "Таблица"))]
+    assert caps == ["Рисунок 1 — Схема"]                  # ровно одна подпись на весь документ
+    assert res.figures == 1 and res.tables == 0           # номера не потрачены впустую
+    assert len(d.inline_shapes) == 2 and len(d.tables) == 1
+    hdr = d.sections[0].header
+    assert not any("Рисунок" in (t.text or "") for t in hdr._element.iter(qn("w:t")))
+
+
+def test_on_error_skip_collects_and_keeps_rest(template, tmp_path, png):
+    """Одна битая картинка не должна уносить весь отчёт: собрать что можно, беды — списком."""
+    def build(d):
+        d.add_paragraph("{{a}}")
+        d.add_paragraph("{{битая}}")
+        d.add_paragraph("{{чужой_тип}}")
+        d.add_paragraph("{{b}}")
+    vals = {"a": Markdown("первый"), "битая": Image("/нет/такой/картинки.png"),
+            "чужой_тип": object(), "b": Markdown("второй")}
+    out = str(tmp_path / "o.docx")
+
+    with pytest.raises(HokokuError):                        # по умолчанию — как раньше
+        render(template(build), vals, str(tmp_path / "raise.docx"))
+
+    res = render(template(build), vals, out, on_error="skip")
+    full = "\n".join(texts(out))
+    assert "первый" in full and "второй" in full and "{{" not in full
+    assert [e["key"] for e in res.errors] == ["битая", "чужой_тип"]
+    assert "не найдена" in res.errors[0]["message"]
+    assert res.unfilled == [] and res.figures == 0
+
+    with pytest.raises(ValueError):
+        render(template(build), {}, out, on_error="ignore")
+
+
+def test_two_block_tags_in_one_paragraph_keep_own_refs(template, tmp_path, png):
+    """Два блочных тега в одном абзаце: номер и закладка у каждого свои."""
+    out = str(tmp_path / "o.docx")
+    res = render(template(lambda d: d.add_paragraph("{{первая}} {{вторая}}")),
+                 {"первая": Image(png, caption="A"),
+                  "вторая": Image(png, caption="B")}, out)
+    assert res.refs == {"первая": 1, "вторая": 2}
+
+
+def test_ref_inside_value_table_gets_number(template, tmp_path, png):
+    """«см. {ref:рис}» в ячейке таблицы-значения: ячейки пишет ops.add_table напрямую,
+    и поле REF раньше оставалось с кэшем «?», не попадая даже в unresolved_refs."""
+    def build(d):
+        d.add_paragraph("{{рис}}")
+        d.add_paragraph("{{таб}}")
+    out = str(tmp_path / "o.docx")
+    res = render(template(build), {
+        "рис": Image(png, caption="Схема"),
+        "таб": Table([["что"], ["см {ref:рис}"]], caption="Т"),
+        "нетакой": None,
+    }, out)
+    cell = Document(out).tables[0].rows[1].cells[0]
+    assert ptext(cell.paragraphs[0]) == "см 1"                      # кэш номера, не «?»
+    assert res.unresolved_refs == []
+
+    res2 = render(template(build), {"таб": Table([["см {ref:нету}"]], caption="Т")},
+                  str(tmp_path / "o2.docx"))
+    assert res2.unresolved_refs == ["нету"]                         # несуществующая — видна
+
+
+def test_ref_inside_caption_gets_number(template, tmp_path, png):
+    """«ср. {ref:схема}» в самой подписи: подпись пишется docx_ops.make_run, и ссылка
+    оставалась литералом — ни поля REF, ни записи в unresolved_refs."""
+    def build(d):
+        d.add_paragraph("{{схема}}")
+        d.add_paragraph("{{график}}")
+        d.add_paragraph("{{таб}}")
+    out = str(tmp_path / "o.docx")
+    res = render(template(build), {
+        "схема":  Image(png, caption="исходная"),
+        "график": Image(png, caption="ср. {ref:схема}"),
+        "таб":    Table([["a"]], caption="к {ref:нету}"),
+    }, out)
+    caps = [ptext(p) for p in Document(out).paragraphs if p.style.name == "Caption"]
+    assert "Рисунок 2 — ср. 1" in caps and "Таблица 1 — к ?" in caps
+    assert res.unresolved_refs == ["нету"]
+
+
+def test_skip_survives_alien_exception_and_keeps_blocks_tail(template, tmp_path):
+    """skip обязан собрать остальное: и когда python-docx не знает формат картинки,
+    и когда битый элемент стоит в середине Blocks."""
+    import io as _io
+    from PIL import Image as PIL
+    buf = _io.BytesIO()
+    PIL.new("RGB", (60, 40), "red").save(buf, format="WEBP")        # python-docx WEBP не знает
+    out = str(tmp_path / "o.docx")
+    res = render(template(lambda d: (d.add_paragraph("{{a}}"), d.add_paragraph("{{b}}"))),
+                 {"a": Image(buf.getvalue()),
+                  "b": Blocks([Text("до"), Image("/нет/файла.png"), Text("после")])},
+                 out, on_error="skip")
+    full = "\n".join(texts(out))
+    assert "до" in full and "после" in full                         # хвост Blocks на месте
+    assert [e["key"] for e in res.errors] == ["a", "b"]
+    assert "UnrecognizedImageError" in res.errors[0]["message"]
+
+    with pytest.raises(Exception):                                  # без skip — как раньше
+        render(template(lambda d: d.add_paragraph("{{a}}")), {"a": Image(buf.getvalue())},
+               str(tmp_path / "raise.docx"))
+
+
+def test_unknown_value_key_is_reported(template, tmp_path):
+    """Опечатка в ключе значения (в том числе у модели) раньше исчезала бесследно:
+    в unfilled её нет — там только объявленные теги, в errors тоже."""
+    out = str(tmp_path / "o.docx")
+    res = render(template(lambda d: d.add_paragraph("{{цель}} {{задачи}}")),
+                 {"цель": Text("есть"), "цель_рабты": Markdown("опечатка"), "лишний": Text("x")}, out)
+    assert res.unfilled == ["задачи"]                       # тег без значения
+    assert res.unknown_keys == ["лишний", "цель_рабты"]     # значение без тега
+
+
+def test_table_build_is_linear(template, tmp_path):
+    """Наполнение таблицы росло квадратично: tbl.cell() каждый раз строил всю матрицу
+    ячеек заново, и 400 строк собирались 42 с."""
+    import time
+    out = str(tmp_path / "o.docx")
+    times = {}
+    for n in (40, 160):
+        rows = [["№", "Параметр", "Значение", "Единица"]] + [[str(i), f"п{i}", "1.0", "с"]
+                                                             for i in range(n)]
+        t = time.time()
+        render(template(lambda d: d.add_paragraph("{{т}}")), {"т": Table(rows)}, out)
+        times[n] = time.time() - t
+    assert times[160] < times[40] * 8                       # квадрат дал бы ×16 и хуже
+    assert times[160] < 3.0
+
+
+def test_bookmark_ids_are_per_document(template, tmp_path, png):
+    """Номер закладки был общим на процесс: вывод не воспроизводился побайтно, а два
+    одновременных рендера могли разорвать пару bookmarkStart/bookmarkEnd."""
+    def build(d):
+        d.add_paragraph("{{схема}}")
+        d.add_paragraph("{{ссылка}}")
+    vals = {"схема": Image(png, caption="С"), "ссылка": Markdown("см. {ref:схема}")}
+    first = render(template(build), vals, None).data
+    second = render(template(build), vals, None).data
+    import io
+    import zipfile
+    def doc_xml(data):
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            return z.read("word/document.xml")
+    assert doc_xml(first) == doc_xml(second)                # одинаковый вход — одинаковый выход

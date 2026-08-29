@@ -3,7 +3,7 @@
 captions:
   figure: "Рисунок {n} — {caption}"     # ГОСТ 7.32: "Рисунок {n} – {caption}" (короткое тире)
   table:  "Таблица {n} — {caption}"
-  sheet:  " (лист {k} из {total})"       # суффикс для картинки, разрезанной на листы
+  sheet:  " (лист {k} из {total})"       # суффикс, когда у схемы несколько листов
   fields: true                           # номер — поле SEQ (Word пересчитает при F9/печати)
   figure_align: center
   table_align: left
@@ -21,12 +21,11 @@ code:
 table:
   header_fill: "E7E6E6"                  # заливка шапки; "" — без заливки
   header_center: true
+  min_col_cm: 1.2                        # пол ширины колонки при ужатии в полосу набора
 
 image:
   default_width: natural                 # natural — по DPI файла; число — см
   min_width_cm: 4
-  sheet_fraction: 0.8                    # лист = доля высоты страницы при нарезке
-  connectors: true                       # соединители ГОСТ 19.701-90 на разрезах
   keep_intro: true                       # абзац с «:» перед картинкой прилипает к ней
 
 headings:                                # размеры, если в шаблоне нет стилей Heading N
