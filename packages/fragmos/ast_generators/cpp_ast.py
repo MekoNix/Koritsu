@@ -394,12 +394,22 @@ class CppAST(ASTGenerator):
             return {'type': 'process', 'value': text}
         return {'type': 'expression', 'value': text}
 
+    # Объявление переменной: декларатор с инициализатором или без него.
+    # Голый `identifier` — это `int a;` / `std::vector<int> v;`: в учебном
+    # коде объявление без инициализатора обычно, и терять его нельзя.
+    # `function_declarator` в этот список не входит намеренно — прототип
+    # функции (`int f(int);`) в схеме не рисуем.
+    _DECLARATORS = frozenset((
+        'identifier',
+        'init_declarator',
+        'reference_declarator',
+        'pointer_declarator',
+        'structured_binding_declarator',
+        'array_declarator',
+    ))
+
     def _visit_declaration(self, node):
         for child in node.named_children:
-            if child.type in ('init_declarator',
-                              'reference_declarator',
-                              'pointer_declarator',
-                              'structured_binding_declarator',
-                              'array_declarator'):
+            if child.type in self._DECLARATORS:
                 return self._assignment(node)
         return None

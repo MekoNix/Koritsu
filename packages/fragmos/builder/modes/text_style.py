@@ -90,14 +90,29 @@ class TextStyle:
             return start, end
         return header, header
 
+    # Переменная цикла: идентификатор в начале условия. Группа 2 ловит
+    # следующую за ним `(` — тогда это вызов функции (`next(i)`), а не
+    # переменная, и подпись «Цикл next» была бы враньём.
+    _LOOP_VAR = re.compile(r'\s*([A-Za-z_]\w*)\s*(\()?')
+
     def while_labels(self, condition: str) -> tuple:
-        """(start, end) для while в режиме loop_limit."""
+        """(start, end) для while в режиме loop_limit.
+
+        Переменную цикла ищем в ИСХОДНОМ условии, до перевода в
+        псевдокод: после перевода первым словом оказывается, например,
+        «не» (из `!flag`). Если переменной цикла нет — берём шаблоны
+        start_novar / end_novar (по умолчанию — обычные, без {var}).
+        """
         cond = self.apply('condition', condition)
-        var_m = re.match(r'(\w+)', cond)
-        var = var_m.group(1) if var_m else 'цикл'
-        start = self.while_tpl.get('start', '{cond}').format(var=var, cond=cond)
-        end = self.while_tpl.get('end', '{cond}').format(var=var, cond=cond)
-        return start, end
+        m = self._LOOP_VAR.match(condition or '')
+        var = m.group(1) if m and not m.group(2) else ''
+        start_tpl = self.while_tpl.get('start', '{cond}')
+        end_tpl = self.while_tpl.get('end', '{cond}')
+        if not var:
+            start_tpl = self.while_tpl.get('start_novar', start_tpl)
+            end_tpl = self.while_tpl.get('end_novar', end_tpl)
+        return (start_tpl.format(var=var, cond=cond),
+                end_tpl.format(var=var, cond=cond))
 
 
 def build_styles(raw_styles: dict) -> dict:

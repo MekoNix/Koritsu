@@ -15,6 +15,7 @@ def libreoffice_available() -> bool:
 
 
 def docx_to_pdf(docx_path: str, pdf_path: str, timeout: float = 90.0) -> str:
+    """timeout — секунды на LibreOffice (серверу нужны свои, короче умолчания)."""
     exe = shutil.which("libreoffice") or shutil.which("soffice")
     if not exe:
         raise HokokuError("LibreOffice не установлен — PDF недоступен")

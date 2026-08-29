@@ -14,7 +14,7 @@ from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 from docx.text.run import Run
 
-from .safety import validate_docx
+from .safety import DocxValidationError, strip_external_refs, validate_docx
 
 
 def open_document(source):
@@ -22,9 +22,15 @@ def open_document(source):
     if hasattr(source, "paragraphs") and hasattr(source, "part"):
         return source
     validate_docx(source)
-    if isinstance(source, (bytes, bytearray)):
-        return Document(io.BytesIO(bytes(source)))
-    return Document(source)
+    try:
+        doc = Document(io.BytesIO(bytes(source))) if isinstance(source, (bytes, bytearray)) \
+            else Document(source)
+    except ValueError as e:
+        # python-docx отказывает голым ValueError («is not a Word file») — например,
+        # на .dotx: наружу из hokoku должна идти DocxValidationError
+        raise DocxValidationError(f"файл не открывается как DOCX: {e}")
+    strip_external_refs(doc)
+    return doc
 
 
 @dataclass

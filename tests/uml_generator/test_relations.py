@@ -74,7 +74,7 @@ def test_cs_relations():
     # List<Task> + Task current: вид — по приоритету (композиция), кратность коллекции остаётся
     assert rels[("Manager", "Task")] == ("composition", "0..*")
     assert rels[("Task", "Kind")] == ("composition", "")
-    assert rels[("Cfg", "Manager")] == ("nesting", "")
+    assert rels[("Manager.Cfg", "Manager")] == ("nesting", "")
     assert rels[("Manager", "Kind")] == ("dependency", "")
 
 
@@ -100,3 +100,58 @@ def test_inheritance_beats_dependency_and_self_ignored():
     rels = _rels(extract_cs("class A { public A next; } class B : A { public void f(A a) {} }"))
     assert ("A", "A") not in rels
     assert rels[("B", "A")] == ("inheritance", "")
+
+
+def test_same_name_classes_in_different_namespaces():
+    """
+    Было: связи искались по короткому имени. `Rendering.Pass` целился в первый
+    попавшийся `Prim` (из `Geometry`), а поле типа `Geometry.Prim` внутри
+    `Rendering.Prim` отбрасывалось как ссылка на себя.
+    """
+    rels = _rels(extract_cs("""
+        namespace Geometry {
+            class Prim  { public double Area; }
+            class Scene { public Prim Root; }
+        }
+        namespace Rendering {
+            class Prim { public Geometry.Prim Source; }
+            class Pass { public Prim Target; }
+        }
+    """))
+    assert rels[("Geometry.Scene", "Geometry.Prim")] == ("composition", "")
+    assert rels[("Rendering.Pass", "Rendering.Prim")] == ("composition", "")
+    assert rels[("Rendering.Prim", "Geometry.Prim")] == ("composition", "")
+    assert ("Rendering.Pass", "Geometry.Prim") not in rels
+
+
+def test_cpp_namespaces_qualify_relations():
+    rels = _rels(extract_cpp("""
+        namespace geom { class Prim { public: double area; }; }
+        namespace render {
+            class Prim { public: geom::Prim* source; };
+            class Pass { public: Prim* target; };
+        }
+        namespace deep::inner { class Leaf : public geom::Prim { }; }
+    """))
+    assert rels[("render.Prim", "geom.Prim")] == ("aggregation", "")
+    assert rels[("render.Pass", "render.Prim")] == ("aggregation", "")
+    assert rels[("deep.inner.Leaf", "geom.Prim")] == ("inheritance", "")
+
+
+def test_cs_file_scoped_namespace_and_partial():
+    """`namespace N;` действует до конца файла; partial склеивается внутри своей области."""
+    classes = extract_cs(
+        "namespace App.Core;\n"
+        "partial class Doc { public int A; }\n"
+        "partial class Doc { public Item It; }\n"
+        "class Item { }\n")
+    assert [c.uid for c in classes] == ["App.Core.Doc", "App.Core.Item"]
+    assert _rels(classes)[("App.Core.Doc", "App.Core.Item")] == ("composition", "")
+
+
+def test_partial_in_different_namespaces_is_not_merged():
+    classes = extract_cs(
+        "namespace N1 { partial class Doc { public int A; } }\n"
+        "namespace N2 { partial class Doc { public N1.Doc Src; } }\n")
+    assert [c.uid for c in classes] == ["N1.Doc", "N2.Doc"]
+    assert _rels(classes)[("N2.Doc", "N1.Doc")] == ("composition", "")

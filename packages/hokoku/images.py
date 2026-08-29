@@ -104,7 +104,10 @@ def drawio_to_png(xml: str, page: int | None = None, scale: float = 2.0, timeout
         cmd.append(src)
         if shutil.which("xvfb-run"):
             cmd = ["xvfb-run", "-a"] + cmd
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise ValueError(f"drawio не уложился в {timeout:g} с")
         if not os.path.isfile(out):
             raise ValueError(f"drawio не создал PNG: {(r.stderr or r.stdout).strip()[-300:]}")
         with open(out, "rb") as f:

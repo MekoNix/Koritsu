@@ -56,3 +56,22 @@ def test_nary_inside_sqrt_and_delim():
         el = parse_xml(latex_to_omml(latex))
         nary = next(e for e in el.iter(M + "nary"))
         assert "".join(t.text for t in nary.find(M + "e").iter(M + "t")) == "xi", latex
+
+
+def test_lim_is_a_function_with_body():
+    """Предел с телом — m:func, а не голый limLow: иначе Word и LibreOffice рисуют
+    «lim_{x→0} \\frac{sin x}{x}» как одну общую дробь «(lim sin x)/x», и формула в сданном
+    отчёте читается неверно (замечено при проверке PDF глазами)."""
+    x = latex_to_omml(r"\lim_{x \to 0} \frac{\sin x}{x} = 1")
+    assert "<m:func><m:fName><m:limLow>" in x
+    assert "</m:limLow></m:fName><m:e><m:f>" in x          # дробь внутри тела предела
+    el = parse_xml(x)
+    func = next(e for e in el.iter(M + "func"))
+    body = func.find(M + "e")
+    assert [e.tag.replace(M, "m:") for e in body] == ["m:f"]      # тело предела — ровно дробь
+    assert "".join(t.text for t in body.iter(M + "t")) == "sinxx"  # sin x над x
+    assert _text(r"\lim_{x \to 0} \frac{\sin x}{x} = 1").endswith("=1")   # «= 1» снаружи
+
+
+def test_lim_without_body_still_works():
+    assert "m:limLow" in _tags(r"\lim_{n \to \infty}")

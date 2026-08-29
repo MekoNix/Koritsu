@@ -44,6 +44,16 @@ class ClassInfo:
     type_params: list[str]        = dc_field(default_factory=list)   # ["T", "U"]
     enum_values: list[str]        = dc_field(default_factory=list)
     outer:       str | None       = None      # имя внешнего типа для вложенных
+    scope:       str              = ""        # namespace + внешние типы, через «.»
+
+    @property
+    def uid(self) -> str:
+        """
+        Полный идентификатор класса: `Rendering.Prim`, `Base.Inner`. Одноимённые
+        классы из разных namespace различаются только им — по короткому имени
+        связи уходят в первый попавшийся блок.
+        """
+        return f"{self.scope}.{self.name}" if self.scope else self.name
 
     @property
     def is_interface(self) -> bool:
@@ -94,6 +104,19 @@ def _strip_generics(name: str) -> str:
 
 def _norm_ws(s: str) -> str:
     return " ".join(s.split())
+
+
+def _norm_qual(name: str) -> str:
+    """`geom::Prim`, `Geometry . Prim` → `Geometry.Prim` — один разделитель на все языки."""
+    return "".join(name.split()).replace("::", ".")
+
+
+def _join_scope(scope: str, part: str) -> str:
+    """Вложить область видимости в область видимости: (`N1`, `Outer`) → `N1.Outer`."""
+    part = _norm_qual(part)
+    if not part:
+        return scope
+    return f"{scope}.{part}" if scope else part
 
 
 def _params_text(node, src: bytes) -> str:
@@ -242,14 +265,14 @@ def _cpp_method(node, func, base_type: str, access: str, src: bytes) -> MethodIn
     )
 
 
-def _cpp_member(node, access: str, src: bytes, cls: ClassInfo, result: list, ns: str):
+def _cpp_member(node, access: str, src: bytes, cls: ClassInfo, result: list):
     """Один член тела класса. node: field_declaration | declaration | function_definition."""
     type_node = node.child_by_field_name("type")
 
     # вложенный тип: `class Inner {...};`, `enum E {...};`
     if type_node is not None and type_node.type in (
             "class_specifier", "struct_specifier", "enum_specifier", "union_specifier"):
-        _collect_cpp(type_node, src, result, outer=cls.name)
+        _collect_cpp(type_node, src, result, outer=cls.name, scope=cls.uid)
         return
 
     base_type = _cpp_base_type(node, type_node, src) if type_node is not None else ""
@@ -302,14 +325,14 @@ def _cpp_parse_body(body, src: bytes, cls: ClassInfo, default_access: str, resul
             if inner is None:
                 continue
             if inner.type in ("class_specifier", "struct_specifier"):
-                _collect_cpp(child, src, result, outer=cls.name)
+                _collect_cpp(child, src, result, outer=cls.name, scope=cls.uid)
             else:
-                _cpp_member(inner, access, src, cls, result, "")
+                _cpp_member(inner, access, src, cls, result)
             continue
         if t in ("field_declaration", "declaration", "function_definition"):
-            _cpp_member(child, access, src, cls, result, "")
+            _cpp_member(child, access, src, cls, result)
         elif t in ("class_specifier", "struct_specifier", "enum_specifier", "union_specifier"):
-            _collect_cpp(child, src, result, outer=cls.name)
+            _collect_cpp(child, src, result, outer=cls.name, scope=cls.uid)
         # friend_declaration, alias_declaration, using_declaration — пропускаем
 
 
@@ -317,16 +340,25 @@ def _cpp_parse_bases(clause, src: bytes) -> list[str]:
     out = []
     for c in clause.named_children:
         if c.type in ("type_identifier", "qualified_identifier", "template_type"):
-            out.append(_strip_generics(_text(c, src)).split("::")[-1])
+            out.append(_norm_qual(_strip_generics(_text(c, src))))
         elif c.type == "base_specifier":
             for cc in c.named_children:
                 if cc.type in ("type_identifier", "qualified_identifier", "template_type"):
-                    out.append(_strip_generics(_text(cc, src)).split("::")[-1])
+                    out.append(_norm_qual(_strip_generics(_text(cc, src))))
                     break
     return out
 
 
-def _collect_cpp(node, src: bytes, result: list, outer: str | None = None):
+def _collect_cpp(node, src: bytes, result: list, outer: str | None = None, scope: str = ""):
+    if node.type == "namespace_definition":     # `namespace a::b {}`, безымянный — прозрачен
+        name_node = node.child_by_field_name("name")
+        body = node.child_by_field_name("body")
+        if name_node is not None:
+            scope = _join_scope(scope, _text(name_node, src))
+        for child in (body.children if body is not None else []):
+            _collect_cpp(child, src, result, outer, scope)
+        return
+
     type_params: list[str] = []
     if node.type == "template_declaration":
         tpl = _child_of_type(node, "template_parameter_list")
@@ -334,7 +366,7 @@ def _collect_cpp(node, src: bytes, result: list, outer: str | None = None):
                       if c.type in ("class_specifier", "struct_specifier")), None)
         if inner is None:
             for c in node.children:
-                _collect_cpp(c, src, result, outer)
+                _collect_cpp(c, src, result, outer, scope)
             return
         if tpl is not None:
             type_params = _cpp_type_params(tpl, src)
@@ -350,7 +382,7 @@ def _collect_cpp(node, src: bytes, result: list, outer: str | None = None):
         if name_node is None:
             return
         cls = ClassInfo(name=_text(name_node, src), kind=kind,
-                        type_params=type_params, outer=outer)
+                        type_params=type_params, outer=outer, scope=scope)
         if kind == "enum":
             cls.enum_values = [_text(e.child_by_field_name("name") or e, src)
                                for e in body.named_children if e.type == "enumerator"]
@@ -365,7 +397,7 @@ def _collect_cpp(node, src: bytes, result: list, outer: str | None = None):
         return
 
     for child in node.children:
-        _collect_cpp(child, src, result, outer)
+        _collect_cpp(child, src, result, outer, scope)
 
 
 def extract_cpp(source: str) -> list[ClassInfo]:
@@ -437,7 +469,7 @@ def _cs_accessors(prop, src: bytes) -> str:
 def _cs_member(child, src: bytes, cls: ClassInfo, result: list):
     t = child.type
     if t in _CS_TYPE_DECLS:
-        _collect_cs(child, src, result, outer=cls.name)
+        _collect_cs(child, src, result, outer=cls.name, scope=cls.uid)
         return
 
     mods = _cs_modifiers(child, src)
@@ -537,18 +569,32 @@ def _cs_member(child, src: bytes, cls: ClassInfo, result: list):
             **common))
 
 
-def _collect_cs(node, src: bytes, result: list, outer: str | None = None):
+def _collect_cs(node, src: bytes, result: list, outer: str | None = None, scope: str = ""):
+    if node.type == "namespace_declaration":            # вложенные namespace складываются
+        nm = node.child_by_field_name("name")
+        body = node.child_by_field_name("body")
+        if nm is not None:
+            scope = _join_scope(scope, _text(nm, src))
+        for c in (body.children if body is not None else []):
+            _collect_cs(c, src, result, outer, scope)
+        return
+
     kind = _CS_TYPE_DECLS.get(node.type)
     if kind is None:
         for child in node.children:
-            _collect_cs(child, src, result, outer)
+            if child.type == "file_scoped_namespace_declaration":
+                nm = child.child_by_field_name("name")       # `namespace N;` — до конца файла
+                if nm is not None:
+                    scope = _join_scope(scope, _text(nm, src))
+                continue
+            _collect_cs(child, src, result, outer, scope)
         return
 
     name_node = node.child_by_field_name("name") or _child_of_type(node, "identifier")
     if name_node is None:
         return
     mods = _cs_modifiers(node, src)
-    cls = ClassInfo(name=_text(name_node, src), kind=kind, outer=outer,
+    cls = ClassInfo(name=_text(name_node, src), kind=kind, outer=outer, scope=scope,
                     is_abstract="abstract" in mods)
     if kind == "record" and _has_anon(node, "struct"):
         cls.kind = "struct"
@@ -562,16 +608,16 @@ def _collect_cs(node, src: bytes, result: list, outer: str | None = None):
     if base_list is not None:
         for base in base_list.named_children:
             if base.type in ("identifier", "generic_name", "qualified_name"):
-                cls.parents.append(_strip_generics(_text(base, src)).split(".")[-1])
+                cls.parents.append(_norm_qual(_strip_generics(_text(base, src))))
             elif base.type == "primary_constructor_base_type":
                 inner = _child_of_type(base, "identifier", "generic_name", "qualified_name")
                 if inner is not None:
-                    cls.parents.append(_strip_generics(_text(inner, src)).split(".")[-1])
+                    cls.parents.append(_norm_qual(_strip_generics(_text(inner, src))))
 
     # `partial class X` в нескольких местах — один тип: члены дописываем в уже собранный
     if "partial" in mods:
         prev = next((c for c in result if c.name == cls.name and c.outer == outer
-                     and c.kind == cls.kind), None)
+                     and c.scope == scope and c.kind == cls.kind), None)
         if prev is not None:
             for p in cls.parents:
                 if p not in prev.parents:
@@ -743,7 +789,7 @@ def _py_self_assignments(block, src: bytes, cls: ClassInfo, params: dict[str, st
             stack.extend(reversed(n.named_children))
 
 
-def _collect_py(node, src: bytes, result: list, outer: str | None = None):
+def _collect_py(node, src: bytes, result: list, outer: str | None = None, scope: str = ""):
     decorators: list[str] = []
     if node.type == "decorated_definition":
         decorators = [_text(d, src).lstrip("@").split("(")[0] for d in node.named_children
@@ -755,11 +801,11 @@ def _collect_py(node, src: bytes, result: list, outer: str | None = None):
 
     if node.type != "class_definition":
         for c in node.named_children:
-            _collect_py(c, src, result, outer)
+            _collect_py(c, src, result, outer, scope)
         return
 
     name = _text(node.child_by_field_name("name"), src)
-    cls = ClassInfo(name=name, outer=outer)
+    cls = ClassInfo(name=name, outer=outer, scope=scope)
     sup = node.child_by_field_name("superclasses")
     bases = [_text(a, src) for a in sup.named_children] if sup is not None else []
     for b in bases:
@@ -793,7 +839,7 @@ def _collect_py(node, src: bytes, result: list, outer: str | None = None):
             if item is None:
                 continue
         if item.type == "class_definition":
-            _collect_py(st, src, result, outer=name)
+            _collect_py(st, src, result, outer=name, scope=cls.uid)
             continue
         if item.type == "expression_statement" and item.named_children:
             e = item.named_children[0]

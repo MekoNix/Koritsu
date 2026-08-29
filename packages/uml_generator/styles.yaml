@@ -4,9 +4,19 @@
 #   class / interface / struct  — заливка и обводка блоков (struct — также enum/record/union)
 #   header_font, member_font    — цвет текста заголовка и строк
 #   edge                        — цвет линий связей
+#   edge_label                  — подпись у линии (кратность, имя слота)
 #   junction                    — точка слияния стрелок наследования
 #   object / summary            — блоки диаграммы объектов (obektis); summary — свёрнутая коллекция
 #   containment                 — рёбра «элемент коллекции» в диаграмме объектов
+#
+# roles — имена CSS-переменных для темы `css` (build_xml(..., theme="css")). Тема `css`
+#   не задаёт цвета: она пишет `var(--роль, светлый-hex)`, где запасной цвет берётся из
+#   темы `light`. Одна и та же схема тогда годится и в интерфейс, и в отчёт: в SVG роль
+#   выносится наружу дословно (страница красит её своей темой), в PNG CSS-контекста нет
+#   и рисуется запасной цвет — отчёт получает светлую схему без всякой подстановки.
+#   Запасной цвет обязателен: `var(--роль)` без него draw.io рисует чёрным.
+#   Имена ролей общие по смыслу, а не «под uml» — те же нужны fragmos, а --node-fill,
+#   --node-line, --node-text, --edge, --edge-label уже есть в контракте токенов интерфейса.
 #
 # layout — размеры в px. Любой ключ можно перегрузить через cfg_overrides.
 
@@ -18,6 +28,7 @@ themes:
     header_font: "#f1f5f9"
     member_font: "#94a3b8"
     edge:        "#64748b"
+    edge_label:  "#94a3b8"
     junction:    "#64748b"
     object:      {fill: "#1f2a44", stroke: "#7c84a8"}
     summary:     {fill: "#2a1f44", stroke: "#a87cc4"}
@@ -30,11 +41,26 @@ themes:
     header_font: "#0f172a"
     member_font: "#334155"
     edge:        "#334155"
+    edge_label:  "#334155"
     junction:    "#334155"
     object:      {fill: "#f8fafc", stroke: "#475569"}
     summary:     {fill: "#f5f3ff", stroke: "#7c3aed"}
     slot_font:   "#1e293b"
     containment: "#6d28d9"
+
+roles:
+  class:       {fill: node-fill,        stroke: node-line}          # обычный узел
+  object:      {fill: node-fill,        stroke: node-line}
+  interface:   {fill: node-accent-fill, stroke: node-accent-line}   # узел, выделенный смыслом
+  struct:      {fill: node-alt-fill,    stroke: node-alt-line}      # узел другого рода
+  summary:     {fill: node-alt-fill,    stroke: node-alt-line}
+  header_font: node-text                                            # основной текст узла
+  member_font: node-text-muted                                      # второстепенный текст
+  slot_font:   node-text-muted
+  edge:        edge                                                 # линия связи
+  edge_label:  edge-label                                           # подпись у линии
+  containment: edge-alt                                             # линия другого рода
+  junction:    edge-dot                                             # точка на линии
 
 layout:
   header_font:   12     # px, заголовок блока (bold)

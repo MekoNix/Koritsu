@@ -179,6 +179,29 @@ def test_table_value_and_blocks_in_cell(template, tmp_path, png):
     assert res.tables == 1 and res.figures == 1
 
 
+def test_table_in_list_item_keeps_indent(template, tmp_path):
+    """Тег в пункте списка: и таблица, и подпись над ней стоят под своим пунктом."""
+    from docx.oxml import OxmlElement
+
+    def build(d):
+        p = d.add_paragraph("{{t}}")
+        ind = OxmlElement("w:ind")
+        ind.set(qn("w:left"), "720")
+        p._p.get_or_add_pPr().append(ind)
+        d.add_paragraph("{{s}}", style="List Number")            # отступ из стиля списка
+
+    out = str(tmp_path / "out.docx")
+    render(template(build), {"t": Table([["a", "b"], ["1", "2"]], caption="Сводка"),
+                             "s": Table([["a"], ["1"]], caption="Список")}, out)
+    body = Document(out).element.body
+    tbls = body.findall(qn("w:tbl"))
+    inds = [t.find(qn("w:tblPr") + "/" + qn("w:tblInd")).get(qn("w:w")) for t in tbls]
+    assert inds == ["720", "360"]                                 # 360 — из стиля List Number
+    caps = [p for p in body.findall(qn("w:p"))
+            if "".join(t.text or "" for t in p.iter(qn("w:t"))).startswith("Таблица ")]
+    assert [p.find(qn("w:pPr") + "/" + qn("w:ind")).get(qn("w:left")) for p in caps] == ["720", "360"]
+
+
 def test_template_bytes_and_document_input(template, tmp_path):
     path = template(lambda d: d.add_paragraph("{{a}}"))
     out = str(tmp_path / "out.docx")

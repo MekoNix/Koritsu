@@ -288,6 +288,86 @@ def test_toc(template, tmp_path):
     assert 'TOC \\o "1-2"' in instr
     assert "Содержание" in texts(out)
     assert d.settings.element.find(qn("w:updateFields")).get(qn("w:val")) == "true"
+    # результат поля пуст: LibreOffice поле TOC не разворачивает и печатает кэш
+    # как обычный текст — служебная подсказка уезжала в сданный PDF
+    toc_p = next(p for p in d.element.body.iter(qn("w:p")) if p.find(qn("w:r") + "/" + qn("w:instrText")) is not None)
+    assert "".join(t.text or "" for t in toc_p.iter(qn("w:t"))).strip() == ""
+
+
+def _pdf_text(path: str) -> str | None:
+    """Текст PDF: pdftotext, иначе pymupdf; None — нечем прочитать."""
+    import subprocess
+    if shutil.which("pdftotext"):
+        return subprocess.run(["pdftotext", path, "-"], capture_output=True, text=True).stdout
+    try:
+        import pymupdf
+    except ImportError:
+        return None
+    with pymupdf.open(path) as doc:
+        return "\n".join(page.get_text() for page in doc)
+
+
+def test_toc_no_placeholder_in_pdf(template, tmp_path):
+    """В PDF на месте оглавления не должно быть служебной подсказки об обновлении полей."""
+    from hokoku import Toc, docx_to_pdf
+    from hokoku.pdf import libreoffice_available
+    if not libreoffice_available():
+        pytest.skip("нет LibreOffice")
+    out = str(tmp_path / "o.docx")
+    render(template(lambda d: (d.add_paragraph("{{toc}}"), d.add_heading("Раздел", 1),
+                               d.add_paragraph("текст"))),
+           {"toc": Toc(levels=2, title="Содержание")}, out)
+    pdf = docx_to_pdf(out, str(tmp_path / "o.pdf"))
+    text = _pdf_text(pdf)
+    if text is None:
+        pytest.skip("нечем прочитать PDF (нет pdftotext и pymupdf)")
+    assert "Содержание" in text and "обновится" not in text and "F9" not in text
+
+
+def test_drawio_timeout_from_render(template, tmp_path, png, monkeypatch):
+    """render(drawio_timeout=) доходит до drawio CLI; без него — умолчание images (120 с)."""
+    import importlib
+    R = importlib.import_module("hokoku.render")     # hokoku.render — это функция, не модуль
+    seen = []
+
+    def fake(xml, page=None, **kw):
+        seen.append(kw.get("timeout"))
+        return png
+
+    monkeypatch.setattr(R, "drawio_to_png", fake)
+    tpl = template(lambda d: d.add_paragraph("{{d}}"))
+    render(tpl, {"d": Diagram("<mxfile><diagram/></mxfile>")}, str(tmp_path / "a.docx"), drawio_timeout=5)
+    render(tpl, {"d": Diagram("<mxfile><diagram/></mxfile>")}, str(tmp_path / "b.docx"))
+    assert seen == [5, None]
+
+
+def test_pdf_timeout_and_expired(tmp_path, monkeypatch):
+    """docx_to_pdf(timeout=) уходит в LibreOffice, а его срыв — HokokuError, не TimeoutExpired."""
+    import os
+    import subprocess
+
+    from hokoku import docx_to_pdf
+    from hokoku import pdf as P
+    seen = []
+
+    def fake_run(cmd, **kw):
+        seen.append(kw.get("timeout"))
+        open(os.path.join(cmd[cmd.index("--outdir") + 1], "in.pdf"), "wb").close()
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(P.shutil, "which", lambda name: "/bin/true")
+    monkeypatch.setattr(P.subprocess, "run", fake_run)
+    src = str(tmp_path / "in.docx")
+    open(src, "wb").close()
+    docx_to_pdf(src, str(tmp_path / "out.pdf"), timeout=7)
+    assert seen == [7]
+
+    def raiser(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+
+    monkeypatch.setattr(P.subprocess, "run", raiser)
+    with pytest.raises(HokokuError, match="не уложился"):
+        docx_to_pdf(src, str(tmp_path / "out.pdf"), timeout=7)
 
 
 def test_caption_false_and_headers_are_not_numbered(template, tmp_path, png):

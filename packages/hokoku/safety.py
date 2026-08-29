@@ -12,6 +12,15 @@ validate_docx(source): DOCX — это ZIP с XML, через него возм�
   Степень сжатия проверяем только у бинарных членов: XML в 200 раз сжимается и у честной
   методички (5000 одинаковых абзацев дают 223), поэтому XML ограничен абсолютным
   размером — он и есть то, что целиком читает lxml.
+  Макросы VBA (`.docm` или обычный `.docx`, к которому подложили `vbaProject.bin`)
+  — отдельная беда: рендер их не читает и не трогает, поэтому блоб уезжает в
+  собранный отчёт байт в байт. Шаблон с макросами отклоняем целиком: чинить его
+  вырезанием частей — значит отдать пользователю документ, который отличается от
+  того, что он проверял в Word.
+strip_external_refs(doc): внешние ссылки шаблона, которые Word тянет при открытии
+  (attachedTemplate, OLE-объекты, поддокументы), — из результата убираем; сам
+  шаблон из-за них не отклоняем: `attachedTemplate` есть у любого документа,
+  сделанного из кафедрального `.dotx`.
 safe_name / safe_join: имя файла от пользователя не должно выводить за каталог.
 """
 from __future__ import annotations
@@ -32,8 +41,16 @@ MIN_COMPRESSED_BYTES   = 1024
 RATIO_MIN_TOTAL        = 1024 * 1024         # ниже — соотношение шумит, не проверяем
 READ_CHUNK             = 1024 * 1024
 
+MAX_META_SCAN          = 4 * 1024 * 1024      # сколько читаем из [Content_Types].xml и *.rels
+
 _DOCTYPE_RE = re.compile(rb"<!DOCTYPE\b", re.IGNORECASE)
 _ENTITY_RE  = re.compile(rb"<!ENTITY\b", re.IGNORECASE)
+
+# макросы: главная часть .docm/.dotm, часть с кодом VBA, связь на неё
+_MACRO_MAIN_RE = re.compile(rb"macroEnabled(?:Template)?\.main\+xml", re.IGNORECASE)
+_VBA_CT_RE     = re.compile(rb"vnd\.ms-office\.vbaProject", re.IGNORECASE)
+_VBA_REL_RE    = re.compile(rb'Type="[^"]*/vbaProject"', re.IGNORECASE)
+_VBA_NAMES     = ("vbaproject.bin", "vbadata.xml")
 
 
 class DocxValidationError(Exception):
@@ -49,6 +66,15 @@ def _member_name_ok(name: str) -> bool:
     if any(p in ("..", ".") for p in parts) or any(":" in p for p in parts):
         return False
     return True
+
+
+def _check_macros(name: str, data: bytes) -> None:
+    """Макросы в [Content_Types].xml / *.rels: главная часть .docm, часть и связь vbaProject."""
+    if _MACRO_MAIN_RE.search(data):
+        raise DocxValidationError(
+            "шаблон с макросами (.docm/.dotm) — так нельзя: сохраните его как .docx")
+    if _VBA_CT_RE.search(data) or _VBA_REL_RE.search(data):
+        raise DocxValidationError(f"в шаблоне есть макросы VBA ({name}) — так нельзя")
 
 
 def validate_docx(source) -> None:
@@ -90,6 +116,8 @@ def validate_docx(source) -> None:
                     raise DocxValidationError(f"подозрительная компрессия в {name!r} (zip-bomb)")
             if name == "word/document.xml":
                 has_document = True
+            if name.rsplit("/", 1)[-1].lower() in _VBA_NAMES:
+                raise DocxValidationError(f"в шаблоне есть макросы VBA ({name}) — так нельзя")
         if not has_document:
             raise DocxValidationError("в архиве нет word/document.xml")
         _scan_contents(zf, infos)
@@ -101,6 +129,10 @@ def _scan_contents(zf: zipfile.ZipFile, infos) -> None:
     for info in infos:
         name = info.filename
         is_xml = name.endswith((".xml", ".rels"))
+        # [Content_Types].xml и связи копим целиком (до потолка): подложить vbaProject
+        # можно и через <Override> в конце длинного файла, за пределами первого чанка
+        is_meta = name == "[Content_Types].xml" or name.endswith(".rels")
+        meta = bytearray() if is_meta else None
         size = 0
         try:
             fh = zf.open(info)
@@ -119,6 +151,8 @@ def _scan_contents(zf: zipfile.ZipFile, infos) -> None:
                 if size == 0 and is_xml and (_DOCTYPE_RE.search(chunk[:65536])
                                              or _ENTITY_RE.search(chunk[:65536])):
                     raise DocxValidationError(f"XML в {name!r} содержит DOCTYPE/ENTITY (XXE)")
+                if is_meta and len(meta) < MAX_META_SCAN:
+                    meta += chunk[:MAX_META_SCAN - len(meta)]
                 size += len(chunk)
                 if size > MAX_PER_MEMBER:
                     raise DocxValidationError(f"{name!r} распаковывается больше 50 МБ (zip-bomb)")
@@ -126,6 +160,8 @@ def _scan_contents(zf: zipfile.ZipFile, infos) -> None:
                     raise DocxValidationError("суммарный размер распакованных файлов > 100 МБ")
                 if is_xml and xml_total + size > MAX_XML_UNCOMPRESSED:
                     raise DocxValidationError("XML пакета больше 32 МБ (zip-bomb)")
+        if is_meta:
+            _check_macros(name, bytes(meta))
         total += size
         if is_xml:
             xml_total += size
@@ -136,6 +172,33 @@ def _scan_contents(zf: zipfile.ZipFile, infos) -> None:
         raise DocxValidationError(
             f"вложения архива разворачиваются в {bin_total // (1024 * 1024)} МБ "
             f"из {compressed // 1024} КБ (zip-bomb)")
+
+
+# связи, по которым Word сам лезет наружу при открытии документа (гиперссылки и
+# картинки сюда не входят: по ним ходит человек, а не Word)
+_EXTERNAL_REL_TYPES = ("attachedtemplate", "oleobject", "subdocument", "frame")
+
+
+def strip_external_refs(doc) -> list[str]:
+    """
+    Убрать из документа внешние ссылки шаблона: `attachedTemplate` (Word подгрузит
+    чужой .dotm с макросами), OLE-объекты и поддокументы. Возвращает список целей.
+    Шаблон из-за них не отклоняем — `attachedTemplate` есть у любого документа,
+    сделанного из кафедрального `.dotx`, — но в отчёт они попасть не должны.
+    """
+    from docx.oxml.ns import qn
+    package = doc.part.package
+    removed: list[str] = []
+    for rels in [package.rels] + [p.rels for p in package.iter_parts()]:
+        for rid, rel in list(rels.items()):
+            if rel.is_external and rel.reltype.rsplit("/", 1)[-1].lower() in _EXTERNAL_REL_TYPES:
+                removed.append(rel.target_ref)
+                del rels[rid]
+    if removed:
+        settings = doc.settings.element
+        for el in settings.findall(qn("w:attachedTemplate")):
+            settings.remove(el)
+    return removed
 
 
 _SAFE_CHARS_RE = re.compile(r"[^\w .\-()]", re.UNICODE)

@@ -62,3 +62,18 @@ def test_multiple_inheritance_branch_and_edge_do_not_share_port():
     exits = [(eid, ex, ey) for eid, src, _t, ex, ey in _edges(xml) if src == c_id]
     assert len(exits) == 2, f"у C два исходящих ребра, got {exits}"
     assert len({(ex, ey) for _e, ex, ey in exits}) == 2, f"порты совпали: {exits}"
+
+
+def test_same_name_classes_get_their_own_edges():
+    """Ребро от `Rendering.Pass` должно входить в свой `Prim`, а не в первый одноимённый."""
+    xml = build_xml(extract_cs("""
+        namespace Geometry  { class Prim { public double Area; } }
+        namespace Rendering { class Prim { public Geometry.Prim Source; }
+                              class Pass { public Prim Target; } }
+    """))
+    ids = _class_cells(xml)                      # порядок ячеек = порядок классов
+    geom_prim, rend_prim, rend_pass = ids[0][0], ids[1][0], ids[2][0]
+    pairs = {(src, tgt) for _e, src, tgt, _x, _y in _edges(xml)}
+    assert (rend_pass, rend_prim) in pairs, "Pass целится в свой Prim"
+    assert (rend_pass, geom_prim) not in pairs
+    assert (rend_prim, geom_prim) in pairs, "поле Geometry.Prim — не ссылка на себя"

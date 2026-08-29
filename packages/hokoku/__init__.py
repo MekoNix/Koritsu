@@ -5,7 +5,7 @@ hokoku (報告 — «отчёт») — отчёты из DOCX-шаблонов �
                                             колонтитулы, текстовые поля
   render(template, values, out)          → RenderResult — подстановка значений
   docx_to_pdf(docx, pdf)                 → PDF через LibreOffice (если установлен)
-  validate_docx(source)                  → защита от zip-slip / zip-bomb / XXE
+  validate_docx(source)                  → защита от zip-slip / zip-bomb / XXE / макросов VBA
 
 Значения — типизированные (model.py): Text, Markdown, Code, Image, Diagram, Table, Formula, Toc, Blocks, PageBreak.
 Оформление — styles.yaml (render(..., style={...}) перегружает).

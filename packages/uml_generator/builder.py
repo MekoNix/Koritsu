@@ -47,7 +47,12 @@ class TypeRef:
     owned: bool = True    # по значению или unique_ptr
 
 
-def _type_refs(type_str: str, names: set[str]) -> list[TypeRef]:
+def _last_seg(name: str) -> str:
+    """`std.shared_ptr` → `shared_ptr`: обёртку узнаём по последнему сегменту."""
+    return name.rsplit(".", 1)[-1]
+
+
+def _type_refs(type_str: str, known) -> list[TypeRef]:
     """
     Все известные классы, упомянутые в типе, с учётом обёрток:
       `List<Task>`, `Task[]`, `list[Task]`  → many
@@ -57,19 +62,26 @@ def _type_refs(type_str: str, names: set[str]) -> list[TypeRef]:
     Квадратная скобка неоднозначна: `Task[]`/`Task[10]` — массив (many),
     а `Optional[Task]`/`Callable[[int], Task]` — обобщение по-питоновски,
     и many зависит только от имени обёртки (`list`, `dict`, … из _COLLECTIONS).
+
+    `known` — множество имён или функция «написанное имя → uid класса» (None,
+    если такого класса на диаграмме нет). Квалифицированное имя (`N1.Prim`,
+    `geom::Prim`) остаётся одним токеном: без namespace его не разрешить.
     """
+    resolve = known if callable(known) else (lambda w: w if w in known else None)
     s = _re.sub(r'\{.*\}', '', type_str)          # { get; set; }
-    tokens = _re.findall(r'[A-Za-z_]\w*|\d+|<|>|\[|\]|[*&]', s)
+    s = _re.sub(r'\s*(?:::|\.)\s*', '.', s)        # std::vector, System.Collections.List
+    tokens = _re.findall(r'[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*|\d+|<|>|\[|\]|[*&]', s)
     refs: list[TypeRef] = []
     stack: list[str] = []                           # обёртки generic'ов
-    prev = ""
+    prev, prev_ref = "", False
     for i, tok in enumerate(tokens):
         nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+        uid = None
         if tok == "<":
             stack.append(prev)
         elif tok == "[":
             if nxt == "]" or nxt.isdigit():          # массив: Task[] / Task[10]
-                if refs and (prev in names or prev in ("*", "&", ">")):
+                if refs and (prev_ref or prev in ("*", "&", ">")):
                     refs[-1].many = True
                 stack.append("[]")
             else:                                    # обобщение: Optional[Task]
@@ -77,12 +89,14 @@ def _type_refs(type_str: str, names: set[str]) -> list[TypeRef]:
         elif tok in (">", "]"):
             if stack:
                 stack.pop()
-        elif tok in names:
-            many = any(w.split("::")[-1] in _COLLECTIONS for w in stack)
-            ptr = nxt in ("*", "&") or any(w in _SHARED_PTRS for w in stack)
-            owned = not ptr and not any(w in _SHARED_PTRS for w in stack)
-            refs.append(TypeRef(tok, many=many, ptr=ptr, owned=owned))
-        prev = tok
+        else:
+            uid = resolve(tok)
+            if uid is not None:
+                many = any(_last_seg(w) in _COLLECTIONS for w in stack)
+                ptr = nxt in ("*", "&") or any(_last_seg(w) in _SHARED_PTRS for w in stack)
+                owned = not ptr
+                refs.append(TypeRef(uid, many=many, ptr=ptr, owned=owned))
+        prev, prev_ref = tok, uid is not None
     return refs
 
 
@@ -193,13 +207,71 @@ _REL_PRIO = {"inheritance": 0, "realization": 1, "nesting": 2,
              "composition": 3, "aggregation": 4, "dependency": 5}
 
 
+def _shared_scope(uid: str, scope: str) -> int:
+    """Сколько ведущих сегментов области видимости общие — «чей namespace ближе»."""
+    a, b = uid.split("."), scope.split(".") if scope else []
+    n = 0
+    while n < len(a) - 1 and n < len(b) and a[n] == b[n]:
+        n += 1
+    return n
+
+
+def _resolve_ref(written: str, scope: str, by_uid: dict[str, ClassInfo],
+                 tails: dict[str, list[str]]) -> str | None:
+    """
+    Написанное имя типа → uid класса диаграммы.
+
+    Ищем изнутри наружу: `Prim` внутри `Rendering` — это `Rendering.Prim`, а не
+    первый попавшийся `Prim`. Затем по хвосту полного имени (`N1.Prim`), затем
+    отбрасывая ведущие сегменты (`mod.Base` в Python, `global::N.C` в C#).
+    """
+    parts = [p for p in written.replace("::", ".").split(".") if p]
+    segs = scope.split(".") if scope else []
+    while parts:
+        for i in range(len(segs), -1, -1):
+            cand = ".".join(segs[:i] + parts)
+            if cand in by_uid:
+                return cand
+        hits = tails.get(".".join(parts))
+        if hits:
+            best = hits[0]
+            for u in hits[1:]:
+                if _shared_scope(u, scope) > _shared_scope(best, scope):
+                    best = u
+            return best
+        parts = parts[1:]
+    return None
+
+
+def _resolver(by_uid: dict[str, ClassInfo]):
+    """
+    `resolve(имя, область) -> uid`. Индекс хвостов и кеш: без них каждое имя типа
+    (`int`, `string`, …) стоило бы прохода по всем классам диаграммы.
+    """
+    tails: dict[str, list[str]] = {}
+    for u in by_uid:
+        segs = u.split(".")
+        for i in range(1, len(segs)):
+            tails.setdefault(".".join(segs[i:]), []).append(u)
+    cache: dict[tuple[str, str], str | None] = {}
+
+    def resolve(written: str, scope: str) -> str | None:
+        key = (written, scope)
+        if key not in cache:
+            cache[key] = _resolve_ref(written, scope, by_uid, tails)
+        return cache[key]
+    return resolve
+
+
 def _detect_relations(classes: list[ClassInfo]) -> list[Relation]:
-    names   = {c.name for c in classes}
-    by_name = {c.name: c for c in classes}
+    by_uid: dict[str, ClassInfo] = {}
+    for c in classes:
+        by_uid.setdefault(c.uid, c)      # одноимённые в одной области — первый объявленный
+    lookup = _resolver(by_uid)
     best: dict[tuple[str, str], Relation] = {}
 
-    def _add(src: str, tgt: str, kind: str, label: str = ""):
-        if tgt not in names or tgt == src:
+    def _add(src: str, tgt: str | None, kind: str, label: str = ""):
+        if tgt is None or tgt not in by_uid or tgt == src:
             return
         key = (src, tgt)
         cur = best.get(key)
@@ -212,14 +284,17 @@ def _detect_relations(classes: list[ClassInfo]) -> list[Relation]:
             cur.label = label            # кратность сохраняем при любом виде владения
 
     for cls in classes:
-        src = cls.name
+        src = cls.uid
+        def resolve(w, _scope=cls.scope):
+            return lookup(w, _scope)
         for parent in cls.parents:
-            pc = by_name.get(parent)
-            _add(src, parent, "realization" if (pc and pc.is_interface) else "inheritance")
-        if cls.outer in names:
-            _add(src, cls.outer, "nesting")
+            tgt = resolve(parent)
+            pc = by_uid.get(tgt)
+            _add(src, tgt, "realization" if (pc and pc.is_interface) else "inheritance")
+        if cls.outer is not None:
+            _add(src, cls.scope, "nesting")     # область видимости вложенного = uid внешнего
         for fld in cls.fields:
-            for ref in _type_refs(fld.type_str, names):
+            for ref in _type_refs(fld.type_str, resolve):
                 if ref.name == src:
                     continue
                 label = "0..*" if ref.many else ""
@@ -228,7 +303,7 @@ def _detect_relations(classes: list[ClassInfo]) -> list[Relation]:
         for mth in cls.methods:
             types = ([mth.return_type] if mth.return_type else []) + _param_types(mth.params)
             for t in types:
-                for ref in _type_refs(t, names):
+                for ref in _type_refs(t, resolve):
                     if ref.name != src:
                         _add(src, ref.name, "dependency")
 
@@ -252,17 +327,17 @@ class Layout:
 
 def _keys(classes: list[ClassInfo]) -> list[str]:
     """
-    Ключ раскладки для каждого класса. Обычно это имя, но одноимённые классы
-    (разные namespace) затирали бы друг друга, поэтому второму и далее ключ
-    получает суффикс. Первый сохраняет чистое имя — связи ищутся по именам
-    и продолжают попадать в него.
+    Ключ раскладки для каждого класса — полный идентификатор (`Rendering.Prim`),
+    он же `src`/`tgt` связей. Совпасть он может только у двух объявлений в одной
+    области видимости (Python: класс переопределён в модуле); второму и далее
+    ключ получает суффикс, а связи достаются первому — как и раньше.
     """
     seen: dict[str, int] = {}
     out: list[str] = []
     for c in classes:
-        n = seen.get(c.name, 0) + 1
-        seen[c.name] = n
-        out.append(c.name if n == 1 else f"{c.name}#{n}")
+        n = seen.get(c.uid, 0) + 1
+        seen[c.uid] = n
+        out.append(c.uid if n == 1 else f"{c.uid}#{n}")
     return out
 
 
@@ -628,6 +703,6 @@ def build_xml(classes: list[ClassInfo], theme: str = "dark",
             f'edge="1" source="{ids[r.src]}" target="{ids[r.tgt]}" parent="1">{points_xml(wps)}</mxCell>'
         )
         if r.label:
-            cells.append(_edge_label_cell(f"e{ei}", r.label, nx_f, ny_f, pal["member_font"]))
+            cells.append(_edge_label_cell(f"e{ei}", r.label, nx_f, ny_f, pal["edge_label"]))
 
     return _wrap_xml(cells)

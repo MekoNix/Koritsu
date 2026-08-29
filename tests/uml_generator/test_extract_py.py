@@ -110,4 +110,4 @@ def test_relations():
     assert rels[("Child", "Base")] == ("inheritance", "")
     assert rels[("Base", "Status")] == ("composition", "")
     assert rels[("Base", "Point")] == ("composition", "")
-    assert rels[("Inner", "Base")] == ("nesting", "")
+    assert rels[("Base.Inner", "Base")] == ("nesting", "")   # src/tgt связей — полные id

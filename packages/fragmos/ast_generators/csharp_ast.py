@@ -379,6 +379,29 @@ class CSharpAST(ASTGenerator):
                 pat_text = self._pattern_text(k)
         return (pat_text + (f' {when_text}' if when_text else '')).strip()
 
+    def _between_parens(self, node) -> str:
+        """Текст между первой `(` и парной ей `)` среди детей узла.
+
+        Нужен там, где содержимое скобок не выделено полем и может
+        оказаться безымянным узлом (`lock (this)`): перечисление типов
+        через named_children такие случаи молча теряет.
+        """
+        start = end = None
+        depth = 0
+        for i, c in enumerate(node.children):
+            if c.type == '(':
+                depth += 1
+                if depth == 1:
+                    start = i + 1
+            elif c.type == ')':
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        if start is None or end is None:
+            return ''
+        return ' '.join(self._t(c) for c in node.children[start:end]).strip()
+
     def _visit_blocked_stmt(self, node):
         """`using (...) { body }`, `lock (obj) { body }`, `fixed (...) { body }`,
         `checked { body }`, `unchecked { body }`, `unsafe { body }`.
@@ -392,7 +415,7 @@ class CSharpAST(ASTGenerator):
         t = node.type
 
         # Заголовок: для using — variable_declaration перед body; для lock —
-        # identifier (lock target); для fixed — variable_declaration.
+        # выражение в скобках (lock target); для fixed — variable_declaration.
         body_node = self._field(node, 'body')
         if body_node is None:
             # Найти block среди детей вручную (lock_statement, fixed, и т.п.
@@ -408,12 +431,14 @@ class CSharpAST(ASTGenerator):
                     out.append({'type': 'assignment',
                                 'value': f'using {self._t(c)}'})
         elif t == 'lock_statement':
-            for c in node.named_children:
-                if c.type in ('identifier', 'member_access_expression',
-                              'this_expression'):
-                    out.append({'type': 'process',
-                                'value': f'lock ({self._t(c)})'})
-                    break
+            # Цель блокировки перечислять по типам узла нельзя: `this` —
+            # безымянный узел-ключевое слово (в named_children его нет),
+            # а выражением может быть что угодно (`GetLock()`, `a[i]`).
+            # Берём всё, что стоит между круглыми скобками.
+            target = self._between_parens(node)
+            if target:
+                out.append({'type': 'process',
+                            'value': f'lock ({target})'})
         elif t == 'fixed_statement':
             for c in node.named_children:
                 if c.type == 'variable_declaration':

@@ -12,6 +12,7 @@ from .model import ObjectGraph, ObjectInstance, ObjectLink, Slot
 
 MAX_VALUE_LEN = 60
 MAX_CALL_DEPTH = 24     # глубже не заходим: рекурсивный метод иначе не остановить
+MAX_ATTR_DEPTH = 8      # вложенность полей-объектов (new_obj → attr_types → new_obj)
 
 
 @dataclass
@@ -109,21 +110,37 @@ class TraceState:
         return None
 
     # ── объекты ──
-    def new_obj(self, name: str, cls: str) -> Obj:
+    def new_obj(self, name: str, cls: str, path: tuple[str, ...] = ()) -> Obj:
+        """
+        Экземпляр класса `cls`. Поля-объекты по значению разворачиваются вложенными
+        экземплярами; `path` — цепочка классов, уже развёрнутых выше по этой ветке.
+        Она же обрывает рекурсию: при взаимной ссылке (Order ↔ Customer) без неё
+        `new_obj` → `attr_types` → `new_obj` уходит до RecursionError.
+        """
         if name in self.objs:
             self.forget(name)
         o = Obj(name, cls)
         self.objs[name] = o
         self.order.append(name)
+        path = path + (cls,)
         for c in reversed(self.mro(cls)):        # поля класса с умолчаниями
             for k, v in c.attrs.items():
                 o.slots[k] = v
                 if v == "[]":
                     o.lists[k] = []
             for k, t in c.attr_types.items():   # поле-объект по значению → вложенный экземпляр
-                if t in self.classes and o.slots.get(k) in ("?", None) and t != cls:
-                    child = self.new_obj(f"{name}.{k}", t)
-                    self.set_slot(o, k, child.name)
+                if t not in self.classes or o.slots.get(k) not in ("?", None):
+                    continue
+                if t in path:
+                    self.note(f"objektis: взаимная ссылка полей-объектов "
+                              f"({' → '.join(path)} → {t}) — вложенный экземпляр не создан")
+                    continue
+                if len(path) >= MAX_ATTR_DEPTH:
+                    self.note(f"objektis: поля-объекты вложены глубже {MAX_ATTR_DEPTH} — "
+                              f"дальше не разворачиваем")
+                    continue
+                child = self.new_obj(f"{name}.{k}", t, path)
+                self.set_slot(o, k, child.name)
         return o
 
     def alias(self, name: str, target: str):

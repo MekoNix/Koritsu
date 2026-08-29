@@ -256,8 +256,14 @@ def _node(n) -> str:
     if k == "nary":
         _, ch, sub, sup, body = n
         if ch == "lim":
-            return (f"<m:limLow><m:e>{_r('lim', 'p')}</m:e><m:lim>{_e(sub or [])}</m:lim></m:limLow>"
-                    + (_e(sup) if sup else ""))
+            # предел — это функция с именем-пределом: <m:func><m:fName><m:limLow>…</m:fName><m:e>тело.
+            # Голый limLow с телом-соседом Word и LibreOffice рисуют как общую дробь:
+            # «lim_{x→0} \frac{sin x}{x}» выходит «(lim sin x)/x», то есть формула читается неверно.
+            fname = f"<m:limLow><m:e>{_r('lim', 'p')}</m:e><m:lim>{_e(sub or [])}</m:lim></m:limLow>"
+            tail = _e(sup) if sup else ""
+            if body:
+                return f"<m:func><m:fName>{fname}</m:fName><m:e>{_e(body)}</m:e></m:func>{tail}"
+            return fname + tail
         pr = f'<m:naryPr><m:chr m:val="{ch}"/><m:limLoc m:val="undOvr"/>'
         pr += ('<m:subHide m:val="1"/>' if sub is None else "") + ('<m:supHide m:val="1"/>' if sup is None else "") + "</m:naryPr>"
         return (f"<m:nary>{pr}<m:sub>{_e(sub or [])}</m:sub><m:sup>{_e(sup or [])}</m:sup>"
@@ -284,7 +290,7 @@ def _attach_bodies(nodes: list) -> list:
     out, i = [], 0
     while i < len(nodes):
         n = _descend(nodes[i])
-        if n[0] == "nary" and n[1] != "lim" and n[4] is None:
+        if n[0] == "nary" and n[4] is None:
             body, j = [], i + 1
             while j < len(nodes) and not (nodes[j][0] == "r" and nodes[j][1] in ("+", "-", "=", ",", "±", "→", "≤", "≥", "<", ">")):
                 body.append(nodes[j])

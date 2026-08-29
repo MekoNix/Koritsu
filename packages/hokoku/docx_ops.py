@@ -328,6 +328,7 @@ def _ind_left(ind) -> int:
         return 0
 
 
+
 def _num_ind_dxa(doc, numpr) -> int:
     """Отступ уровня списка из numbering.xml по w:numPr."""
     num_id = numpr.find(qn("w:numId"))
@@ -353,8 +354,8 @@ def _num_ind_dxa(doc, numpr) -> int:
 
 def left_indent_dxa(doc, p_elem) -> int:
     """Отступ абзаца слева в dxa: прямой w:ind, иначе уровень списка (w:numPr → numbering.xml),
-    иначе стиль абзаца. Word держит отступ пункта списка в трёх разных местах, а таблица,
-    вставленная на место тега, иначе убегает к левому полю из-под своего пункта."""
+    иначе стиль абзаца. Word держит отступ пункта списка в трёх разных местах, а таблица
+    и её подпись, вставленные на место тега, иначе убегают к левому полю из-под своего пункта."""
     ppr = p_elem.find(qn("w:pPr"))
     if ppr is None:
         return 0
@@ -380,6 +381,7 @@ def _style_ppr(doc, ppr):
     sid = pstyle.get(qn("w:val"))
     el = next((s for s in doc.styles.element.findall(qn("w:style")) if s.get(qn("w:styleId")) == sid), None)
     return el.find(qn("w:pPr")) if el is not None else None
+
 
 
 def set_list_item(doc, p_elem, num_id: int | None, level: int, ordered: bool = False, index: int = 1):
@@ -560,15 +562,18 @@ def _caption_text(p, text: str):
 
 def add_caption(doc, ref_elem, fmt: str, n: int, caption: str | None, *, align: str = "center",
                 ppr_template=None, seq_name: str | None = None, bookmark: str | None = None,
-                suffix: str = "", repeat: bool = False):
+                suffix: str = "", repeat: bool = False, indent_dxa: int = 0):
     r"""
     Подпись «Рисунок N — текст». seq_name → номер полем SEQ (repeat=True: `\c` — тот же
     номер, для листов одной картинки); bookmark → закладка вокруг номера для ссылок REF.
+    indent_dxa — отступ слева: подпись стоит над своей таблицей (тег в пункте списка).
     """
     p = new_paragraph_after(ref_elem, ppr_template)
     if not set_style(doc, p, "Caption"):
         set_spacing(p, before=60, after=200)
     set_alignment(p, align)
+    if indent_dxa:
+        set_child(get_ppr(p), "w:ind", left=indent_dxa)
     if not caption:
         fmt = re.sub(r"\s*[—–-]\s*\{caption\}", "", fmt)
     before, _, after = fmt.partition("{n}")
@@ -661,7 +666,8 @@ def add_toc(doc, ref_elem, levels: int, title: str | None, ppr_template=None):
     fc.set(qn("w:fldCharType"), "separate")
     r.append(fc)
     p.append(r)
-    p.append(make_run("Оглавление обновится при открытии документа (или Ctrl+A, F9).", None, italic=True, color="808080"))
+    # результат поля оставляем пустым: LibreOffice поле TOC не разворачивает и печатает
+    # кэш как обычный текст — служебная подсказка уезжала в сданный PDF
     r = OxmlElement("w:r")
     fc = OxmlElement("w:fldChar")
     fc.set(qn("w:fldCharType"), "end")

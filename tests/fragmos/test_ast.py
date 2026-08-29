@@ -33,6 +33,16 @@ def types(nodes):
     return [n['type'] for n in nodes]
 
 
+def flow(lang, code, mode='default'):
+    """(тип, подпись) блоков схемы — то, что реально попадёт в XML.
+
+    Проверять только AST мало: подпись и фигуру блок получает в parser,
+    и узел из AST не обязан доехать до схемы.
+    """
+    _cfg, nodes = parse_ast_to_flowchart(get_ast_generator(lang).generate(code), mode)
+    return [(n['type'], n['value']) for n in nodes]
+
+
 class PythonAST(unittest.TestCase):
     def test_if_elif_else(self):
         body = func_body('python', '''
@@ -240,7 +250,8 @@ void f(int c) {
         body = func_body('cpp', '''
 int main() { int x; std::cin >> x; std::cout << x << std::endl; return 0; }
 ''')
-        self.assertEqual(types(body), ['io', 'io', 'return'])
+        # `int x;` — объявление без инициализатора, тоже отдельный блок.
+        self.assertEqual(types(body), ['assignment', 'io', 'io', 'return'])
 
     def test_class_methods_and_if_init(self):
         nodes = ast('cpp', '''
@@ -255,6 +266,21 @@ void A::n() {}
 
 
 class CSharpAST(unittest.TestCase):
+    def test_lock_header(self):
+        """Заголовок `lock (...)` не должен пропадать.
+
+        `this` в грамматике tree-sitter — безымянный узел-ключевое слово,
+        и перебор named_children его не находил: блокировка исчезала из
+        схемы молча. Проверяем слой AST — именно там терялся заголовок;
+        `process`-узлы parser доносит до схемы (починено в main, afb2f0a).
+        """
+        for target in ('this', 'obj', 'a.b', 'GetLock()', 'items[i]'):
+            with self.subTest(target=target):
+                body = func_body('csharp',
+                                 'class C { void M() { lock (%s) { x = 1; } } }' % target)
+                self.assertEqual(body[0],
+                                 {'type': 'process', 'value': f'lock ({target})'})
+
     def test_control_flow(self):
         body = func_body('csharp', '''
 class P {
@@ -436,6 +462,67 @@ class K { void M(object o) { lock (o) { N(); } void Loc(int a) { } throw null; }
         self.assertIn(('process', 'lock (o)'), cs)
         self.assertIn(('process', 'Loc(int a)'), cs)     # заголовок локальной функции
         self.assertIn(('process', 'throw null'), cs)
+
+    def test_cpp_declaration_without_initializer(self):
+        """`std::vector<int> v;` рисуется наравне с `int b = 5;`.
+
+        Раньше `_visit_declaration` требовал init_declarator, и объявление
+        без инициализатора пропадало из схемы целиком.
+        """
+        for decl in ('std::vector<int> v', 'int a', 'int c, d',
+                     'int *p', 'int arr[10]', 'static int s'):
+            with self.subTest(decl=decl):
+                self.assertIn(('execute', decl),
+                              flow('cpp', 'int main() { %s; return 0; }' % decl))
+
+    def test_cpp_prototypes_stay_out_of_flowchart(self):
+        """Прототип функции и typedef — не блоки схемы.
+
+        `struct Foo;` / `class Bar;` сюда не берём: на main forward
+        declaration и так становится блоком-заголовком «Foo» (правило
+        «определение внутри тела функции → процесс»), и это отдельный
+        вопрос, не про объявление переменной.
+        """
+        for decl in ('int f(int)', 'typedef int myint'):
+            with self.subTest(decl=decl):
+                self.assertEqual(
+                    [t for t, _ in flow('cpp', 'int main() { %s; return 0; }' % decl)],
+                    ['start', 'execute', 'stop'])   # только «Вернуть 0»
+
+    def test_cs_using_and_fixed_headers(self):
+        """Соседи lock по обработчику: их заголовки тоже в схеме."""
+        self.assertIn(('execute', 'using var f = new S()'),
+                      flow('csharp', 'class C { void M() '
+                                     '{ using (var f = new S()) { x = 1; } } }'))
+
+    def test_gost_loop_without_loop_variable(self):
+        """Первое слово условия — не всегда переменная цикла.
+
+        `while (next(i))` давал «Цикл next, пока next(i)» (next — вызов),
+        `while (!done)` — «Цикл не» (из псевдокода «не done»). Теперь в
+        таких случаях берутся шаблоны start_novar / end_novar.
+        """
+        cases = [
+            ('int f(int i) { while (next(i)) { i++; } return i; }',
+             ('Цикл, пока next(i)', 'Цикл')),
+            ('int f(int done) { while (!done) { done = 1; } return done; }',
+             ('Цикл, пока не done', 'Цикл')),
+            ('int f(int i) { while (i < n) { i++; } return i; }',
+             ('Цикл i, пока i < n', 'Цикл i')),
+        ]
+        for code, expected in cases:
+            with self.subTest(code=code):
+                _cfg, nodes = parse_ast_to_flowchart(
+                    get_ast_generator('cpp').generate(code), 'gost_19_701_90')
+                loop = nodes[1]
+                self.assertEqual((loop['value'], loop['end_value']), expected)
+
+    def test_cpp_do_while_condition_keeps_parens(self):
+        """`while (next(i));`: strip('()') съедал скобку вызова — `next(i`."""
+        body = func_body('cpp', 'int f(int i) { do { i++; } while (next(i)); return i; }')
+        self.assertEqual(body[0]['value'], 'next(i)')
+        body = func_body('cpp', 'int f(int i) { do { i++; } while ((a) && (b)); return i; }')
+        self.assertEqual(body[0]['value'], '(a) && (b)')
 
     def test_labels_from_style(self):
         cfg, _ = parse_ast_to_flowchart({'type': 'program', 'body': []}, 'plain')

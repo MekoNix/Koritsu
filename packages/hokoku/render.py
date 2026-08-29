@@ -38,7 +38,8 @@ DXA_PER_CM = 567
 
 class _Ctx:
     def __init__(self, doc, result: RenderResult, style: dict, images_dir: str | None,
-                 strict_paths: bool, on_error: str = "raise"):
+                 strict_paths: bool, on_error: str = "raise",
+                 drawio_timeout: float | None = None):
         self.doc = doc
         self.result = result
         self.style = style
@@ -46,6 +47,7 @@ class _Ctx:
         self.images_dir = images_dir
         self.strict_paths = strict_paths
         self.on_error = on_error
+        self.drawio_timeout = drawio_timeout
         self.page_w = ops.page_text_width_cm(doc)
         self.page_h = ops.page_text_height_cm(doc)
         self.ref_fields: list = []          # (w:t, имя) — кэш номеров ставим в конце
@@ -56,7 +58,8 @@ class _Ctx:
 def render(template, values: dict, output=None, *,
            images_dir: str | None = None, style: dict | None = None,
            strict_paths: bool = False, figure_caption: str | None = None,
-           table_caption: str | None = None, on_error: str = "raise") -> RenderResult:
+           table_caption: str | None = None, on_error: str = "raise",
+           drawio_timeout: float | None = None) -> RenderResult:
     """
     template  — путь / bytes / Document (переданный Document не меняется — рендерится копия);
     values    — {ключ: str | int | float | bool | Text | Markdown | Code | Image | Table | Blocks};
@@ -67,6 +70,8 @@ def render(template, values: dict, output=None, *,
     style — перегрузки styles.yaml, например {"captions": {"figure": "Рисунок {n} – {caption}"}}.
     on_error — "raise" (по умолчанию: первая же битая картинка прерывает рендер) или "skip"
     (собрать что можно; каждая беда — записью {key, message} в RenderResult.errors).
+    drawio_timeout — секунды на один запуск drawio CLI (None — умолчание images.drawio_to_png,
+    120 с); серверу нужен свой, короче.
     """
     if on_error not in ("raise", "skip"):
         raise ValueError('on_error: "raise" или "skip"')
@@ -82,7 +87,7 @@ def render(template, values: dict, output=None, *,
     doc = open_document(template)
     values = {norm_key(str(k)): v for k, v in values.items()}
     result = RenderResult(output=output if isinstance(output, str) else None)
-    ctx = _Ctx(doc, result, st, images_dir, strict_paths, on_error)
+    ctx = _Ctx(doc, result, st, images_dir, strict_paths, on_error, drawio_timeout)
     hot = marked_paragraphs(doc)
     for loc in iter_paragraphs(doc):
         if loc.paragraph._p not in hot:
@@ -383,8 +388,9 @@ def _emit_value(ctx: _Ctx, v, ref, para, ppr, base_rpr, loc: ParaLoc):
         return _emit_image(ctx, v, ref, para, ppr, loc)
     if isinstance(v, Diagram):
         pages = [v.page] if v.page is not None else list(range(1, count_pages(v.xml) + 1))
+        kw = {} if ctx.drawio_timeout is None else {"timeout": ctx.drawio_timeout}
         try:
-            sheets = [drawio_to_png(v.xml, p) for p in pages]
+            sheets = [drawio_to_png(v.xml, p, **kw) for p in pages]
         except subprocess.TimeoutExpired:
             raise HokokuError("drawio не уложился в таймаут")
         except (ValueError, OSError) as e:
@@ -642,6 +648,9 @@ def _emit_table(ctx: _Ctx, rows, header, caption, align, ref, para, ppr, base_rp
     if not rows:
         return ref
     cap = ctx.style["captions"]
+    # тег в пункте списка: таблица и подпись над ней встают под своим пунктом,
+    # а не у левого поля
+    indent = ops.left_indent_dxa(ctx.doc, para._p)
     if _numbered(caption, loc):
         ctx.result.tables += 1
         n = ctx.result.tables
@@ -650,11 +659,9 @@ def _emit_table(ctx: _Ctx, rows, header, caption, align, ref, para, ppr, base_rp
             ctx.result.refs[name] = n
         ref = ops.add_caption(ctx.doc, ref, cap["table"], n, caption, align=cap["table_align"],
                               seq_name=cap["seq_table"] if cap["fields"] else None,
-                              bookmark=(f"_Ref_{name}" if name else None))
+                              bookmark=(f"_Ref_{name}" if name else None), indent_dxa=indent)
         _register_ref_fields(ctx, ref)        # «см. {ref:рис}» в самой подписи
         ops.keep_with_next(ref)
-    # тег в пункте списка: таблица встаёт под своим пунктом, а не у левого поля
-    indent = ops.left_indent_dxa(ctx.doc, para._p)
     max_w = max(2.0, (_cell_width_cm(loc, ctx) if loc.in_table else ctx.page_w) - indent / DXA_PER_CM)
     ts = ctx.style["table"]
     tbl = ops.add_table(ctx.doc, ref, rows, header, para.part, align, base_rpr, col_widths_cm, max_w,
