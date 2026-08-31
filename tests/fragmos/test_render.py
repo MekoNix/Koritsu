@@ -247,5 +247,69 @@ logging.getLogger("host").info("сообщение хост-программы")
         self.assertEqual(r.stderr, '')
 
 
+class TestGenerateXml(unittest.TestCase):
+    """Схема отдаётся строкой: файл на диске — способ сохранения, а не контракт.
+
+    Умолчание `/tmp/fragmos_out.xml` убрано: два вызова писали в один и тот же файл
+    и затирали друг друга без единой ошибки.
+    """
+
+    CODE = 'def f(x):\n    return x + 1\n'
+    OTHER = 'def g(y):\n    return y * 2\n'
+
+    def test_string_equals_saved_file(self):
+        import fragmos
+        xml_str = fragmos.generate_xml(self.CODE, 'python')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'o.xml')
+            self.assertEqual(fragmos.generate_from_code(self.CODE, 'python', path), path)
+            with open(path, encoding='utf-8') as f:
+                self.assertEqual(f.read(), xml_str)
+        self.assertIn('<mxfile', xml_str)
+
+    def test_calls_do_not_share_state(self):
+        """Разный код — разные схемы, и первая не портится второй."""
+        import fragmos
+        a = fragmos.generate_xml(self.CODE, 'python')
+        b = fragmos.generate_xml(self.OTHER, 'python')
+        self.assertNotEqual(a, b)
+        self.assertEqual(a, fragmos.generate_xml(self.CODE, 'python'))
+
+    def test_files_variant(self):
+        import fragmos
+        xml_str = fragmos.generate_xml(None, 'python',
+                                       files=[('a.py', self.CODE), ('b.py', self.OTHER)])
+        self.assertIn('f(x)', xml_str)
+        self.assertIn('g(y)', xml_str)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'o.xml')
+            fragmos.generate_from_files([{'filename': 'a.py', 'code': self.CODE},
+                                         {'filename': 'b.py', 'code': self.OTHER}],
+                                        'python', path)
+            with open(path, encoding='utf-8') as f:
+                self.assertEqual(f.read(), xml_str)
+
+    def test_code_and_files_are_exclusive(self):
+        import fragmos
+        with self.assertRaises(ValueError):
+            fragmos.generate_xml(self.CODE, 'python', files=[('a.py', self.CODE)])
+        with self.assertRaises(ValueError):
+            fragmos.generate_xml()
+
+    def test_out_path_has_no_default(self):
+        """Общий /tmp не должен быть путём наименьшего сопротивления."""
+        import inspect
+
+        import fragmos
+        for fn in (fragmos.generate_from_code, fragmos.generate_from_files):
+            self.assertIs(inspect.signature(fn).parameters['out_path'].default,
+                          inspect.Parameter.empty)
+
+    def test_cfg_overrides_and_mode_reach_xml(self):
+        import fragmos
+        plain = fragmos.generate_xml(self.CODE, 'python', mode_id='gost_19_701_90')
+        self.assertNotEqual(plain, fragmos.generate_xml(self.CODE, 'python'))
+
+
 if __name__ == '__main__':
     unittest.main()

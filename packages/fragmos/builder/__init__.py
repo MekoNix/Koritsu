@@ -2,9 +2,15 @@
 builder — sub-package для генерации draw.io flowchart XML.
 
 Публичный API:
-  generate_from_code(code, language, out_path, mode_id, cfg_overrides) → str
-  generate_from_files(files, language, out_path, mode_id, cfg_overrides) → str
+  generate_xml(code, language, *, files, mode_id, cfg_overrides) → str  — XML строкой
+  generate_from_code(code, language, out_path, mode_id, cfg_overrides) → str  — путь
+  generate_from_files(files, language, out_path, mode_id, cfg_overrides) → str  — путь
   DEFAULT_CFG — словарь конфигурации по умолчанию
+
+Схема наружу отдаётся строкой: `uml_generator.build_xml` делает так же, а вызывающему
+(службе, прогону отчёта) файл на диске не нужен — ему нужен XML. Путевые обёртки
+остаются, но общего `/tmp` в умолчании больше нет: два одновременных вызова писали
+в один и тот же `/tmp/fragmos_out.xml` и затирали друг друга без единой ошибки.
 """
 
 import os
@@ -14,7 +20,7 @@ from .config import DEFAULT_CFG
 from .renderer import Renderer
 
 __all__ = [
-    "generate_from_code", "generate_from_files", "DEFAULT_CFG", "Renderer",
+    "generate_xml", "generate_from_code", "generate_from_files", "DEFAULT_CFG", "Renderer",
 ]
 
 
@@ -80,14 +86,9 @@ def _stable_ids(f):
             obj._id = f'n{n}'
 
 
-def _write_pages(nodes, cfg, out_path):
-    """Рендерит nodes в drawpyo-файл (одна страница на функцию) и сохраняет."""
-    if os.path.exists(out_path):
-        os.remove(out_path)
-
+def _pages_xml(nodes, cfg) -> str:
+    """Рендерит nodes в drawpyo-файл (одна страница на функцию) → XML строкой."""
     f = _File()
-    f.file_name = os.path.basename(out_path)
-    f.file_path = os.path.dirname(os.path.abspath(out_path))
 
     for page_name, func_nodes in _split_functions(nodes):
         # name= обязательно в конструкторе: drawpyo создаёт внутренний
@@ -98,62 +99,32 @@ def _write_pages(nodes, cfg, out_path):
         Renderer(page, cfg).render(func_nodes, cfg['page_center_x'], cfg['page_top_y'])
 
     _stable_ids(f)
-    f.write()
+    return f.xml
+
+
+def _save(xml: str, out_path: str) -> str:
+    """XML в файл — ровно то же, что писал drawpyo, включая кодировку."""
+    directory = os.path.dirname(os.path.abspath(out_path))
+    os.makedirs(directory, exist_ok=True)
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write(xml)
     return out_path
 
 
-def _render_ast(ast_dict, mode_id, cfg_overrides, out_path):
+def _render_ast(ast_dict, mode_id, cfg_overrides) -> str:
     from ..parser import parse_ast_to_flowchart
 
     cfg, nodes = parse_ast_to_flowchart(ast_dict, mode_id=mode_id)
     if cfg_overrides:
         cfg.update(cfg_overrides)
-    return _write_pages(nodes, cfg, out_path)
+    return _pages_xml(nodes, cfg)
 
 
-def generate_from_code(code: str, language: str = 'python',
-                       out_path: str = '/tmp/fragmos_out.xml',
-                       mode_id: str = 'default',
-                       cfg_overrides: dict = None) -> str:
-    """
-    Полный pipeline: исходный код → XML flowchart.
+def _merge_files(files, language: str) -> dict:
+    """AST нескольких файлов в один program-узел.
 
-    Args:
-        code:          исходный код
-        language:      'python' | 'csharp' | 'cpp'
-        out_path:      путь для сохранения XML
-        mode_id:       режим из modes.yaml ('default' | 'loopLimit' | 'plain')
-        cfg_overrides: перегрузки конфигурации (см. config.DEFAULT_CFG)
-
-    Returns:
-        Путь к созданному XML-файлу.
-    """
-    from ..ast_generators import get_ast_generator
-
-    ast_dict = get_ast_generator(language).generate(code)
-    return _render_ast(ast_dict, mode_id, cfg_overrides, out_path)
-
-
-def generate_from_files(files, language: str = 'python',
-                        out_path: str = '/tmp/fragmos_out.xml',
-                        mode_id: str = 'default',
-                        cfg_overrides: dict = None) -> str:
-    """
-    Multi-file pipeline: парсит каждый файл отдельно (чтобы tree-sitter
-    не ругался на повторные #include / inline-определения через границы
-    файлов) и склеивает AST в один program-узел.
-
-    Используется для C++/Qt-проектов и C#-WinForms-проектов, где код
-    разнесён по нескольким файлам, и `int main()` в main-файле сам по
-    себе не содержит ничего, кроме точки входа.
-
-    Args:
-        files:         итерируемое из (filename, code) или dict с
-                       полями {"filename","code"}.
-        Остальные параметры — как у generate_from_code.
-
-    Returns:
-        Путь к созданному XML-файлу.
+    Каждый файл парсится отдельно — иначе tree-sitter ругается на повторные
+    #include и inline-определения через границы файлов.
     """
     from ..ast_generators import get_ast_generator
 
@@ -166,7 +137,7 @@ def generate_from_files(files, language: str = 'python',
         if (code or "").strip():
             pairs.append((name, code))
     if not pairs:
-        raise ValueError("generate_from_files: пустой список файлов")
+        raise ValueError("generate_xml: пустой список файлов")
 
     gen = get_ast_generator(language)
     merged_body: list = []
@@ -180,9 +151,64 @@ def generate_from_files(files, language: str = 'python',
             continue
         merged_body.extend(ast_dict.get("body") or [])
 
-    ast_dict = {
-        "type": "program",
-        "body": merged_body,
-        "metadata": {"language": language},
-    }
-    return _render_ast(ast_dict, mode_id, cfg_overrides, out_path)
+    return {"type": "program", "body": merged_body, "metadata": {"language": language}}
+
+
+def generate_xml(code: str = None, language: str = 'python', *,
+                 files=None,
+                 mode_id: str = 'default',
+                 cfg_overrides: dict = None) -> str:
+    """
+    Исходный код → draw.io XML строкой. На диск ничего не пишется.
+
+    Args:
+        code:          исходный код (ровно одно из code и files)
+        language:      'python' | 'csharp' | 'cpp'
+        files:         многофайловый вход: итерируемое из (filename, code) или
+                       dict с полями {"filename", "code"}. Нужен C++/Qt- и
+                       C#-WinForms-проектам, где `main()` сам по себе пуст.
+        mode_id:       режим из modes.yaml ('default' | 'loopLimit' | 'plain')
+        cfg_overrides: перегрузки конфигурации (см. config.DEFAULT_CFG)
+
+    Returns:
+        XML многостраничного mxfile (одна страница на функцию).
+    """
+    from ..ast_generators import get_ast_generator
+
+    if (code is None) == (files is None):
+        raise ValueError("generate_xml: нужно ровно одно из code и files")
+    if files is not None:
+        ast_dict = _merge_files(files, language)
+    else:
+        ast_dict = get_ast_generator(language).generate(code)
+    return _render_ast(ast_dict, mode_id, cfg_overrides)
+
+
+def generate_from_code(code: str, language: str, out_path: str,
+                       mode_id: str = 'default',
+                       cfg_overrides: dict = None) -> str:
+    """
+    То же, что generate_xml(code, language, …), но с сохранением в файл.
+
+    `out_path` обязателен: умолчание `/tmp/fragmos_out.xml` было общим на машину —
+    два вызова затирали друг друга, а убирать файл за собой никто не убирал.
+
+    Returns:
+        Путь к созданному XML-файлу.
+    """
+    return _save(generate_xml(code, language, mode_id=mode_id, cfg_overrides=cfg_overrides),
+                 out_path)
+
+
+def generate_from_files(files, language: str, out_path: str,
+                        mode_id: str = 'default',
+                        cfg_overrides: dict = None) -> str:
+    """
+    То же, что generate_xml(files=…), но с сохранением в файл.
+
+    Returns:
+        Путь к созданному XML-файлу.
+    """
+    return _save(generate_xml(None, language, files=files, mode_id=mode_id,
+                              cfg_overrides=cfg_overrides),
+                 out_path)

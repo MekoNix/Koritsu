@@ -529,3 +529,89 @@ def test_bookmark_ids_are_per_document(template, tmp_path, png):
         with zipfile.ZipFile(io.BytesIO(data)) as z:
             return z.read("word/document.xml")
     assert doc_xml(first) == doc_xml(second)                # одинаковый вход — одинаковый выход
+
+
+def test_broken_formula_does_not_eat_its_number(template, tmp_path):
+    """При on_error="skip" битая формула забирала номер себе: следующая получала «3»,
+    хотя в документе она вторая, и {ref:} указывал не на ту формулу."""
+    from hokoku import Formula
+    out = str(tmp_path / "o.docx")
+    res = render(template(lambda d: [d.add_paragraph("{{%s}}" % k) for k in ("f1", "f2", "f3")]),
+                 {"f1": Formula("a^2"), "f2": Formula(r"\\frac{1}{"), "f3": Formula("b^2")},
+                 out, on_error="skip")
+    assert res.formulas == 2 and res.refs == {"f1": 1, "f3": 2}
+    d = Document(out)
+    nums = ["".join(t.text or "" for t in f.iter(qn("w:t")))
+            for f in d.element.body.iter(qn("w:fldSimple")) if "SEQ" in (f.get(qn("w:instr")) or "")]
+    assert nums == ["1", "2"]                       # номера в документе и в refs совпадают
+
+    with pytest.raises(HokokuError, match="пустая"):
+        render(template(lambda d: d.add_paragraph("{{f}}")), {"f": Formula("   ")},
+               str(tmp_path / "empty.docx"))
+
+
+def test_empty_value_is_an_error(template, tmp_path):
+    """Пустое значение раньше съедало тег молча: ни в unfilled (там только теги вовсе без
+    значения), ни в errors — «модель ничего не вернула» выглядело как «тег заполнен»."""
+    from hokoku import Table
+    out = str(tmp_path / "o.docx")
+    build = lambda d: [d.add_paragraph("{{%s}}" % k) for k in ("a", "b", "c", "d", "есть")]
+    res = render(template(build), {"a": "", "b": Text("  "), "c": Markdown(""), "d": Table([]),
+                                   "есть": Markdown("текст")}, out, on_error="skip")
+    assert [e["key"] for e in res.errors] == ["a", "b", "c", "d"]
+    assert res.unfilled == [] and "текст" in "\n".join(texts(out))
+    assert "{{" not in "\n".join(texts(out))              # пустые теги всё равно убраны
+
+    with pytest.raises(HokokuError, match="значение пустое"):
+        render(template(build), {"a": ""}, str(tmp_path / "raise.docx"))
+
+
+def test_docx_bytes_to_pdf(tmp_path, monkeypatch):
+    """Байты внутрь, байты наружу: DOCX уже лежит в памяти (RenderResult.data), и путь
+    через диск — это три лишних действия и три места, где остаётся мусор."""
+    import os
+    import subprocess
+
+    from hokoku import docx_bytes_to_pdf
+    from hokoku import pdf as P
+    seen = []
+
+    def fake_run(cmd, **kw):
+        docx = cmd[-1]
+        seen.append((os.path.basename(docx), open(docx, "rb").read(), kw.get("timeout")))
+        outdir = cmd[cmd.index("--outdir") + 1]
+        with open(os.path.join(outdir, "report.pdf"), "wb") as f:
+            f.write(b"%PDF-1.7 fake")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(P.shutil, "which", lambda name: "/bin/true")
+    monkeypatch.setattr(P.subprocess, "run", fake_run)
+    assert docx_bytes_to_pdf(b"docx-bytes", timeout=7) == b"%PDF-1.7 fake"
+    assert seen == [("report.docx", b"docx-bytes", 7)]
+
+    def raiser(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout"))
+
+    monkeypatch.setattr(P.subprocess, "run", raiser)
+    with pytest.raises(HokokuError, match="не уложился"):
+        docx_bytes_to_pdf(b"docx-bytes", timeout=7)
+    with pytest.raises(HokokuError, match="нужны байты"):
+        docx_bytes_to_pdf(str(tmp_path / "o.docx"))
+
+
+def test_docx_bytes_to_pdf_real(template, tmp_path):
+    """Настоящий прогон через LibreOffice: PDF получается из байтов, мусора не остаётся."""
+    import glob
+    import os
+    import tempfile
+
+    from hokoku import docx_bytes_to_pdf
+    from hokoku.pdf import libreoffice_available
+    if not libreoffice_available():
+        pytest.skip("нет LibreOffice")
+    trash = os.path.join(tempfile.gettempdir(), "hokoku_*")
+    before = set(glob.glob(trash))
+    res = render(template(lambda d: d.add_paragraph("{{a}}")), {"a": "текст"}, None)
+    pdf = docx_bytes_to_pdf(res.data, timeout=120)
+    assert pdf.startswith(b"%PDF")
+    assert set(glob.glob(trash)) == before        # временный каталог убран, DOCX на диск не лёг

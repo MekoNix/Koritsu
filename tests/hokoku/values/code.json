@@ -1,0 +1,8 @@
+{
+  "v": 1,
+  "type": "code",
+  "text": "def f(x):\n    return x\n",
+  "lang": "python",
+  "line_numbers": true,
+  "highlight": null
+}

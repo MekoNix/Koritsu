@@ -195,6 +195,14 @@ def _process_paragraph(ctx: _Ctx, loc: ParaLoc, values: dict):
             base_rpr = copy.deepcopy(rpr) if rpr is not None else None
         inline_spans = None
         ctx.current_key = key
+        if v is not None and _empty_value(v):
+            if ctx.on_error != "skip":
+                raise HokokuError(f"значение пустое: {key!r}")
+            ctx.result.errors.append({"key": key, "message": "значение пустое"})
+            v = None
+            _inline_replace(spans, m.start(), m.end(), "")     # тег убираем, в unfilled не пишем
+            spans = _span_map(runs)
+            continue
         if isinstance(v, Text) and "{ref:" in v.text:
             v = Markdown(v.text.replace("\n", "  \n"))
         elif isinstance(v, str) and "{ref:" in v:
@@ -493,9 +501,14 @@ def _emit_markdown(ctx, blocks, ref, para, ppr, base_rpr, loc, images_dir):
 
 
 def _emit_formula(ctx: _Ctx, latex: str, numbered: bool, ref_name, ref, ppr):
+    if not latex.strip():
+        # пустая формула рисовалась пустым местом с номером «(1)»: номер потрачен,
+        # в отчёте пусто, и ни unfilled, ни errors об этом не говорили
+        raise HokokuError("формула пустая")
     cap = ctx.style["captions"]
     n = 0
     bookmark = None
+    name = None
     if numbered:
         ctx.result.formulas += 1
         n = ctx.result.formulas
@@ -508,6 +521,13 @@ def _emit_formula(ctx: _Ctx, latex: str, numbered: bool, ref_name, ref, ppr):
                                seq_name=cap.get("seq_formula", "Формула") if cap["fields"] else None,
                                bookmark=bookmark, page_w_cm=ctx.page_w, ppr_template=ppr)
     except Exception as e:                                        # noqa: BLE001
+        # номер забираем обратно: при on_error="skip" битая формула иначе съедала его,
+        # и следующая получала «3», хотя в документе она вторая — Word перенумерует поля
+        # SEQ при обновлении, и {ref:} укажет не на ту формулу
+        if numbered:
+            ctx.result.formulas -= 1
+            if name:
+                ctx.result.refs.pop(name, None)
         raise HokokuError(f"формула не разобрана: {latex!r}: {e}")
 
 
@@ -533,6 +553,23 @@ def _resolve_image(src: str, images_dir: str | None) -> str:
         return safe_join(images_dir, src)
     except DocxValidationError as e:
         raise HokokuError(str(e))
+
+
+def _empty_value(v) -> bool:
+    """Значение, из которого нечего вставить. Раньше такое молча съедало тег: ни в `unfilled`
+    (там только теги вовсе без значения), ни в `errors` — «модель ничего не вернула» выглядело
+    ровно как «тег заполнен» (решение владельца 2026-08-29: считать ошибкой)."""
+    if isinstance(v, str):
+        return not v.strip()
+    if isinstance(v, (Text, Markdown)):
+        return not v.text.strip()
+    if isinstance(v, Code):
+        return not v.text.strip()
+    if isinstance(v, Table):
+        return not v.rows or all(not any(str(c).strip() for c in row) for row in v.rows)
+    if isinstance(v, Blocks):
+        return not v.items
+    return False
 
 
 def _numbered(caption, loc: ParaLoc) -> bool:

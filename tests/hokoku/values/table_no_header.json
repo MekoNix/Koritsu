@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "type": "table",
+  "rows": [
+    [
+      "a",
+      "b"
+    ]
+  ],
+  "header": false,
+  "caption": false,
+  "col_widths_cm": null,
+  "align": null,
+  "ref": null
+}

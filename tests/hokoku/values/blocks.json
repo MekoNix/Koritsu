@@ -1,0 +1,70 @@
+{
+  "v": 1,
+  "type": "blocks",
+  "items": [
+    {
+      "type": "text",
+      "text": "Ниже результаты."
+    },
+    {
+      "type": "markdown",
+      "text": "- пункт"
+    },
+    {
+      "type": "code",
+      "text": "int main(){}",
+      "lang": "cpp",
+      "line_numbers": null,
+      "highlight": null
+    },
+    {
+      "type": "image",
+      "artifact": "af_png",
+      "caption": "Установка",
+      "width_cm": null,
+      "align": "center",
+      "ref": null
+    },
+    {
+      "type": "diagram",
+      "xml": "<mxfile><diagram name=\"лист 1\"><mxGraphModel><root/></mxGraphModel></diagram><diagram name=\"лист 2\"><mxGraphModel><root/></mxGraphModel></diagram></mxfile>",
+      "caption": "Схема",
+      "width_cm": null,
+      "align": "center",
+      "ref": null,
+      "page": null
+    },
+    {
+      "type": "table",
+      "rows": [
+        [
+          "n",
+          "t"
+        ],
+        [
+          "10",
+          "1,2"
+        ]
+      ],
+      "header": true,
+      "caption": "Замеры",
+      "col_widths_cm": null,
+      "align": null,
+      "ref": null
+    },
+    {
+      "type": "formula",
+      "latex": "a=b",
+      "numbered": true,
+      "ref": null
+    },
+    {
+      "type": "toc",
+      "levels": 3,
+      "title": null
+    },
+    {
+      "type": "page_break"
+    }
+  ]
+}
