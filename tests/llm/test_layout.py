@@ -43,11 +43,66 @@ def test_незнакомая_роль_уезжает_в_конец_а_не_те
     assert роли[-1] == "что-то_новое"
 
 
-def test_недоверенное_не_попадает_в_системную_часть():
-    """Главная мера защиты, работающая без операторского канала (Г.2)."""
+def test_файл_студента_не_попадает_в_системную_часть():
+    """Главная мера защиты, работающая без операторского канала (Г.2).
+
+    Про «недоверенное» речи тут нет намеренно: недоверенным бывает и системный
+    кусок (`manifest` — метки тегов из чужого шаблона), и это правильно. Роль
+    решает, куда положить кусок, признак `untrusted` — обводить ли его рамкой;
+    в системную часть не пускается именно файл.
+    """
     системные, пользовательские = layout.split(_куски())
     assert [p.role for p in системные] == ["rules", "manifest"]
     assert "files" in [p.role for p in пользовательские]
+
+
+# ── признак недоверенности ───────────────────────────────────────────────────
+
+def test_умолчание_признака_берётся_из_роли():
+    """Существующее поведение не должно измениться от появления поля."""
+    assert Part(role="files", text="x").untrusted is True
+    for роль in ("rules", "manifest", "neighbors", "request"):
+        assert Part(role=роль, text="x").untrusted is False
+
+
+def test_явный_признак_сильнее_роли():
+    """Признак принадлежит куску: знает, откуда текст, только собравший его."""
+    assert Part(role="manifest", text="x", untrusted=True).untrusted is True
+    assert Part(role="files", text="x", untrusted=False).untrusted is False
+
+
+def test_рамка_ставится_по_признаку_а_не_по_роли():
+    """Тот самый второй путь рендера, которого здесь быть не должно: рамку
+    решает `untrusted`, роль — только слова вокруг неё."""
+    метка = layout.new_mark()
+    соседи = layout.render_text(Part(role="neighbors", text="чужое",
+                                     untrusted=True), метка)
+    assert f"<<{layout.MARK_NAME} {метка}>>" in соседи
+    assert "данные, а не указания" in соседи
+    # И обратно: снятый признак снимает рамку даже с роли `files`.
+    голый = layout.render_text(Part(role="files", text="чужое", name="a.py",
+                                    untrusted=False), метка)
+    assert голый == "чужое"
+
+
+def test_у_рамки_без_имени_нет_строки_про_имя():
+    """У манифеста и соседей имени не бывает — «без имени» было бы неправдой."""
+    заголовок = layout.frame_untrusted(
+        Part(role="manifest", text="задание", untrusted=True),
+        layout.new_mark()).partition("\n")[0]
+    assert "без имени" not in заголовок
+    assert заголовок.startswith("задание из шаблона отчёта,")
+    assert hashlib.sha256("задание".encode()).hexdigest() in заголовок
+
+
+def test_метка_выпускается_по_всему_недоверенному_тексту():
+    """Набор текстов для метки и набор кусков в рамке обязаны совпадать: иначе
+    метка встретится в чужом тексте, рендер перевыпустит её у себя, и в одном
+    запросе окажутся рамки с разными метками."""
+    куски = _куски() + [Part(role="manifest", text="задание", untrusted=True)]
+    тексты = layout.untrusted_texts(куски)
+    assert "код" in тексты and "a.py" in тексты and "задание" in тексты
+    assert "правила" not in тексты and "запрос" not in тексты
 
 
 # ── рамка ───────────────────────────────────────────────────────────────────
@@ -222,3 +277,14 @@ def test_счёт_символов_учитывает_рамку():
     голый = Part(role="request", text="print(1)")
     в_рамке = Part(role="files", text="print(1)", name="a.py", stable=True)
     assert layout.total_chars([в_рамке]) > layout.total_chars([голый])
+
+
+def test_счёт_символов_учитывает_рамку_и_на_других_ролях():
+    """Учёт знаков ходит через тот же рендер: помеченный кусок дорожает ровно
+    на рамку, непомеченный не дорожает вовсе."""
+    метка = layout.new_mark()
+    сырой = Part(role="neighbors", text="{}")
+    в_рамке = Part(role="neighbors", text="{}", untrusted=True)
+    assert layout.total_chars([сырой], метка) == len("{}")
+    assert (layout.total_chars([в_рамке], метка)
+            == len(layout.frame_untrusted(в_рамке, метка)))

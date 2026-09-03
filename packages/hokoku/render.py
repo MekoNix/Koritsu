@@ -16,7 +16,6 @@ from __future__ import annotations
 import copy
 import io
 import os
-import re
 import subprocess
 import unicodedata
 
@@ -139,7 +138,7 @@ def _span_map(runs) -> list:
     return spans
 
 
-REF_TEXT_RE = re.compile(r"\{ref:([^\s{}]+)\}")
+REF_TEXT_RE = md.REF_RE            # один разбор ссылок на все места (см. markdown.split_refs)
 
 
 def _process_static_refs(ctx: _Ctx, loc: ParaLoc):
@@ -310,7 +309,7 @@ def _split_leading_paragraph(ctx, v):
         if isinstance(first, (str, Text)):
             t = first if isinstance(first, str) else first.text
             rest = v.items[1:]
-            return [md.Span(t)], (Blocks(rest) if rest else None)
+            return md.split_refs(t), (Blocks(rest) if rest else None)
         if isinstance(first, Markdown):
             sp, rest_md = _split_leading_paragraph(ctx, first)
             if sp is not None:
@@ -391,7 +390,10 @@ def _emit_value(ctx: _Ctx, v, ref, para, ppr, base_rpr, loc: ParaLoc):
         v = Text(v)
     if isinstance(v, Text):
         p = ops.new_paragraph_after(ref, ppr)
-        p.append(ops.make_run(v.text, base_rpr))
+        # `{ref:имя}` внутри Blocks уходила в документ буквальной строкой и мимо
+        # unresolved_refs — молча. Здесь она такое же поле REF, как в обычном тексте;
+        # остальную разметку не разбираем, Text есть Text (см. markdown.split_refs)
+        _add_spans(ctx, p, md.split_refs(v.text), base_rpr, para.part)
         return p
     if isinstance(v, Markdown):
         return _emit_markdown(ctx, md.parse(v.text), ref, para, ppr, base_rpr, loc,
@@ -425,7 +427,15 @@ def _emit_value(ctx: _Ctx, v, ref, para, ppr, base_rpr, loc: ParaLoc):
     if isinstance(v, Formula):
         return _emit_formula(ctx, v.latex, v.numbered, v.ref, ref, ppr)
     if isinstance(v, Toc):
-        return ops.add_toc(ctx.doc, ref, v.levels, v.title, ppr)
+        p = ops.add_toc(ctx.doc, ref, v.levels, v.title, ppr)
+        if v.title and "{ref:" in v.title:
+            # заголовок оглавления — отдельный абзац перед полем TOC, а не содержимое
+            # поля: поле REF в нём законно и обновление оглавления его не трогает.
+            # Сам абзац add_toc не возвращает (возвращает абзац с TOC), берём соседа слева
+            title_p = p.getprevious()
+            if title_p is not None:
+                _register_ref_fields(ctx, title_p)
+        return p
     if isinstance(v, Blocks):
         for item in v.items:
             try:

@@ -191,6 +191,20 @@ def test_потолок_срабатывает_до_сборки(job, resolve, t
     assert not (tmp_path / "out").exists()
 
 
+def test_потолок_знаков_считает_подписи(job, resolve, tmp_path):
+    """Подпись — написанный человеком текст, и в знаки она входит: пока `_chars` её
+    не считал, `max_value_chars` недосчитывал, а картинка не весила ни знака."""
+    job["values"]["схема"] = {"v": 1, "type": "image", "artifact": "af_png",
+                              "caption": "и" * 200}
+    job["options"]["limits"] = {"max_value_chars": 100}
+    res = run(job, resolve, tmp_path)
+    assert res["ok"] is False and res["error"]["code"] == "limit_exceeded"
+    assert res["error"]["key"] == "схема" and "max_value_chars" in res["error"]["message"]
+
+    job["values"]["схема"]["caption"] = "коротко"
+    assert run(job, resolve, tmp_path)["ok"]
+
+
 def test_умолчания_потолков_щедрые(job, resolve, tmp_path):
     """Настоящий журнал замеров на 300 строк — обычный отчёт, а не повод для отказа."""
     rows = [["№", "метод", "мс"]] + [[str(i), "пузырёк", "41"] for i in range(300)]

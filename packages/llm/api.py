@@ -19,6 +19,10 @@ from .errors import LlmError, Stop
 from .model import Chunk, Estimate, Part, Result, Structured, Usage
 from . import jsonschema, layout, registry, structured, usage as usage_mod
 from .backends.base import Request
+# Забор записок о повторах живёт в journal: правда о том, чего вызов стоил,
+# собирается в одном месте (см. докстроку journal). Имя оставлено здесь
+# переэкспортом — на `api.with_retries` ссылались снаружи.
+from .journal import with_retries
 
 # Умолчания разные у «весь объект» и «одно значение» именно потому, что иначе
 # они уедут в вызывающий код: у этих двух вызовов разные места в интерфейсе и
@@ -101,25 +105,6 @@ def _generate(endpoint_id: str, schema: dict, prompt, max_tokens: int,
                             backend.supported_step(Structured.JSON_SCHEMA), caps))
     _record(journal, limit, result, spec, with_retries(meta, backend))
     return result
-
-
-def with_retries(meta, backend) -> dict:
-    """meta вызывающего плюс записки о повторах транспорта на ЭТОМ вызове.
-
-    Забирает их тот, кто сделал вызов, и никто другой. Записка, оставленная в
-    транспорте, дождётся следующего забирающего и припишется чужому вызову:
-    повтор, случившийся при генерации значения, всплывал в записи хода петли,
-    прошедшего с первой попытки. Тогда «почему этот ход шёл вчетверо дольше»
-    получает ложный ответ, а настоящая задержка так и остаётся необъяснимой.
-
-    Забираем и когда журнала нет: записка принадлежит этому вызову, и оставить
-    её значит подложить её следующему.
-    """
-    take = getattr(backend.transport(), "take_retries", None)
-    notes = take() if callable(take) else []
-    if not notes:
-        return meta
-    return {**(meta or {}), "retries": notes}
 
 
 def _record(journal, limit, result: Result, spec, meta) -> None:

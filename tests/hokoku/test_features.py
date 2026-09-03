@@ -8,7 +8,7 @@ from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-from hokoku import (Blocks, Code, Diagram, HokokuError, Image, Markdown, Table, Text,
+from hokoku import (Blocks, Code, Diagram, HokokuError, Image, Markdown, Table, Text, Toc,
                     extract_tags, render)
 from .conftest import ptext, texts
 
@@ -464,6 +464,99 @@ def test_ref_inside_caption_gets_number(template, tmp_path, png):
     caps = [ptext(p) for p in Document(out).paragraphs if p.style.name == "Caption"]
     assert "Рисунок 2 — ср. 1" in caps and "Таблица 1 — к ?" in caps
     assert res.unresolved_refs == ["нету"]
+
+
+def test_ref_inside_blocks_gets_number(template, tmp_path, png):
+    """Ссылка внутри Blocks — во всех местах, где render пишет видимый текст: абзац Text,
+    голая строка, абзац и пункт списка markdown, ячейка таблицы, подпись. Раньше Text
+    и строка уезжали в документ буквой «{ref:схема}» — и молча, мимо unresolved_refs."""
+    def build(d):
+        d.add_paragraph("{{схема}}")
+        d.add_paragraph("{{блок}}")
+    out = str(tmp_path / "o.docx")
+    res = render(template(build), {
+        "схема": Image(png, caption="исходная"),
+        "блок": Blocks([
+            Text("текстом {ref:схема}"),
+            "строкой {ref:схема}",
+            Markdown("абзацем {ref:схема}\n\n- пунктом {ref:схема}\n"),
+            Table([["в ячейке {ref:схема}"]], caption="в подписи {ref:схема}"),
+        ]),
+    }, out)
+    doc = Document(out)
+    got = [ptext(p) for p in doc.paragraphs]
+    assert "текстом 1" in got and "строкой 1" in got            # кэш номера, не литерал
+    assert "абзацем 1" in got and "пунктом 1" in got
+    assert "Таблица 1 — в подписи 1" in got
+    assert ptext(doc.tables[0].rows[0].cells[0].paragraphs[0]) == "в ячейке 1"
+    assert len(_fields(doc, "REF")) == 6 and res.unresolved_refs == []
+
+
+def test_unresolved_ref_inside_blocks_is_visible(template, tmp_path, png):
+    """Ссылка в никуда из Blocks: в документе «?», и имя названо в unresolved_refs —
+    молчание здесь хуже «?», потому что беду не видно и программно."""
+    def build(d):
+        d.add_paragraph("{{схема}}")
+        d.add_paragraph("{{блок}}")
+    out = str(tmp_path / "o.docx")
+    res = render(template(build), {
+        "схема": Image(png, caption="исходная"),
+        "блок": Blocks([Text("текстом {ref:нетА}"), "строкой {ref:нетБ}",
+                        Markdown("абзацем {ref:нетВ}")]),
+    }, out)
+    assert res.unresolved_refs == ["нетА", "нетБ", "нетВ"]
+    got = [ptext(p) for p in Document(out).paragraphs]
+    assert "текстом ?" in got and "строкой ?" in got and "абзацем ?" in got
+
+
+def test_ref_in_blocks_first_item_written_into_tag_paragraph(template, tmp_path, png):
+    """Первый абзац Blocks вписывается на место тега («Цель: {{цель}}.»), а не встаёт
+    следующим — ссылка в нём проходит тот же путь."""
+    def build(d):
+        d.add_paragraph("{{схема}}")
+        d.add_paragraph("Цель: {{цель}}.")
+    out = str(tmp_path / "o.docx")
+    res = render(template(build), {
+        "схема": Image(png, caption="исходная"),
+        "цель": Blocks([Text("повторить {ref:схема}"), Text("и ещё {ref:нету}")]),
+    }, out)
+    assert "Цель: повторить 1." in [ptext(p) for p in Document(out).paragraphs]
+    assert res.unresolved_refs == ["нету"]
+
+
+def test_ref_in_toc_title_is_field(template, tmp_path, png):
+    """Заголовок оглавления — отдельный абзац перед полем TOC, поле REF в нём законно.
+    Раньше ссылка оставалась в нём литералом и мимо unresolved_refs."""
+    def build(d):
+        d.add_paragraph("{{схема}}")
+        d.add_paragraph("{{оглав}}")
+    out = str(tmp_path / "o.docx")
+    res = render(template(build), {
+        "схема": Image(png, caption="исходная"),
+        "оглав": Toc(title="Оглавление (см. {ref:схема})"),
+    }, out)
+    doc = Document(out)
+    assert "Оглавление (см. 1)" in [ptext(p) for p in doc.paragraphs]
+    assert any("_Ref_схема" in f for f in _fields(doc, "REF"))
+    assert res.unresolved_refs == []
+
+    res2 = render(template(build), {"оглав": Toc(title="Оглавление (см. {ref:нету})")},
+                  str(tmp_path / "o2.docx"))
+    assert res2.unresolved_refs == ["нету"]
+    assert "Оглавление (см. ?)" in [ptext(p) for p in Document(str(tmp_path / "o2.docx")).paragraphs]
+
+
+def test_ref_in_code_stays_literal(template, tmp_path, png):
+    """`{ref:x}` в листинге — текст программы: render его не трогает намеренно,
+    и в unresolved_refs он не попадает (иначе фигурные скобки в коде станут бедой)."""
+    def build(d):
+        d.add_paragraph("{{схема}}")
+        d.add_paragraph("{{код}}")
+    out = str(tmp_path / "o.docx")
+    res = render(template(build), {"схема": Image(png, caption="исходная"),
+                                   "код": Blocks([Code("print('{ref:схема}')")])}, out)
+    assert "print('{ref:схема}')" in [ptext(p) for p in Document(out).paragraphs]
+    assert res.unresolved_refs == []
 
 
 def test_skip_survives_alien_exception_and_keeps_blocks_tail(template, tmp_path):

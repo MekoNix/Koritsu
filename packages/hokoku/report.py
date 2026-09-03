@@ -23,7 +23,8 @@ import hashlib
 import os
 import time
 
-from .model import Blocks, Code, Diagram, Formula, HokokuError, Markdown, Table, Text, Toc
+from .model import (Blocks, Code, Diagram, Formula, HokokuError, Image, Markdown, Table,
+                    Text, Toc)
 from .pdf import docx_to_pdf
 from .render import render
 from .safety import DocxValidationError, safe_name, validate_docx
@@ -280,20 +281,33 @@ def _check_value(key: str, v, limits: dict) -> None:
 
 def _chars(v) -> int:
     """Сколько знаков человек написал в значении. XML схемы сюда не входит: его писал
-    генератор, а не человек, и его размер стережёт потолок на байты артефакта."""
+    генератор, а не человек, и его размер стережёт потолок на байты артефакта.
+
+    Подпись — такой же написанный текст, как остальные, и в документе она на виду; пока
+    её здесь не было, `max_chars` (и потолок службы, и `limits` манифеста — счёт один
+    на всех) недосчитывал знаки, а `Image`/`Diagram` не считались вовсе.
+    """
     if isinstance(v, (Text, Markdown, Code)):
         return len(v.text)
     if isinstance(v, Formula):
         return len(v.latex)
     if isinstance(v, Table):
-        return sum(len(c) for row in v.rows for c in row)
+        return _caption_chars(v) + sum(len(str(c)) for row in v.rows for c in row)
+    if isinstance(v, (Image, Diagram)):
+        return _caption_chars(v)
     if isinstance(v, Toc):
         return len(v.title or "")
     if isinstance(v, Blocks):
         return sum(_chars(i) for i in v.items)
-    if isinstance(v, (Diagram, str)):
-        return len(v) if isinstance(v, str) else 0
+    if isinstance(v, str):
+        return len(v)
     return 0
+
+
+def _caption_chars(v) -> int:
+    """Знаки подписи. `caption` бывает не строкой: None — номер без текста, False — вовсе
+    без подписи; считать в них нечего."""
+    return len(v.caption) if isinstance(v.caption, str) else 0
 
 
 # ── файлы, предупреждения, мелочи ─────────────────────────────────────────────

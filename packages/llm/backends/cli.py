@@ -428,6 +428,13 @@ class CliBackend(Backend):
     # ли у бэкенда непотоковый POST, на котором вся проба Б.4 и держится.
     complete_path = ""
     stream_path = ""
+    # Имена из ответа команды: счётчики хода и построчная ведомость
+    # `modelUsage`. Пробы Б.4 у этого протокола нет вовсе (нет POST по HTTP),
+    # так что спросить `reports_cache` сегодня некому; имена стоят здесь, чтобы
+    # ответ на вопрос «отчитывается ли этот провод о кэше» жил там же, где его
+    # читают, а не появился задним числом мимо этого места.
+    CACHE_USAGE_KEYS = ("cache_read_input_tokens", "cache_creation_input_tokens",
+                        "cacheReadInputTokens", "cacheCreationInputTokens")
 
     def headers(self) -> dict:
         """HTTP тут нет, заголовков тоже. Метод существует ради контракта базы."""

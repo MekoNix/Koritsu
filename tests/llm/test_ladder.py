@@ -153,8 +153,11 @@ def test_проба_перекрывает_заявку(make_endpoint):
     json_object (Б.4)."""
     spec, rec = make_endpoint([stream_response(openai_stream(ГОДНОЕ, usage=_usage()))])
     spec.declared.structured_output = Structured.JSON_SCHEMA
-    spec.probe = llm.Probe(at="2026-08-29T12:00:00Z", ok=True,
-                           structured_output=Structured.JSON_OBJECT)
+    # Через реестр, а не присваиванием: у результата пробы одна дверь
+    # (`registry.update_probe`), и тест, который ходит мимо неё, перестаёт
+    # проверять тот путь, которым проба попадает в описание на самом деле.
+    llm.update_probe(spec.id, llm.Probe(at="2026-08-29T12:00:00Z", ok=True,
+                                        structured_output=Structured.JSON_OBJECT))
     caps = llm.capabilities(spec.id)
     assert caps.structured_output == Structured.JSON_OBJECT
     assert caps.is_confirmed("structured_output")
@@ -273,8 +276,8 @@ def test_проба_отменяет_лишний_флаг_include_usage(make_en
     приходит и без флага, флаг лишний, а лишнее поле — риск 400."""
     spec, rec = make_endpoint([stream_response(openai_stream(ГОДНОЕ, usage=_usage()))])
     spec.declared.usage_stream_flag = True
-    spec.probe = llm.Probe(at="2026-08-29T12:00:00Z", ok=True,
-                           usage_stream_flag_needed=False)
+    llm.update_probe(spec.id, llm.Probe(at="2026-08-29T12:00:00Z", ok=True,
+                                        usage_stream_flag_needed=False))
     llm.generate_object(spec.id, SCHEMA, "дай")
     assert "stream_options" not in rec.last
 
@@ -282,7 +285,7 @@ def test_проба_отменяет_лишний_флаг_include_usage(make_en
 def test_проба_включает_нужный_флаг_вопреки_заявке(make_endpoint):
     spec, rec = make_endpoint([stream_response(openai_stream(ГОДНОЕ, usage=_usage()))])
     spec.declared.usage_stream_flag = False
-    spec.probe = llm.Probe(at="2026-08-29T12:00:00Z", ok=True,
-                           usage_stream_flag_needed=True)
+    llm.update_probe(spec.id, llm.Probe(at="2026-08-29T12:00:00Z", ok=True,
+                                        usage_stream_flag_needed=True))
     llm.generate_object(spec.id, SCHEMA, "дай")
     assert rec.last["stream_options"] == {"include_usage": True}

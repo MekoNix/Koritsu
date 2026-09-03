@@ -304,8 +304,11 @@ def test_проба_перекрывает_заявку(шлюз):
     """Правило Б.4 — общее, но проверить его на новом пресете стоит: заявка
     здесь занижена намеренно, и весь расчёт на то, что проба её поднимет."""
     spec, rec = шлюз([])
-    spec.probe = llm.Probe(at="2026-08-30T00:00:00Z", ok=True,
-                           structured_output=Structured.JSON_SCHEMA, tools=True)
+    # Через реестр: `update_probe` — единственная дверь для результата пробы,
+    # и присваивание мимо неё проверяло бы не тот путь.
+    llm.update_probe(spec.id, llm.Probe(at="2026-08-30T00:00:00Z", ok=True,
+                                        structured_output=Structured.JSON_SCHEMA,
+                                        tools=True))
     caps = llm.capabilities(spec.id)
     assert caps.structured_output == Structured.JSON_SCHEMA
     assert caps.is_confirmed("structured_output")

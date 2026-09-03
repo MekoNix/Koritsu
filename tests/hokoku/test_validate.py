@@ -166,6 +166,21 @@ def test_лимит_знаков(template, values, manifest):
     assert (p["key"], p["expected"], p["got"]) == ("цель", 20, 500)
 
 
+def test_лимит_знаков_считает_подписи(template, values, manifest):
+    """Подпись — такой же написанный текст: пока `_chars` её не считал, `max_chars`
+    недосчитывал знаки, а у рисунка и схемы не считалось вовсе ничего."""
+    manifest.tags["схема"].limits = {"max_chars": 20}
+    values["схема"] = Diagram(xml="<mxfile/>" * 100, caption="а" * 50)
+    p = one(validate(template, values, manifest), "limit_max_chars")
+    assert (p["key"], p["got"]) == ("схема", 50)          # XML генератора по-прежнему мимо счёта
+
+    manifest.tags["схема"].limits = {}
+    manifest.tags["замеры"].limits = {"max_chars": 20}
+    values["замеры"] = Table(rows=[["ab"]], caption="в" * 30)
+    p = one(validate(template, values, manifest), "limit_max_chars")
+    assert (p["key"], p["got"]) == ("замеры", 32)         # подпись плюс ячейки
+
+
 def test_лимит_строк_таблицы(template, values, manifest):
     """Тот самый случай: 500 строк при `max_rows: 20` уезжали в отчёт без единого слова."""
     manifest.tags["замеры"].limits = {"max_rows": 20}

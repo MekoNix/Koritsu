@@ -27,6 +27,10 @@ from .errors import ErrorKind, LlmError, Stop
 from .model import Part, Result, ToolResult, Usage
 from . import api, jsonschema, layout, registry, usage as usage_mod
 from .backends.base import Request
+# Сборка `meta` записи (номер хода + записки о повторах) живёт в journal: ход
+# петли — такой же вызов модели, как одиночный, и правда о его цене
+# собирается в одном месте. Прежнее имя оставлено псевдонимом.
+from .journal import step_meta as _step_meta
 
 MAX_STEPS_DEFAULT = 12
 
@@ -193,20 +197,6 @@ def _record(journal, limit, result: Result, spec, meta: dict) -> None:
         limit.journal.add(result, spec, meta)
 
 
-def _step_meta(meta, steps: int, backend) -> dict:
-    """meta вызывающей службы + номер хода + повторы транспорта на этом ходу.
-
-    Повторы кладутся в запись, потому что иначе они невидимы: ход, который
-    из-за трёх пауз занял вчетверо дольше соседнего, в журнале ничем от него не
-    отличается, и «почему прогон шёл двадцать минут» не расследуется.
-
-    Забор записок — общий с api (`api.with_retries`), и это не украшение: два
-    места забора означали бы, что одно из них рано или поздно забудут, а
-    забытая записка достанется чужому вызову.
-    """
-    return api.with_retries({**(meta or {}), "step": steps}, backend)
-
-
 def _estimate_units(endpoint_id: str, parts, history, max_tokens: int,
                     frame_mark=None) -> float:
     """Оценка следующего хода в приведённых единицах — тем же счётом, что api.
@@ -251,7 +241,7 @@ def _call_tool(on_call, call) -> ToolResult:
     """
     # `{}` — законный вызов инструмента без аргументов, а не битый JSON: его шлёт
     # всякий openai-совместимый поставщик. Без этой оговорки инструменты без
-    # аргументов (`list_project_files`, `preview`) отвергались бы всегда, не доходя
+    # аргументов (`list_materials`, `preview`) отвергались бы всегда, не доходя
     # до вызова, — и молча, потому что модель получала бы внятный отказ и «чинилась».
     if call.raw_arguments.strip() not in ("", "{}") and not call.arguments:
         return ToolResult(call_id=call.id, is_error=True,

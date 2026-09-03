@@ -66,6 +66,14 @@ class Backend:
 
     protocol = ""
     stream_path = ""
+    # Имена полей сырых счётчиков, по которым видно, что endpoint о кэше вообще
+    # отчитывается. Нужны ровно одному: шагу пробы про кэш (Б.4). Там надо
+    # отличить промах (`cache_read` = 0, но поле есть) от «измерить нечем»
+    # (поля нет вовсе) — снаружи эти два случая выглядят одинаково нулём, а
+    # значат разное: первое опровергает заявку, второе не говорит ничего.
+    # Имена живут здесь, потому что здесь и читаются: единственное место
+    # пакета, где различие протоколов законно (см. докстроку модуля).
+    CACHE_USAGE_KEYS: tuple = ()
 
     def __init__(self, spec: EndpointSpec, transport: Transport | None = None):
         self.spec = spec
@@ -107,6 +115,31 @@ class Backend:
         return self.transport().stream_sse(self.stream_path, body,
                                            endpoint_id=self.spec.id, cancel=cancel)
 
+    def reports_cache(self, raw_usage: dict) -> bool:
+        """Есть ли в сырых счётчиках хоть одно поле про кэш.
+
+        Не «попал ли кэш», а «отчитывается ли endpoint о кэше вообще». Разница
+        решающая для пробы: без неё endpoint, который про кэш молчит, был бы
+        записан как endpoint, у которого кэш не сработал, — то есть отсутствие
+        измерения превратилось бы в измеренное опровержение заявки.
+
+        Ищем вглубь, а не только по верхнему уровню: у совместимых серверов
+        счётчики кэша лежат в `prompt_tokens_details`, у команды `claude` — в
+        построчной ведомости `modelUsage`.
+        """
+        return _has_key(raw_usage, self.CACHE_USAGE_KEYS)
+
+    def response_provider(self, payload: dict) -> str | None:
+        """Кто на самом деле ответил, если ответ это называет; иначе None.
+
+        Осмысленно только у посредника: за одним именем модели у шлюза стоит
+        разный поставщик, и без имени исполнителя результат пробы читался бы
+        как свойство endpoint'а навсегда (см. `Declared.provider_routed`).
+        У прямого endpoint'а отвечать на этот вопрос нечем и незачем — база
+        возвращает None, и это не «не знаем», а «спрашивать не о чем».
+        """
+        return None
+
     # ── общее ───────────────────────────────────────────────────────────────
     def request_mark(self, request: Request) -> str:
         """Одна метка рамки на весь запрос — и текстам, и именам файлов.
@@ -132,12 +165,14 @@ class Backend:
         на весь запрос целиком, а не на один кусок: метку, которую автор файла
         уже знает, нельзя оставлять ни в одной рамке этого запроса.
         """
-        untrusted: list = []
-        for part in request.parts:
-            if part.role != "files":
-                continue
-            untrusted.append(part.text)
-            untrusted.append(part.name or "")
+        # Недоверенность — признак куска (`Part.untrusted`), а не имя его роли:
+        # роль `manifest` едет системным сообщением и при этом бывает чужой
+        # (метки тегов приходят из чужого DOCX-шаблона). Отбор по `role ==
+        # "files"` выпускал метку по одному набору текстов, а рендер обводил
+        # рамкой другой — и метка, встретившаяся в тексте манифеста, уезжала бы
+        # в рамку как есть. Одно место отбора на выпуск и на рендер —
+        # `layout.untrusted_texts`.
+        untrusted = layout.untrusted_texts(request.parts)
         mark = request.frame_mark
         if mark is None or any(mark in text for text in untrusted):
             mark = layout.new_mark(*untrusted)
@@ -281,6 +316,21 @@ class Backend:
             self.spec.declared.cache_inside_input)
         return Usage(input=clean_in, output=output_tokens, cache_read=read,
                      cache_write=write, reasoning=reasoning, measured=True)
+
+
+def _has_key(value, names, depth: int = 4) -> bool:
+    """Встречается ли хоть одно из имён среди ключей вложенных словарей.
+
+    Вглубь, потому что счётчики кэша лежат по-разному: у одних протоколов на
+    верхнем уровне, у других — во вложенной детализации или в построчной
+    ведомости. Глубина ограничена, чтобы чужой ответ произвольной вложенности
+    не заставил нас его обходить целиком.
+    """
+    if depth <= 0 or not isinstance(value, dict):
+        return False
+    if any(name in value for name in names):
+        return True
+    return any(_has_key(inner, names, depth - 1) for inner in value.values())
 
 
 def make(spec: EndpointSpec, transport: Transport | None = None) -> Backend:

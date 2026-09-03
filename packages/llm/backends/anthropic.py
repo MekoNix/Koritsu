@@ -35,6 +35,11 @@ class AnthropicBackend(Backend):
     stream_path = "/v1/messages"
     complete_path = "/v1/messages"
     count_path = "/v1/messages/count_tokens"
+    # Те же имена, что читает `_usage_from`: чтение, запись и разбивка записи
+    # по TTL. По их присутствию шаг пробы про кэш отличает промах от «endpoint
+    # о кэше не отчитывается» — молчание проб не опровергает заявку.
+    CACHE_USAGE_KEYS = ("cache_read_input_tokens", "cache_creation_input_tokens",
+                        "cache_creation")
 
     def headers(self) -> dict:
         head = {"x-api-key": self.spec.resolve_key(),

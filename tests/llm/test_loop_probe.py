@@ -310,12 +310,31 @@ def _ответы_пробы(*, структура=Structured.JSON_SCHEMA, usage
     return ответы
 
 
-def _проба(ответы, spec=None):
+def _ответы_кэша(первый=None, второй=None):
+    """Два ответа шага 7 (кэш). Счётчики — как их отдаёт совместимый сервер.
+
+    `None` вместо словаря значит «usage в потоке не пришёл вовсе»: тогда
+    сработает запасной подсчёт, и сырых счётчиков не будет ни одного — тот
+    самый случай, в котором мерить кэш нечем.
+    """
+    return [stream_response(openai_stream("да", usage=первый)),
+            stream_response(openai_stream("да", usage=второй))]
+
+
+def _счётчики_кэша(кэш=None, вход=2100):
+    """Счётчики шага кэша. `кэш=None` — полей про кэш в ответе нет вовсе."""
+    usage = {"prompt_tokens": вход, "completion_tokens": 2}
+    if кэш is not None:
+        usage["prompt_tokens_details"] = {"cached_tokens": кэш}
+    return usage
+
+
+def _проба(ответы, spec=None, кэш=False):
     from .conftest import Recorder
     recorder = Recorder(ответы)
     spec = spec or llm.presets.deepseek(api_key_env="TEST_KEY_UNUSED")
     transport = llm.Transport(spec.base_url, headers={}, client=recorder.client())
-    return llm.probe(spec, transport=transport), recorder
+    return llm.probe(spec, transport=transport, do_cache_step=кэш), recorder
 
 
 def test_проба_проходит_шаги_и_записывает_ступень():
@@ -325,7 +344,8 @@ def test_проба_проходит_шаги_и_записывает_ступе
     assert result.streaming is True
     assert result.tools is True
     имена = [шаг["step"] for шаг in result.steps]
-    assert имена == ["models", "plain", "stream", "structured", "tools", "operator"]
+    assert имена == ["models", "plain", "stream", "structured", "tools",
+                     "operator", "cache"]
 
 
 def test_проба_проверяет_поток_с_флагом_и_без():
@@ -450,7 +470,7 @@ def test_вызов_без_аргументов_доходит_до_инстру
     `raw_arguments` при пустом разборе признаком поломки, инструмент без
     аргументов получал отказ, не доходя до вызова, — и молча: модели уходил
     внятный текст «повтори с корректным JSON», она «чинилась», а инструмент так
-    и не звался ни разу. У оркестратора таких два из семи: `list_project_files`
+    и не звался ни разу. У оркестратора таких два из семи: `list_materials`
     и `preview`.
     """
     без_аргументов = Tool(name="список", description="Перечисляет материалы.",
@@ -466,3 +486,250 @@ def test_вызов_без_аргументов_доходит_до_инстру
                   on_call=lambda c: позвано.append(c) or "два материала")
     assert [c.name for c in позвано] == ["список"]
     assert позвано[0].arguments == {}
+
+
+# ── шаг 1: имя модели против списка API ─────────────────────────────────────
+def test_имя_модели_не_из_списка_даёт_предупреждение():
+    """Имя модели зашито в пресете, а поставщик переименовывает модели молча.
+
+    Живая проба deepseek 2026-09-03: `deepseek-chat` в списке `/v1/models`
+    отсутствует, а вызовы проходят. Пробу это не отменяет — но без
+    предупреждения переименование мы узнаем отказом на боевом вызове, то есть
+    в момент, когда пользователь ждёт отчёт.
+    """
+    ответы = _ответы_пробы()
+    ответы[0] = json_response({"data": [{"id": "deepseek-chat-v3.2"},
+                                        {"id": "deepseek-reasoner"}]})
+    result, rec = _проба(ответы)
+    assert result.ok                                  # проба всё равно прошла
+    assert result.model_listed is False
+    предупреждение = " ".join(result.warnings)
+    assert "deepseek-chat" in предупреждение
+    # Предупреждение без «а как надо» отправляет человека за списком руками:
+    # похожее имя подсказывается прямо здесь.
+    assert "deepseek-chat-v3.2" in предупреждение
+    шаг = [ш for ш in result.steps if ш["step"] == "models"][0]
+    assert шаг["ok"] is False
+
+
+def test_имя_модели_из_списка_предупреждений_не_даёт():
+    """Обратная половина: предупреждение, которое стоит всегда, ничего не значит."""
+    result, rec = _проба(_ответы_пробы())
+    assert result.model_listed is True
+    assert result.warnings == []
+
+
+def test_список_моделей_недоступен_это_не_расхождение():
+    """Отсутствие списка ничего не говорит о том, работает ли endpoint.
+
+    Записать сюда «имени нет в списке» значило бы выдумать расхождение из
+    молчания сервера — и погнать владельца править верное имя в пресете.
+    """
+    import httpx
+    ответы = _ответы_пробы()
+    ответы[0] = httpx.Response(404, json={"error": {"message": "no such path"}})
+    result, rec = _проба(ответы)
+    assert result.model_listed is None
+    assert result.warnings == []
+    шаг = [ш for ш in result.steps if ш["step"] == "models"][0]
+    assert шаг["ok"] is True
+
+
+# ── шаг 7: кэш префикса ─────────────────────────────────────────────────────
+def test_шаг_кэша_меряет_попадание_по_счётчикам():
+    """Единственное, что здесь вообще измеримо: ненулевое чтение из кэша во
+    ВТОРОМ ответе. Оно же — единственное, чем заявку можно подтвердить."""
+    ответы = _ответы_пробы() + _ответы_кэша(_счётчики_кэша(кэш=0),
+                                            _счётчики_кэша(кэш=2048))
+    spec = llm.presets.deepseek(api_key_env="TEST_KEY_UNUSED")
+    result, rec = _проба(ответы, spec=spec, кэш=True)
+    assert result.prefix_cache_works is True
+    assert result.prefix_cache_reported is True
+    шаг = [ш for ш in result.steps if ш["step"] == "cache"][0]
+    assert шаг["ok"] is True and "2048" in шаг["note"]
+    llm.register_endpoint(spec)
+    llm.update_probe(spec.id, result)
+    assert llm.capabilities(spec.id).is_confirmed("prefix_cache")
+
+
+def test_шаг_кэша_без_счётчиков_кэша_не_измерим():
+    """Endpoint о кэше не отчитывается — это результат «не измеримо», а не
+    «кэша нет».
+
+    Снаружи оба случая выглядят одинаково нулём в `cache_read`, но значат
+    разное: промах опровергал бы заявку, молчание не говорит ничего. Записать
+    молчание как опровержение значило бы выдумать измерение, которого не было.
+    """
+    голый = _счётчики_кэша(кэш=None)
+    spec = llm.presets.deepseek(api_key_env="TEST_KEY_UNUSED")
+    result, rec = _проба(_ответы_пробы() + _ответы_кэша(голый, голый),
+                         spec=spec, кэш=True)
+    assert result.prefix_cache_works is None
+    assert result.prefix_cache_reported is False
+    шаг = [ш for ш in result.steps if ш["step"] == "cache"][0]
+    assert шаг["ok"] is None                      # не «прошёл» и не «провалился»
+    assert "не отчитывается" in шаг["note"]
+    llm.register_endpoint(spec)
+    llm.update_probe(spec.id, result)
+    caps = llm.capabilities(spec.id)
+    assert caps.prefix_cache == llm.PrefixCache.AUTOMATIC   # заявка цела
+    assert not caps.is_confirmed("prefix_cache")            # и не подтверждена
+
+
+def test_шаг_кэша_на_автокэше_промах_неубедителен():
+    """Счётчики есть, попадания нет: на автокэше это ничего не доказывает —
+    попадание зависит от того, что было на сервере между двумя запросами."""
+    нулевой = _счётчики_кэша(кэш=0)
+    spec = llm.presets.deepseek(api_key_env="TEST_KEY_UNUSED")
+    result, rec = _проба(_ответы_пробы() + _ответы_кэша(нулевой, нулевой),
+                         spec=spec, кэш=True)
+    assert result.prefix_cache_reported is True    # счётчики есть
+    assert result.prefix_cache_works is None       # а вывода нет
+    шаг = [ш for ш in result.steps if ш["step"] == "cache"][0]
+    assert шаг["ok"] is None and "неубедителен" in шаг["note"]
+    llm.register_endpoint(spec)
+    llm.update_probe(spec.id, result)
+    assert not llm.capabilities(spec.id).is_confirmed("prefix_cache")
+
+
+def test_на_управляемом_кэше_промах_опровергает_заявку():
+    """Брейкпойнты расставили мы сами — значит вправе ждать попадания, и его
+    отсутствие содержательно. Это единственный случай, когда шаг говорит «нет».
+    """
+    нулевой = _счётчики_кэша(кэш=0)
+    spec = llm.presets.deepseek(api_key_env="TEST_KEY_UNUSED")
+    spec.declared.prefix_cache = llm.PrefixCache.BREAKPOINTS
+    result, rec = _проба(_ответы_пробы() + _ответы_кэша(нулевой, нулевой),
+                         spec=spec, кэш=True)
+    assert result.prefix_cache_works is False
+    шаг = [ш for ш in result.steps if ш["step"] == "cache"][0]
+    assert шаг["ok"] is False
+    llm.register_endpoint(spec)
+    llm.update_probe(spec.id, result)
+    caps = llm.capabilities(spec.id)
+    assert caps.prefix_cache == llm.PrefixCache.NONE
+    assert caps.is_confirmed("prefix_cache")
+
+
+def test_незапущенный_шаг_кэша_виден_как_непроверенный():
+    """Шаг платный и по умолчанию не идёт — но молчать об этом нельзя.
+
+    Отчёт без строки про кэш показывает «automatic» как знание, а это
+    непроверенная заявка владельца. Отсюда третье состояние шага: `ok=None`.
+    """
+    result, rec = _проба(_ответы_пробы())
+    шаг = [ш for ш in result.steps if ш["step"] == "cache"][0]
+    assert шаг["ok"] is None
+    assert "--cache-step" in шаг["note"]
+    assert result.prefix_cache_reported is None     # шага не было вовсе
+    assert result.prefix_cache_works is None
+
+
+def test_шаг_кэша_не_нужен_там_где_кэш_не_объявлен():
+    """Заявлено «кэша нет» — проверять нечего, и лишних запросов не будет."""
+    spec = llm.presets.deepseek(api_key_env="TEST_KEY_UNUSED")
+    spec.declared.prefix_cache = llm.PrefixCache.NONE
+    result, rec = _проба(_ответы_пробы(), spec=spec, кэш=True)
+    шаг = [ш for ш in result.steps if ш["step"] == "cache"][0]
+    assert шаг["ok"] is True and "не объявлен" in шаг["note"]
+    assert rec.responses == []          # заготовок на кэш не тратилось
+
+
+def test_префикс_шага_кэша_перекрывает_минимум_кэширования():
+    """Префикс короче минимального даёт промах, неотличимый от «кэша нет».
+
+    Минимум у поставщиков разный (у Anthropic на Opus 5 — 512 токенов), и
+    сэкономленная на пробе тысяча токенов стоила бы выдуманного знания.
+    """
+    from llm.probing import CACHE_MIN_TOKENS
+    нулевой = _счётчики_кэша(кэш=0)
+    spec = llm.presets.deepseek(api_key_env="TEST_KEY_UNUSED")
+    result, rec = _проба(_ответы_пробы() + _ответы_кэша(нулевой, нулевой),
+                         spec=spec, кэш=True)
+    первый, второй = rec.requests[-2], rec.requests[-1]
+    префикс = первый["messages"][0]["content"]
+    assert len(префикс) >= CACHE_MIN_TOKENS * spec.chars_per_token
+    # И оба запроса обязаны быть одинаковыми знак в знак: разойдись префикс,
+    # мерили бы не кэш, а собственную сборку тела.
+    assert первый["messages"] == второй["messages"]
+
+
+# ── посредник: измерено на прогоне, а не свойство навсегда ──────────────────
+def test_посредник_помечает_пробу_как_измеренную_на_прогоне():
+    """За одним именем модели у шлюза стоит разный поставщик, и умеют они
+    разное. Ступень лестницы, снятая на умеющем, — про тот прогон."""
+    spec = llm.presets.openrouter(api_key_env="TEST_KEY_UNUSED")
+    ответы = _ответы_пробы()
+    ответы[0] = json_response({"data": [{"id": spec.model}]})
+    result, rec = _проба(ответы, spec=spec)
+    assert result.provider_routed is True
+    assert any("посредник" in текст for текст in result.warnings)
+    llm.register_endpoint(spec)
+    llm.update_probe(spec.id, result)
+    caps = llm.capabilities(spec.id)
+    assert caps.provider_routed is True
+    assert caps.is_confirmed("provider_routed")
+
+
+def test_прямой_endpoint_посредником_не_объявляется():
+    """Обратная половина: пометка, которая стоит на всех, не значит ничего."""
+    result, rec = _проба(_ответы_пробы())
+    assert result.provider_routed is False
+    assert result.providers_seen == []
+
+
+def test_фактический_поставщик_из_ответа_записывается():
+    """Поле `provider` в справочнике ответа не описано (документированный путь
+    — отдельный запрос `/api/v1/generation`), но живые ответы шлюза его
+    отдают. Читаем терпимо: есть — записываем, нет — «ответ не назвал».
+    """
+    ответы = _ответы_пробы()
+    ответы[1] = json_response({"provider": "DeepInfra",
+                               "choices": [{"message": {"content": "готов"},
+                                            "finish_reason": "stop"}],
+                               "usage": {"prompt_tokens": 10,
+                                         "completion_tokens": 2}})
+    result, rec = _проба(ответы)
+    assert result.providers_seen == ["DeepInfra"]
+    # Названный исполнитель доказывает маршрутизацию даже там, где её не
+    # объявляли: заявке пресета такое известно быть не обязано.
+    assert result.provider_routed is True
+    assert any("DeepInfra" in текст for текст in result.warnings)
+
+
+def test_поле_provider_не_строкой_поставщиком_не_считается():
+    """`provider` — ещё и имя поля, которое шлём МЫ (ограничение
+    маршрутизации). Сервер, отразивший наш объект обратно, не должен
+    превратиться в «поставщика по имени {'require_parameters': True}»."""
+    ответы = _ответы_пробы()
+    ответы[1] = json_response({"provider": {"require_parameters": True},
+                               "choices": [{"message": {"content": "готов"},
+                                            "finish_reason": "stop"}],
+                               "usage": {"prompt_tokens": 10,
+                                         "completion_tokens": 2}})
+    result, rec = _проба(ответы)
+    assert result.providers_seen == []
+    assert result.provider_routed is False
+
+
+def test_проба_считает_символы_с_меткой_рамки(monkeypatch):
+    """Тот же приём, что убран из `base._estimate_usage`: считать надо ровно то
+    тело, которое уехало, а рамка едет по проводу и стоит токенов.
+
+    Сегодня разницы в числах нет — недоверенных кусков в промптах пробы не
+    бывает. Она появится молча в тот день, когда шаг пробы получит чужой текст,
+    и калибровка коэффициента оценки начнёт занижать вход.
+    """
+    from llm import probing
+    метки: list = []
+    исходный = probing.layout.total_chars
+
+    def записать(parts, mark=None):
+        метки.append(mark)
+        return исходный(parts, mark)
+
+    monkeypatch.setattr(probing.layout, "total_chars", записать)
+    нулевой = _счётчики_кэша(кэш=0)
+    _проба(_ответы_пробы() + _ответы_кэша(нулевой, нулевой), кэш=True)
+    assert метки, "проба не посчитала символы ни разу"
+    assert all(mark for mark in метки), "total_chars позвали без метки рамки"

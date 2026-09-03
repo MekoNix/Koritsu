@@ -8,7 +8,7 @@ probe` затеняет модуль функцией, и `import llm.probe` п�
 
 Проба — не «ping». Это короткая последовательность настоящих вызовов, дешёвая
 (несколько сотен токенов) и обязательная перед тем, как endpoint станет доступен
-для работы. Шесть шагов:
+для работы. Семь шагов:
 
   1. Список моделей, если протокол его даёт; иначе шаг пропускается.
   2. Непотоковый вызов на 20 токенов: адрес, ключ, имя модели, форма ответа,
@@ -19,11 +19,26 @@ probe` затеняет модуль функцией, и `import llm.probe` п�
   4. Структурированный вывод: просим {"ok": true, "n": 7} по схеме, спускаясь
      по лестнице А.3, пока не получится. Записываем достигнутую ступень.
   5. Игрушечный инструмент echo(text): зовёт ли модель инструменты.
-  6. Кэш, если объявлен: два одинаковых запроса с длинным префиксом.
+  6. Операторский канал: держится ли указание оператора против чужого текста.
+  7. Кэш, если объявлен: два запроса с одним длинным стабильным префиксом.
 
 Результат **перекрывает** заявку владельца там, где противоречит. Обратное
 неверно: то, что проба не смогла проверить, остаётся объявленным как есть —
 интерфейс не должен показывать зелёную галочку там, где мы ничего не проверяли.
+
+Отсюда же третье состояние шага, кроме «прошёл» и «не прошёл»: **не
+проверено**. Оно записывается `ok=None`, печатается в отчёте знаком `??` и
+означает ровно то, чего в двух других состояниях не выразить: шаг не
+запускался (кэш — платный, включается ключом) или запускался и измерить не
+смог (endpoint о кэше не отчитывается вовсе). Без этого состояния
+непроверенное неотличимо от проверенного и опровергнутого, а по такому отчёту
+и ставят зелёную галочку там, где не мерили.
+
+Что проба вдобавок кладёт рядом с шагами — `Probe.warnings`. Это то, что
+пробу не отменяет, но молчать о чём нельзя: имя модели из пресета не найдено
+в списке API (значит переименование мы узнаем отказом на боевом вызове, а не
+здесь) и endpoint оказался посредником (значит измерено на ТОМ прогоне и у
+ТОГО поставщика, а не про endpoint навсегда).
 
 Попутно проба делает единственную вещь, которую больше сделать негде: уточняет
 коэффициент «символов на токен» (В.3). Только здесь рядом лежат наш собственный
@@ -40,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import difflib
 import json
 import sys
 import time
@@ -60,12 +76,27 @@ PROBE_SCHEMA = {
 }
 PROBE_PROMPT = 'Верни объект: ok = true, n = 7. Ничего кроме объекта.'
 
+# Минимальный префикс, ниже которого поставщик кэш не заводит вовсе. У
+# Anthropic на Opus 5 это 512 токенов [проверено, записка А.1], у автокэша
+# OpenAI-совместимых обычно 1024. Берём больший из известных — и удваиваем его
+# в самом шаге: промах из-за слишком короткого префикса неотличим от «кэша
+# нет», то есть дешёвая экономия на пробе стоила бы выдуманного знания.
+CACHE_MIN_TOKENS = 1024
+
 
 def _now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 
 
-def _step(name: str, ok: bool, note: str = "", **extra) -> dict:
+def _step(name: str, ok, note: str = "", **extra) -> dict:
+    """Запись о шаге. `ok`: True — прошёл, False — не прошёл, None — НЕ проверен.
+
+    Третье состояние заведено не для красоты отчёта. Шаг про кэш бывает не
+    запущен (он платный) и бывает не измерим (endpoint о кэше не отчитывается),
+    и оба случая — «мы не знаем». Записать их как False значило бы объявить
+    заявку владельца опровергнутой, записать как True — подтверждённой; врут
+    оба варианта, причём молча.
+    """
     return {"step": name, "ok": ok, "note": note, **extra}
 
 
@@ -103,6 +134,10 @@ def probe(spec: EndpointSpec, transport=None, do_cache_step: bool = False) -> Pr
 
     ok, note = _step_plain(backend, result, сбор)
     result.steps.append(_step("plain", ok, note))
+    # Пометку про посредника ставим здесь, до возможного обрыва: она верна и
+    # для неудачной пробы — «измерено на том прогоне» относится к любому её
+    # результату, в том числе к отрицательному.
+    _пометить_посредника(spec, result)
     if not ok:
         result.ok = False
         result.error = note
@@ -122,7 +157,20 @@ def probe(spec: EndpointSpec, transport=None, do_cache_step: bool = False) -> Pr
     ok, note = _step_operator(backend, result)
     result.steps.append(_step("operator", ok, note, reached=result.operator_channel))
 
-    if do_cache_step and spec.declared.prefix_cache != PrefixCache.NONE:
+    # Шаг про кэш записывается ВСЕГДА — в том числе когда не выполнялся.
+    # Молчание отчёта о непроверенном свойстве и есть та самая зелёная галочка
+    # из ниоткуда: без этой записи «кэш: automatic» в возможностях выглядит
+    # знанием, а на деле это непроверенная заявка владельца.
+    if spec.declared.prefix_cache == PrefixCache.NONE:
+        result.steps.append(_step("cache", True,
+                                  "кэш на endpoint'е не объявлен — проверять нечего"))
+    elif not do_cache_step:
+        result.steps.append(_step(
+            "cache", None,
+            "шаг не запускался: он единственный платный сверх мелочи "
+            f"(два запроса по ≈{2 * CACHE_MIN_TOKENS} токенов). Включается "
+            "ключом --cache-step; до тех пор кэш остаётся заявкой владельца"))
+    else:
         ok, note = _step_cache(backend, result, сбор)
         result.steps.append(_step("cache", ok, note))
 
@@ -145,6 +193,36 @@ def _унести_записки(backend) -> None:
     take = getattr(backend.transport(), "take_retries", None)
     if callable(take):
         take()
+
+
+def _пометить_посредника(spec: EndpointSpec, result: Probe) -> None:
+    """Ставит `provider_routed` и объясняет, что это значит для всей пробы.
+
+    Два независимых основания, и оба слабые поодиночке. Заявка пресета
+    (`Declared.provider_routed`) знает про endpoint то, чего из ответа не
+    видно; ответ, назвавший исполнителя, доказывает маршрутизацию даже там, где
+    её не объявляли. Ни одно из двух не опровергает другого: шлюз вправе
+    исполнителя не называть, и молчание ответа не делает endpoint прямым.
+
+    Зачем вообще: за одним именем модели у посредника стоят разные поставщики,
+    и умеют они разное — у одной модели OpenRouter'а из 14 провайдеров четверо
+    не поддерживают `response_format` (докстрока `presets.openrouter`). Значит
+    ступень лестницы, инструменты, кэш и канал оператора проба измерила у того,
+    кто ответил ЕЙ, а следующий боевой запрос может уехать к другому. Отменять
+    из-за этого пробу незачем — измерение остаётся лучшим, что у нас есть, — но
+    выдавать его за свойство endpoint'а навсегда нельзя.
+    """
+    if spec.declared.provider_routed:
+        result.provider_routed = True
+    if not result.provider_routed:
+        return
+    кто = (f"на этом прогоне отвечал {', '.join(result.providers_seen)}"
+           if result.providers_seen else "ответ фактического поставщика не назвал")
+    result.warnings.append(
+        f"endpoint — посредник: за одним именем модели у него может стоять "
+        f"разный поставщик, и умеют они разное ({кто}). Всё измеренное пробой "
+        f"описывает тот прогон и того поставщика, а не endpoint навсегда — "
+        f"перепроверять при смене модели и после долгих перерывов")
 
 
 def _учесть(сбор: dict, chars: int, usage) -> None:
@@ -181,25 +259,72 @@ def _откалибровать(сбор: dict, previous: float):
 
 
 def _step_models(backend, result: Probe) -> tuple:
-    """Шаг 1. Есть у протокола список моделей — сверяем имя, нет — пропускаем."""
+    """Шаг 1. Есть у протокола список моделей — сверяем имя, нет — пропускаем.
+
+    Расхождение имени пробу не отменяет: имя, которого нет в списке, у
+    поставщика вполне может работать (у DeepSeek `deepseek-chat` работает и в
+    списке `/v1/models` не значится — живая проба 2026-09-03). Но и молчать о
+    нём нельзя: имя модели зашито в пресете, поставщик переименовывает модели
+    молча, и без предупреждения здесь мы узнаем переименование **отказом на
+    боевом вызове** — то есть в момент, когда пользователь ждёт отчёт.
+
+    Поэтому расхождение едет в `Probe.warnings` вместе с похожими именами из
+    списка: предупреждение без «а как надо» заставляет идти за списком руками.
+    """
     path = getattr(backend, "models_path", None)
     if not path:
-        return True, "протокол не даёт списка моделей — шаг пропущен"
+        result.model_listed = None
+        return True, "протокол не даёт списка моделей — сверять имя не с чем"
     try:
         payload, _rid = backend.transport().get_json(path, endpoint_id=backend.spec.id)
     except LlmError as exc:
         # Список моделей — удобство, а не условие: отсутствие его ничего не
         # говорит о том, работает ли endpoint. Проба продолжается.
+        result.model_listed = None
         return True, f"список моделей недоступен ({exc.kind}) — не показатель"
-    names = [m.get("id") for m in (payload.get("data") or [])]
-    if names and backend.spec.model not in names:
+    names = [m.get("id") for m in (payload.get("data") or []) if m.get("id")]
+    if not names:
+        result.model_listed = None
+        return True, "список моделей пуст — сверять имя не с чем"
+    if backend.spec.model not in names:
+        result.model_listed = False
+        похожие = _похожие_имена(backend.spec.model, names)
+        подсказка = f"; похожие в списке: {', '.join(похожие)}" if похожие else ""
+        result.warnings.append(
+            f"имя модели {backend.spec.model!r} не найдено среди {len(names)} "
+            f"моделей, которые отдаёт API endpoint'а{подсказка}. Вызовы могут "
+            f"проходить и сейчас, но переименование у поставщика мы тогда узнаем "
+            f"отказом на боевом вызове — сверь имя в пресете")
         return False, (f"модели {backend.spec.model!r} нет в списке "
-                       f"({len(names)} шт.); работать всё равно попробуем")
+                       f"({len(names)} шт.){подсказка}; работать всё равно попробуем")
+    result.model_listed = True
     return True, f"модель найдена среди {len(names)}"
 
 
+def _похожие_имена(model: str, names: list, сколько: int = 3) -> list:
+    """Имена из списка, похожие на искомое: подстрока или близкое написание.
+
+    Подстрока идёт первой намеренно: `deepseek-chat` против
+    `deepseek-chat-v3.2` близким написанием ловится не всегда, а именно такие
+    пары и получаются при переименовании версией.
+    """
+    подстрока = [n for n in names if model in n or n in model]
+    близкие = difflib.get_close_matches(model, names, n=сколько, cutoff=0.5)
+    найдено: list = []
+    for имя in подстрока + близкие:
+        if имя not in найдено:
+            найдено.append(имя)
+    return найдено[:сколько]
+
+
 def _step_plain(backend, result: Probe, сбор: dict) -> tuple:
-    """Шаг 2. Непотоковый вызов на 20 токенов: адрес, ключ, модель, форма."""
+    """Шаг 2. Непотоковый вызов на 20 токенов: адрес, ключ, модель, форма.
+
+    Единственный шаг, где у нас в руках **сырое тело ответа**, а не наш Result.
+    Оттуда и берётся имя фактического поставщика, если endpoint его называет:
+    дальше по течению payload'а уже нет, а заводить ради этого второй путь
+    разбора ответа — заводить второй набор багов.
+    """
     request = Request(parts=layout.simple("Ответь одним словом: готов"),
                       max_tokens=20, structured_step=Structured.TEXT)
     body = backend.build_body(request, stream=False)
@@ -209,10 +334,24 @@ def _step_plain(backend, result: Probe, сбор: dict) -> tuple:
     except LlmError as exc:
         return False, f"{exc.kind}: {exc.message}"
     text, _calls, usage, raw, _stop = backend.parse_response(payload)
-    _учесть(сбор, layout.total_chars(request.parts) + len(text), usage)
+    # Метка рамки та же, что уехала в теле: рамки едут по проводу и стоят
+    # токенов, и посчитать их другой меткой значит померить не тот запрос,
+    # который отправили (приём — из `base._estimate_usage`). В промптах пробы
+    # недоверенных кусков нет, поэтому сегодня разницы в числах не будет; она
+    # появится молча в тот день, когда шаг пробы получит чужой текст.
+    _учесть(сбор,
+            layout.total_chars(request.parts, backend.request_mark(request)) + len(text),
+            usage)
+    поставщик = backend.response_provider(payload)
+    if поставщик and поставщик not in result.providers_seen:
+        result.providers_seen.append(поставщик)
+        result.provider_routed = True
+    кто = f"; ответил {поставщик}" if поставщик else ""
     if not raw:
-        return True, "ответ пришёл, но usage в нём нет — расход придётся оценивать"
-    return True, f"ответ пришёл, usage есть (вход {usage.input}, выход {usage.output})"
+        return True, ("ответ пришёл, но usage в нём нет — расход придётся "
+                      f"оценивать{кто}")
+    return True, (f"ответ пришёл, usage есть (вход {usage.input}, "
+                  f"выход {usage.output}){кто}")
 
 
 def _step_stream(backend, result: Probe, сбор: dict) -> tuple:
@@ -250,7 +389,9 @@ def _step_stream(backend, result: Probe, сбор: dict) -> tuple:
         # столько раз, сколько порций счётчиков прислал протокол.
         счётчики = [c.usage for c in chunks if c.kind == "usage" and c.usage is not None]
         if счётчики:
-            _учесть(сбор, layout.total_chars(request.parts) + сказано, счётчики[-1])
+            _учесть(сбор,
+                    layout.total_chars(request.parts, backend.request_mark(request))
+                    + сказано, счётчики[-1])
         notes.append(f"{'с флагом' if with_flag else 'без флага'}: "
                      f"куски {'есть' if got_text else 'нет'}, "
                      f"usage {'есть' if measured else 'нет'}")
@@ -295,8 +436,9 @@ def _step_structured(backend, result: Probe, сбор: dict) -> tuple:
             # Ступень со строгим инструментом для калибровки не годится:
             # значение там приезжает вызовом инструмента, а не текстом, и его
             # токены выхода не с чем сопоставлять.
-            _учесть(сбор, layout.total_chars(request.parts) + len(answer.text),
-                    answer.usage)
+            _учесть(сбор,
+                    layout.total_chars(request.parts, backend.request_mark(request))
+                    + len(answer.text), answer.usage)
         try:
             from . import structured as structured_mod
             value = structured_mod.value_from_result(answer, PROBE_SCHEMA, step)
@@ -402,15 +544,55 @@ def _step_operator(backend, result: Probe) -> tuple:
                   f"проба не может")
 
 
-def _step_cache(backend, result: Probe, сбор: dict) -> tuple:
-    """Шаг 6. Два одинаковых запроса с длинным стабильным префиксом.
+def _cache_prefix(spec: EndpointSpec) -> str:
+    """Стабильный префикс заведомо длиннее минимального кэшируемого.
 
-    На endpoint'ах с автокэшем шаг **неубедителен**: попадание зависит от того,
-    что происходило на сервере между запросами, и отрицательный результат ничего
-    не доказывает. Поэтому при автокэше промах оставляет prefix_cache_works=None,
-    а не False.
+    Длина считается в символах через `chars_per_token` endpoint'а — своего
+    токенизатора у слоя нет, а грубая оценка тут и нужна: важно не попасть в
+    цифру, а гарантированно её перекрыть. Берём двойной минимум (см.
+    CACHE_MIN_TOKENS): промах из-за короткого префикса неотличим от «кэша нет»,
+    и различать их было бы уже нечем.
+
+    Фразы **пронумерованы**, а не повторены дословно. Одинаковый текст подряд
+    токенизируется плотнее любого настоящего промпта, и оценка «символов на
+    токен» промахнулась бы ровно на том шаге, наблюдение которого для
+    калибровки самое ценное: длинный префикс, на фоне которого обёртка
+    сообщений почти не искажает отношение.
     """
-    prefix = ("Справочные сведения для проверки кэша. " * 200)
+    нужно = int(2 * CACHE_MIN_TOKENS * spec.chars_per_token)
+    куски: list = []
+    длина = 0
+    номер = 0
+    while длина < нужно:
+        номер += 1
+        фраза = (f"Пункт {номер}. Справочные сведения для проверки кэша "
+                 f"префикса, строка номер {номер}.\n")
+        куски.append(фраза)
+        длина += len(фраза)
+    return "".join(куски)
+
+
+def _step_cache(backend, result: Probe, сбор: dict) -> tuple:
+    """Шаг 7. Два запроса подряд с одним длинным стабильным префиксом.
+
+    Меряем ровно одно: пришло ли во ВТОРОМ ответе ненулевое чтение из кэша.
+    Всё остальное — про то, что делать с нулём, а нулей тут два разных.
+
+    **Ноль первый: endpoint о кэше не отчитывается.** В сырых счётчиках нет ни
+    одного поля про кэш (`Backend.reports_cache`). Тогда мерить нечем, и это
+    результат: `prefix_cache_works` остаётся None, а `prefix_cache_reported`
+    становится False. Записать сюда False значило бы объявить заявку владельца
+    опровергнутой измерением, которого не было. Именно этот случай и делает
+    заявку `automatic` честной строкой «не проверено» вместо зелёной галочки.
+
+    **Ноль второй: счётчики есть, попадания нет.** На автокэше шаг
+    **неубедителен**: попадание зависит от того, что происходило на сервере
+    между двумя запросами, и отрицательный результат не доказывает ничего —
+    поэтому опять None. На управляемом кэше (брейкпойнты) отрицательный
+    результат уже содержателен: мы сами расставили метки и вправе ждать
+    попадания, — там пишется False, и `merged_caps` снимает заявку.
+    """
+    prefix = _cache_prefix(backend.spec)
     parts = [Part(role="rules", text=prefix, stable=True),
              Part(role="request", text="Ответь одним словом: да", stable=False)]
     request = Request(parts=parts, max_tokens=20, structured_step=Structured.TEXT)
@@ -421,17 +603,28 @@ def _step_cache(backend, result: Probe, сбор: dict) -> tuple:
         return False, f"{exc.kind}: {exc.message}"
     # Самое ценное наблюдение для калибровки: длинный префикс, на фоне которого
     # обёртка сообщений почти не искажает отношение символов к токенам.
+    mark = backend.request_mark(request)
     for answer in (first, second):
-        _учесть(сбор, layout.total_chars(parts) + len(answer.text), answer.usage)
-    hit = second.usage.cache_read > 0
-    if hit:
+        _учесть(сбор, layout.total_chars(parts, mark) + len(answer.text), answer.usage)
+    result.prefix_cache_reported = any(backend.reports_cache(a.raw_usage)
+                                       for a in (first, second))
+    размер = f"префикс ≈{len(prefix) // max(1, int(backend.spec.chars_per_token))} токенов"
+    if second.usage.cache_read > 0:
         result.prefix_cache_works = True
-        return True, f"второй запрос прочитал из кэша {second.usage.cache_read} токенов"
+        result.prefix_cache_reported = True
+        return True, (f"второй запрос прочитал из кэша {second.usage.cache_read} "
+                      f"токенов ({размер})")
+    if not result.prefix_cache_reported:
+        result.prefix_cache_works = None
+        return None, (f"endpoint о кэше в usage не отчитывается ни одним полем "
+                      f"({размер}) — измерить нечем; заявка владельца остаётся "
+                      f"заявкой, а не подтверждается и не опровергается")
     if backend.spec.declared.prefix_cache == PrefixCache.AUTOMATIC:
         result.prefix_cache_works = None
-        return True, "автокэш: промах ничего не доказывает, шаг неубедителен"
+        return None, (f"автокэш: счётчики кэша есть, но попадания нет ({размер}). "
+                      f"Промах на автокэше ничего не доказывает — шаг неубедителен")
     result.prefix_cache_works = False
-    return False, "второй запрос кэш не прочитал"
+    return False, f"второй запрос кэш не прочитал, хотя счётчики кэша есть ({размер})"
 
 
 # ── запуск руками ───────────────────────────────────────────────────────────
@@ -451,7 +644,9 @@ def _report(spec: EndpointSpec, result: Probe) -> str:
              f"за {result.latency_ms} мс",
              ""]
     for entry in result.steps:
-        mark = "  ок " if entry["ok"] else "  !! "
+        # Три знака, а не два: `??` — «не проверено». Показать непроверенный шаг
+        # как `!!` значит соврать про опровержение, как `ок` — про подтверждение.
+        mark = {True: "  ок ", False: "  !! "}.get(entry["ok"], "  ?? ")
         lines.append(f"{mark}{entry['step']:<11} {entry['note']}")
     lines += ["",
               "возможности (п — подтверждено пробой, з — заявлено владельцем):",
@@ -465,7 +660,8 @@ def _report(spec: EndpointSpec, result: Probe) -> str:
               f"  инструменты             : {caps.tools} "
               f"({'п' if caps.is_confirmed('tools') else 'з'})",
               f"  кэш префикса            : {caps.prefix_cache} "
-              f"({'п' if caps.is_confirmed('prefix_cache') else 'з'})",
+              f"({'п' if caps.is_confirmed('prefix_cache') else 'з'})"
+              + _почему_кэш_не_подтверждён(caps, result),
               f"  операторский канал      : {caps.operator_channel} "
               f"({'п' if caps.is_confirmed('operator_channel') else 'з'})"
               + ("" if result.operator_channel is None or
@@ -474,7 +670,34 @@ def _report(spec: EndpointSpec, result: Probe) -> str:
                       f"повысить заявку она не может"),
               f"  символов на токен       : {spec.chars_per_token} "
               f"({'уточнено пробой' if result.chars_per_token else 'заявлено'})"]
+    if caps.provider_routed:
+        lines.append(f"  поставщик за шлюзом     : "
+                     f"{', '.join(result.providers_seen) or 'ответ его не назвал'}"
+                     f" — измерено на прогоне, не свойство endpoint'а навсегда")
+    if result.warnings:
+        # Отдельным блоком и последними: предупреждение, дописанное в конец
+        # строки таблицы, читается как примечание к строке, а эти относятся ко
+        # всей пробе целиком.
+        lines += ["", "предупреждения (пробу не отменяют, молчать о них нельзя):"]
+        lines += [f"  ! {текст}" for текст in result.warnings]
     return "\n".join(lines)
+
+
+def _почему_кэш_не_подтверждён(caps, result: Probe) -> str:
+    """Одна фраза о том, ПОЧЕМУ у кэша стоит «з», а не «п».
+
+    Без неё «automatic (з)» одинаково выглядит в трёх разных положениях: шаг не
+    запускали, шаг был и мерить оказалось нечем, шаг был и попадания не вышло.
+    Первое чинится ключом --cache-step, второе не чинится вовсе, третье
+    означает «может быть». Разница видна только здесь.
+    """
+    if caps.is_confirmed("prefix_cache"):
+        return ""
+    if result.prefix_cache_reported is None:
+        return "; шаг кэша не запускался — включается ключом --cache-step"
+    if result.prefix_cache_reported is False:
+        return "; endpoint о кэше не отчитывается — измерить нечем"
+    return "; шаг был, попадания не вышло; на автокэше это ничего не доказывает"
 
 
 def main(argv=None) -> int:
@@ -486,7 +709,8 @@ def main(argv=None) -> int:
     parser.add_argument("--model", default=None, help="перекрыть имя модели")
     parser.add_argument("--base-url", default=None, help="перекрыть адрес")
     parser.add_argument("--cache-step", action="store_true",
-                        help="выполнить шаг 6 (кэш): два длинных запроса, стоит денег")
+                        help=f"выполнить шаг 7 (кэш): два запроса по "
+                             f"≈{2 * CACHE_MIN_TOKENS} токенов, стоит денег")
     parser.add_argument("--json", action="store_true", help="вывести результат как JSON")
     args = parser.parse_args(argv)
 
@@ -517,12 +741,21 @@ def main(argv=None) -> int:
 
     if args.json:
         payload = {"ok": result.ok, "at": result.at,
+                   "model_listed": result.model_listed,
                    "structured_output": result.structured_output,
                    "streaming": result.streaming,
                    "usage_in_stream": result.usage_in_stream,
                    "usage_stream_flag_needed": result.usage_stream_flag_needed,
                    "tools": result.tools,
+                   "operator_channel": result.operator_channel,
                    "prefix_cache_works": result.prefix_cache_works,
+                   "prefix_cache_reported": result.prefix_cache_reported,
+                   "provider_routed": result.provider_routed,
+                   "providers_seen": list(result.providers_seen),
+                   # Предупреждения в JSON обязаны быть: с --json отчёт не
+                   # печатается вовсе, и без них расхождение имени модели
+                   # исчезло бы ровно в том режиме, которым зовут из скриптов.
+                   "warnings": list(result.warnings),
                    "chars_per_token": result.chars_per_token,
                    "latency_ms": result.latency_ms, "steps": result.steps}
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -531,4 +764,4 @@ def main(argv=None) -> int:
     return 0 if result.ok else 1
 
 
-__all__ = ["probe", "main", "PROBE_SCHEMA", "ECHO_TOOL"]
+__all__ = ["probe", "main", "PROBE_SCHEMA", "ECHO_TOOL", "CACHE_MIN_TOKENS"]

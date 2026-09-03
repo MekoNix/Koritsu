@@ -17,7 +17,7 @@ from docx.text.paragraph import Paragraph
 
 from ._text import text_width
 from .images import EMU_PER_CM
-from .markdown import Span
+from .markdown import Span, split_refs
 
 CODE_FONT = "Courier New"
 CODE_SIZE_PT = 10
@@ -592,11 +592,12 @@ def _next_bookmark_id(doc) -> int:
     return n
 
 
-def _field(instr: str, cached: str):
-    """Простое поле Word с кэшированным значением (Word обновит при F9/печати)."""
+def _field(instr: str, cached: str, **run_kw):
+    """Простое поле Word с кэшированным значением (Word обновит при F9/печати).
+    run_kw — оформление кэша: номер в жирном заголовке оглавления должен быть жирным."""
     f = OxmlElement("w:fldSimple")
     f.set(qn("w:instr"), instr)
-    f.append(make_run(cached, None))
+    f.append(make_run(cached, None, **run_kw))
     return f
 
 
@@ -605,20 +606,11 @@ def page_number_field(cached: str = "1"):
     return _field(" PAGE ", cached)
 
 
-_CAPTION_REF_RE = re.compile(r"\{ref:([^\s{}]+)\}")
-
-
-def _caption_text(p, text: str):
-    """Текст подписи: «ср. {ref:схема}» → поле REF вместо литерала. Остальную разметку
-    в подписи не разбираем — звёздочка в «Рисунок 1 — сложность O(n*log n)» не курсив."""
-    pos = 0
-    for m in _CAPTION_REF_RE.finditer(text):
-        if m.start() > pos:
-            p.append(make_run(text[pos:m.start()], None))
-        p.append(ref_field("_Ref_" + m.group(1), "?"))
-        pos = m.end()
-    if text[pos:]:
-        p.append(make_run(text[pos:], None))
+def _plain_with_refs(p, text: str, **run_kw):
+    """Простой текст в абзац: «ср. {ref:схема}» → поле REF вместо литерала. Разметку
+    здесь не разбираем (см. `markdown.split_refs`), run_kw — оформление обычных кусков."""
+    for s in split_refs(text):
+        p.append(ref_field(s.ref, s.text, **run_kw) if s.ref else make_run(s.text, None, **run_kw))
 
 
 def add_caption(doc, ref_elem, fmt: str, n: int, caption: str | None, *, align: str = "center",
@@ -640,7 +632,7 @@ def add_caption(doc, ref_elem, fmt: str, n: int, caption: str | None, *, align: 
     before, _, after = fmt.partition("{n}")
     after = after.replace("{caption}", caption or "") + suffix
     if before:
-        _caption_text(p, before)
+        _plain_with_refs(p, before)
     bm_id = _next_bookmark_id(doc) if bookmark else 0
     if bookmark:
         bs = OxmlElement("w:bookmarkStart")
@@ -656,7 +648,7 @@ def add_caption(doc, ref_elem, fmt: str, n: int, caption: str | None, *, align: 
         be.set(qn("w:id"), str(bm_id))
         p.append(be)
     if after:
-        _caption_text(p, after)
+        _plain_with_refs(p, after)
     return p
 
 
@@ -707,7 +699,9 @@ def add_toc(doc, ref_elem, levels: int, title: str | None, ppr_template=None):
         p = new_paragraph_after(last, None)
         if not set_style(doc, p, "TOC Heading"):
             style_heading(doc, p, 1)
-        p.append(make_run(title, None, bold=True))
+        # заголовок оглавления — отдельный абзац перед полем TOC, а не его содержимое:
+        # поле REF в нём законно и переживает обновление оглавления
+        _plain_with_refs(p, title, bold=True)
         last = p
     p = new_paragraph_after(last, ppr_template)
     r = OxmlElement("w:r")
@@ -747,9 +741,9 @@ def set_update_fields(doc):
         settings.append(el)
 
 
-def ref_field(bookmark: str, cached: str):
+def ref_field(bookmark: str, cached: str, **run_kw):
     """Поле REF на закладку подписи: `{ref:имя}` в тексте → номер рисунка/таблицы."""
-    return _field(f" REF {bookmark} \\h ", cached)
+    return _field(f" REF {bookmark} \\h ", cached, **run_kw)
 
 
 def page_text_width_cm(doc) -> float:

@@ -23,6 +23,7 @@ import fragmos
 import llm
 from llm import usage as usage_mod
 from llm.model import Chunk, ToolCall, Usage
+from uml_generator import objektis
 
 import orchestrator
 from orchestrator import tools as tools_mod
@@ -38,6 +39,39 @@ from .conftest import LOOSE, journal_lines, script, set_prompts
     "    def отсортировать(self):\n"
     "        return sorted(self.данные)\n"
 )
+
+# Классы и экземпляры: диаграмма объектов строится не по типам, а по снимку
+# конкретных объектов, поэтому в исходнике обязано что-то создаваться.
+ОБЪЕКТЫ = (
+    "class Задача:\n"
+    "    def __init__(self, имя):\n"
+    "        self.имя = имя\n"
+    "        self.владелец = None\n"
+    "\n"
+    "class Список:\n"
+    "    def __init__(self):\n"
+    "        self.задачи = []\n"
+    "    def добавить(self, з):\n"
+    "        self.задачи.append(з)\n"
+    "\n"
+    "список = Список()\n"
+    "первая = Задача(\"написать\")\n"
+    "список.добавить(первая)\n"
+)
+
+# C# нужен там, где проверяется склейка нескольких материалов: `py_static`
+# соседние файлы не читает вовсе, а `cs_static` склеивает вход с соседями в
+# один текст — и именно на этой склейке видно, разобрали вход один раз или два.
+CS_ВЕРХНИЙ_УРОВЕНЬ = (
+    "class Двигатель { public int Мощность; "
+    "public Двигатель(int м) { Мощность = м; } }\n"
+    "class Машина { public Двигатель Д; public Машина(Двигатель д) { Д = д; } }\n"
+    "Машина м = new Машина(new Двигатель(120));\n"
+)
+CS_ГЛАВНЫЙ = ("class Программа { static void Main() { "
+              "Двигатель д = new Двигатель(120); } }\n")
+CS_БИБЛИОТЕКА = ("class Двигатель { public int Мощность; "
+                 "public Двигатель(int м) { Мощность = м; } }\n")
 
 
 # ── оснастка ─────────────────────────────────────────────────────────────────
@@ -82,6 +116,16 @@ def материал(project) -> str:
     return project.store().list()[0].id
 
 
+def положить(project, текст: str, имя: str) -> str:
+    """Материал в хранилище проекта — возвращается идентификатор, а не путь.
+
+    Тесты адресуют материал ровно тем же, чем адресует его модель: если бы
+    здесь ходил путь, проверка «инструмент путей не принимает» опиралась бы на
+    то, чего в жизни не бывает.
+    """
+    return project.store().add(текст.encode("utf-8"), name=имя, do_ocr=False).id
+
+
 def ответы(backend, шаг: int) -> list:
     """Ответы инструментов, какими их увидела модель на шаге `шаг` (с 0).
 
@@ -106,8 +150,8 @@ def test_цепочка_инструментов_доводит_схему_до_
         fragmos.generate_xml(исходник, "python").encode("utf-8"))
 
     ep, backend = agent_endpoint(
-        turn(("list_project_files", {})),
-        turn(("read_file", {"id": mid})),
+        turn(("list_materials", {})),
+        turn(("read_material", {"id": mid})),
         turn(("make_flowchart", {"id": mid, "language": "python"})),
         turn(("set_tag", {"key": "таблица",
                           "value": {"type": "diagram", "artifact": art}}),
@@ -119,6 +163,11 @@ def test_цепочка_инструментов_доводит_схему_до_
     assert out.ok and out.outcome == "done"
     assert sorted(out.filled) == ["таблица", "цель"]
     assert out.text == "схема построена, цель написана"
+    # Опись зовётся list_materials и отдаёт материалы, а не файлы: слово «files»
+    # ушло из ответа вместе с прежним именем инструмента, потому что уводило
+    # модель к файловой системе, которой у неё нет.
+    опись = json.loads(ответы(backend, 0)[0]["content"])
+    assert [m["id"] for m in опись["materials"]] == [mid]
     # Значение доехало до проекта той же дорогой, что у уровней 1 и 2.
     assert project.value("таблица") == {"type": "diagram", "artifact": art}
     версия = project.head_version("таблица")
@@ -133,7 +182,7 @@ def test_цепочка_инструментов_доводит_схему_до_
         assert tuple(t.name for t in request.tools) == tools_mod.TOOL_NAMES
     # Ходы прогона записаны на диск, а не только в память.
     шаги = [s["tool"] for s in project.run(out.run.id).steps]
-    assert шаги == ["list_project_files", "read_file", "make_flowchart",
+    assert шаги == ["list_materials", "read_material", "make_flowchart",
                     "set_tag", "set_tag", "preview"]
 
 
@@ -255,13 +304,13 @@ def test_все_теги_за_человеком_прогон_не_начина�
     assert backend.requests == []
 
 
-# ── read_file: идентификатор, а не путь; кусок, а не всё ─────────────────────
+# ── read_material: идентификатор, а не путь; кусок, а не всё ─────────────────
 
-def test_read_file_не_принимает_путь_и_незнакомый_идентификатор(project,
-                                                                agent_endpoint):
+def test_read_material_не_принимает_путь_и_незнакомый_идентификатор(
+        project, agent_endpoint):
     ep, backend = agent_endpoint(
-        turn(("read_file", {"id": "../../etc/passwd"}),
-             ("read_file", {"id": "0123456789abcdef"})),
+        turn(("read_material", {"id": "../../etc/passwd"}),
+             ("read_material", {"id": "0123456789abcdef"})),
         done())
     orchestrator.fill_agent(project, endpoint=ep)
 
@@ -275,13 +324,13 @@ def test_read_file_не_принимает_путь_и_незнакомый_ид
     assert разбор["known"] == [материал(project)]
 
 
-def test_read_file_режет_кусок_и_говорит_об_этом(project, agent_endpoint,
-                                                 monkeypatch):
+def test_read_material_режет_кусок_и_говорит_об_этом(project, agent_endpoint,
+                                                     monkeypatch):
     # Материал длиннее потолка. Потолок трогаем через модуль: число одно, и
     # проверять надо его, а не выдуманную в тесте копию.
     monkeypatch.setattr(tools_mod, "READ_CHARS", 20)
     mid = материал(project)
-    ep, backend = agent_endpoint(turn(("read_file", {"id": mid})), done())
+    ep, backend = agent_endpoint(turn(("read_material", {"id": mid})), done())
     orchestrator.fill_agent(project, endpoint=ep)
 
     разбор = json.loads(ответы(backend, 0)[0]["content"])
@@ -336,6 +385,162 @@ def test_схема_классов_отказывает_понятно_и_стр
     разбор = json.loads(годный["content"])
     assert разбор["classes"] == ["Сортировщик"]
     assert b"mxGraphModel" in project.resolve_artifact(разбор["artifact"])
+
+
+# ── make_object_diagram: снимок экземпляров, и ни одного пути ────────────────
+
+def test_схема_объектов_доводится_до_значения_тега(project, agent_endpoint):
+    """Нормальный путь: трассировка → артефакт в хранилище → значение тега.
+
+    Идентификатор считается здесь тем же `artifact_id`, каким его считает
+    проект. Вернуть модели что-то другое инструмент не может незаметно: тогда
+    `set_tag` следующим ходом не пройдёт, и видно это будет не по строке
+    ответа, а по пустому тегу.
+    """
+    set_prompts(project, таблица={"type": "diagram"})
+    mid = положить(project, ОБЪЕКТЫ, "объекты.py")
+    текст = project.store().read(mid).text
+    art = orchestrator.artifact_id(
+        objektis.build_xml(objektis.extract_objects(текст, "python"),
+                           "dark").encode("utf-8"))
+
+    ep, backend = agent_endpoint(
+        turn(("make_object_diagram", {"ids": [mid], "language": "python"})),
+        turn(("set_tag", {"key": "таблица",
+                          "value": {"type": "diagram", "artifact": art}})),
+        done("схема объектов построена"))
+    out = orchestrator.fill_agent(project, endpoint=ep)
+
+    разбор = json.loads(ответы(backend, 0)[0]["content"])
+    assert разбор["artifact"] == art
+    # Экземпляры названы так, как их зовёт студент: по этим именам модель и
+    # понимает, что схема про его код, а не про чужой.
+    assert разбор["objects"] == ["список", "первая"]
+    assert разбор["notes"] == []
+    # Артефакт лежит в проекте и достаётся тем же resolve_artifact, который
+    # получит сборщик отчёта.
+    assert b"mxGraphModel" in project.resolve_artifact(art)
+    assert out.ok and out.filled == ["таблица"]
+    assert project.value("таблица") == {"type": "diagram", "artifact": art}
+    assert [s["tool"] for s in project.run(out.run.id).steps] == [
+        "make_object_diagram", "set_tag"]
+
+
+def test_схема_объектов_отказывает_понятно_и_ничего_не_кладёт(project,
+                                                              agent_endpoint):
+    """Шесть бед подряд, все чинимые: прогон не падает ни на одной.
+
+    Ответ разбираемый, и по нему видно, что именно поправить, — иначе модель
+    будет чинить наугад, а каждая попытка это ход и деньги.
+    """
+    mid = положить(project, ОБЪЕКТЫ, "объекты.py")
+    пусто = положить(project, "   \n\n", "пусто.py")
+    ep, backend = agent_endpoint(
+        turn(("make_object_diagram", {"ids": [], "language": "python"}),
+             ("make_object_diagram", {"ids": ["материалы/объекты.py"],
+                                      "language": "python"}),
+             ("make_object_diagram", {"ids": ["0123456789abcdef"],
+                                      "language": "python"}),
+             ("make_object_diagram", {"ids": [mid], "language": "java"}),
+             ("make_object_diagram", {"ids": [mid] * (tools_mod.MAX_SOURCES + 1),
+                                      "language": "python"}),
+             ("make_object_diagram", {"ids": [пусто], "language": "python"})),
+        done())
+    out = orchestrator.fill_agent(project, endpoint=ep)
+
+    без_ids, путь, чужой, язык, много, пустой = ответы(backend, 0)
+    assert all(о["is_error"] is True
+               for о in (без_ids, путь, чужой, язык, много, пустой))
+    assert json.loads(без_ids["content"])["error"] == "bad_ids"
+    # Путь умирает на входе: `Store` складывает из идентификатора путь, и
+    # проверка формы обязана стоять до обращения к хранилищу.
+    разбор = json.loads(путь["content"])
+    assert разбор["error"] == "bad_id" and "Пути не принимаются" in разбор["message"]
+    # Незнакомый идентификатор — с перечнем известных: по нему модель исправится.
+    разбор = json.loads(чужой["content"])
+    assert разбор["error"] == "unknown_id" and mid in разбор["known"]
+    # Язык вне перечня: схема инструмента до слабого поставщика не доезжает,
+    # поэтому перечень проверяется ещё и здесь.
+    разбор = json.loads(язык["content"])
+    assert разбор["error"] == "bad_argument" and "python" in разбор["message"]
+    assert json.loads(много["content"])["error"] == "too_many"
+    assert json.loads(пустой["content"])["error"] == "empty_source"
+    # Ни одного значения и ни одной удачной записи хода: отказ есть отказ.
+    assert out.filled == [] and project.value("таблица") is None
+    assert [s["ok"] for s in project.run(out.run.id).steps] == [False] * 6
+
+
+def test_схема_объектов_без_экземпляров_отдаёт_заметки_дословно(project,
+                                                                agent_endpoint):
+    """Экземпляров нет — отказ с заметками разбора, а не пустая схема в отчёт.
+
+    Заметки едут модели дословно: пересказать их короче значило бы решить за
+    неё, какая недосказанность неважна, — а именно она и попадает потом в отчёт
+    утверждением.
+    """
+    mid = положить(project, КЛАССЫ, "классы.py")   # классы есть, экземпляров нет
+    текст = project.store().read(mid).text
+    ep, backend = agent_endpoint(
+        turn(("make_object_diagram", {"ids": [mid], "language": "python"})),
+        done())
+    orchestrator.fill_agent(project, endpoint=ep)
+
+    разбор = json.loads(ответы(backend, 0)[0]["content"])
+    assert разбор["error"] == "no_objects"
+    assert разбор["notes"] == list(objektis.extract_objects(текст, "python").notes)
+    assert разбор["notes"], "заметка о непонятом обязана быть, иначе отказ немой"
+
+
+def test_схема_объектов_не_выдумывает_экземпляров_и_видит_соседние_материалы(
+        project, agent_endpoint):
+    """Точка входа разбирается один раз, а соседние материалы — разбираются.
+
+    Было наоборот: первый материал уезжал и точкой входа, и первым соседом, а
+    `cs_static` склеивает вход со всеми соседями в один текст — то есть код
+    разбирался дважды. На операторах верхнего уровня это давало лишний
+    экземпляр: `new Двигатель(120)` в исходнике один, а на схеме их два.
+    Выдуманный объект в отчёте хуже отсутствующей схемы — его не с чем сверить.
+    """
+    вход = положить(project, CS_ВЕРХНИЙ_УРОВЕНЬ, "программа.cs")
+    главный = положить(project, CS_ГЛАВНЫЙ, "главный.cs")
+    библиотека = положить(project, CS_БИБЛИОТЕКА, "двигатель.cs")
+    ep, backend = agent_endpoint(
+        turn(("make_object_diagram", {"ids": [вход], "language": "csharp"}),
+             ("make_object_diagram", {"ids": [главный, библиотека],
+                                      "language": "csharp"})),
+        done())
+    orchestrator.fill_agent(project, endpoint=ep)
+
+    один, два = ответы(backend, 0)
+    # Ровно то же, что даёт трассировка одного исходника без соседей.
+    текст = project.store().read(вход).text
+    правда = objektis.extract_objects(текст, "csharp")
+    assert json.loads(один["content"])["objects"] == [i.name for i in правда.instances]
+    assert json.loads(один["content"])["objects"] == ["м", "двигатель1"]
+    # Соседний материал при этом не потерялся: класс объявлен во втором, а
+    # экземпляр создаётся в первом, и без второго схема была бы пуста.
+    assert json.loads(два["content"])["objects"] == ["д"]
+
+
+def test_схема_объектов_не_показывает_модели_путей(project, agent_endpoint):
+    """Модель видит идентификаторы и имена — и ничего, что можно открыть.
+
+    Проверяется не формулировка описания, а весь текст, уехавший модели: путь
+    проекта в нём не встречается, косой черты нет вовсе, а состав ответа
+    закреплён — новое поле с путём не проскочит незамеченным.
+    """
+    mid = положить(project, ОБЪЕКТЫ, "объекты.py")
+    ep, backend = agent_endpoint(
+        turn(("make_object_diagram", {"ids": [mid], "language": "python"})),
+        done())
+    orchestrator.fill_agent(project, endpoint=ep)
+
+    содержимое = ответы(backend, 0)[0]["content"]
+    assert project.path not in содержимое and "/" not in содержимое
+    разбор = json.loads(содержимое)
+    assert set(разбор) == {"artifact", "objects", "notes"}
+    # Идентификатор артефакта — хеш содержимого, а не дорога до файла.
+    assert len(разбор["artifact"]) == 16 and разбор["artifact"].isalnum()
 
 
 # ── потолки ──────────────────────────────────────────────────────────────────

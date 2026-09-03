@@ -46,6 +46,40 @@ class OpenAICompatBackend(Backend):
     stream_path = "/v1/chat/completions"
     complete_path = "/v1/chat/completions"
     models_path = "/v1/models"
+    # Все имена, под которыми совместимые серверы отчитываются о кэше: те же,
+    # что читает `_usage_from`, плюс `prompt_cache_miss_tokens` (DeepSeek) —
+    # он про кэш ничего не прибавляет к нашим счётчикам, но его присутствие
+    # доказывает, что endpoint о кэше отчитывается, а это и есть вопрос
+    # `reports_cache`. Список обязан меняться вместе с `_usage_from`: разойдись
+    # они, и шаг пробы объявит «измерить нечем» там, где счётчики читаются.
+    CACHE_USAGE_KEYS = ("cached_tokens", "cache_read_input_tokens",
+                        "prompt_cache_hit_tokens", "prompt_cache_miss_tokens",
+                        "cache_write_tokens", "cache_creation_input_tokens",
+                        "prompt_cache_write_tokens")
+
+    def response_provider(self, payload: dict) -> str | None:
+        """Фактический поставщик, если шлюз назвал его в ответе.
+
+        Что тут проверено, а что нет. В справочнике ответа OpenRouter
+        (https://openrouter.ai/docs/api-reference/overview) поля `provider`
+        нет: перечислены `id`, `choices`, `created`, `model`, `object`,
+        `system_fingerprint`, `usage`. Документированный способ узнать
+        исполнителя — отдельный запрос `GET /api/v1/generation?id=…`, где есть
+        `provider_name`; мы его не делаем, потому что проба не должна ходить в
+        сеть ради украшения отчёта, а ответ там появляется с задержкой.
+        При этом живые ответы шлюза поле `provider` строкой отдают. Отсюда
+        поведение: читаем терпимо и НЕ полагаемся — нет поля, значит «ответ
+        исполнителя не назвал», а не «посредника нет». Само посредничество
+        объявляется пресетом (`Declared.provider_routed`), и оно от этого поля
+        не зависит.
+
+        Проверка на строку не формальна: `provider` — ещё и имя поля, которое
+        МЫ шлём в теле запроса (`extra_body`, ограничение маршрутизации), и
+        сервер, отразивший наш объект обратно, не должен превратиться в
+        «поставщика по имени {'require_parameters': True}».
+        """
+        name = payload.get("provider")
+        return name.strip() if isinstance(name, str) and name.strip() else None
 
     def headers(self) -> dict:
         head = {"Authorization": f"Bearer {self.spec.resolve_key()}",
@@ -175,10 +209,17 @@ class OpenAICompatBackend(Backend):
         None в трёх случаях, и каждый по делу: канала нет (повтор ничего не
         весит, а токены стоит); недоверенных кусков нет (повторять не от чего);
         системных кусков нет вовсе (нечего повторять).
+
+        «Недоверенных нет» спрашивается признаком куска, а не ролью `files`.
+        Роль отвечает на вопрос, КУДА положить кусок, а не чей это текст:
+        недоверенным бывает и `manifest` (метки тегов из чужого DOCX-шаблона),
+        и `neighbors`. По роли выходило, что запрос, где чужой текст приехал
+        манифестом, оставался без повтора указания оператора — то есть защита
+        пропадала ровно там, где её нечем заменить, и молча.
         """
         if merged_caps(self.spec).operator_channel != OperatorChannel.MESSAGES_SYSTEM:
             return None
-        if not any(p.role == "files" for p in request.parts):
+        if not any(layout.is_untrusted(p) for p in request.parts):
             return None
         if not system_parts:
             return None

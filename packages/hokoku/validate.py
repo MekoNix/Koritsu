@@ -184,7 +184,9 @@ def _rendered(v):
     обход вернётся, поэтому править это надо парой.
 
     Внутрь `Blocks` подмена не заходит: render меняет только само значение тега,
-    а элементы последовательности идут в `_emit_value` как есть.
+    а элементы последовательности идут в `_emit_value` как есть — там `Text`/`str`
+    остаётся простым текстом, в котором разбирается одна лишь ссылка
+    (`markdown.split_refs`), и заголовков из него не выйдет.
     """
     if isinstance(v, Text) and "{ref:" in v.text:
         return Markdown(v.text.replace("\n", "  \n"))
@@ -241,14 +243,16 @@ def _ref_text(v) -> str:
     """Текст значения, в котором render превращает `{ref:имя}` в поле REF — и значит,
     где мимо цели останется «?».
 
-    Подпись — такое же место: `docx_ops._caption_text` разбирает в ней ссылки, и «?»
+    Подпись — такое же место: `docx_ops._plain_with_refs` разбирает в ней ссылки, и «?»
     в «Рисунок 1 — см. ?» стоит на самом виду. Пока подписи здесь не было, заявка модуля
     выполнялась наполовину: та же ссылка в тексте давала предупреждение, а в подписи —
     ни одного.
 
+    Заголовок оглавления (`Toc.title`) — тоже: он отдельный абзац перед полем TOC,
+    и поле REF в нём законно (`docx_ops.add_toc`).
+
     Листинга нет намеренно: `{ref:x}` в коде программы — текст программы, render его
-    не трогает. `Toc.title` нет по той же причине: `docx_ops.add_toc` вставляет заголовок
-    оглавления обычным run'ом, поля REF из него не выйдет.
+    не трогает.
     """
     if isinstance(v, str):
         return v
@@ -258,6 +262,8 @@ def _ref_text(v) -> str:
         return "\n".join([_caption(v)] + [str(c) for row in v.rows for c in row])
     if isinstance(v, (Image, Diagram)):
         return _caption(v)
+    if isinstance(v, Toc):
+        return v.title or ""
     if isinstance(v, Blocks):
         return "\n".join(_ref_text(item) for item in v.items)
     return ""

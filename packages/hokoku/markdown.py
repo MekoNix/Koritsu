@@ -84,6 +84,31 @@ _INLINE_RE = re.compile(
 )
 
 
+REF_RE = re.compile(r"\{ref:([^\s{}]+)\}")
+
+
+def split_refs(text: str) -> list[Span]:
+    r"""Простой текст со ссылками → spans: `{ref:имя}` становится полем REF, остальное
+    остаётся буквой в букву.
+
+    Отдельно от `parse_inline` намеренно: там, где текст простой (подпись, `Text` внутри
+    `Blocks`, заголовок оглавления), разметку не разбирают — звёздочка в «Рисунок 1 —
+    сложность O(n*log n)» не курсив, а `\n` в `Text` остаётся разрывом строки. Ссылку же
+    разбирать надо везде: иначе она уезжает в документ буквальной строкой и молча,
+    мимо `unresolved_refs`.
+    """
+    out: list[Span] = []
+    pos = 0
+    for m in REF_RE.finditer(text):
+        if m.start() > pos:
+            out.append(Span(text[pos:m.start()]))
+        out.append(Span("?", ref="_Ref_" + m.group(1)))
+        pos = m.end()
+    if text[pos:]:
+        out.append(Span(text[pos:]))
+    return out
+
+
 def parse_inline(text: str, **base) -> list[Span]:
     """Разобрать inline-разметку. base — атрибуты, наследуемые всеми span'ами."""
     out: list[Span] = []

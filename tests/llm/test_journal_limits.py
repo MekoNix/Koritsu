@@ -398,3 +398,51 @@ def test_отменённый_вызов_виден_лимиту(make_endpoint):
     llm.generate_object(spec.id, SCHEMA, "дай " + "x" * 900,
                         cancel=lambda: True, limit=лимит)
     assert лимит.spent() > 0
+
+
+# ── где живёт сборка meta записи ────────────────────────────────────────────
+def test_забор_записок_о_повторах_одним_местом():
+    """`with_retries` и `step_meta` живут в journal, а не в api и loop.
+
+    Правда о том, чего вызов стоил, собирается в одном месте: раньше `loop`
+    ходил за забором записок в `api`, то есть знал про журнальную сторону
+    соседа, и второе место забора рано или поздно завелось бы отдельно. Тогда
+    записка, забытая в транспорте, досталась бы чужому вызову.
+
+    Прежние имена оставлены переэкспортом — на них ссылались снаружи пакета.
+    """
+    from llm import api, journal as journal_mod, loop
+    assert api.with_retries is journal_mod.with_retries
+    assert loop._step_meta is journal_mod.step_meta
+
+
+def test_номер_хода_и_повторы_едут_в_запись_вместе(make_endpoint):
+    """`step_meta` обязан класть в запись и номер хода, и записки о повторах:
+    ход, вчетверо дольше соседнего из-за пауз, иначе ничем от него не отличим.
+    """
+    from llm import journal as journal_mod
+
+    class Транспорт:
+        """Транспорт, который отдаёт одну записку о повторе и очищает её."""
+
+        def __init__(self):
+            self.записки = [{"attempt": 2, "kind": "rate_limit"}]
+
+        def take_retries(self):
+            записки, self.записки = self.записки, []
+            return записки
+
+    class Бэкенд:
+        def __init__(self):
+            self._транспорт = Транспорт()
+
+        def transport(self):
+            return self._транспорт
+
+    бэкенд = Бэкенд()
+    meta = journal_mod.step_meta({"run": "r_1"}, 3, бэкенд)
+    assert meta == {"run": "r_1", "step": 3,
+                    "retries": [{"attempt": 2, "kind": "rate_limit"}]}
+    # Записка принадлежит вызову: второй забор её уже не увидит, иначе она
+    # припишется следующему ходу.
+    assert journal_mod.step_meta({"run": "r_1"}, 4, бэкенд) == {"run": "r_1", "step": 4}

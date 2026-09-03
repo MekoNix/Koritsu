@@ -34,7 +34,7 @@ tools — инструменты агента (уровень 3) поверх т
 этом продолжается: модель, получившая внятный отказ, чинится следующим ходом, а
 упавший прогон стоит всех уже потраченных денег и не даёт ничего.
 
-**`read_file` отдаёт кусок, а не материал целиком** (`READ_CHARS`). Методичка
+**`read_material` отдаёт кусок, а не материал целиком** (`READ_CHARS`). Методичка
 бывает на сотни килобайт, окно — нет, и «отдали всё» кончается обрывом на
 середине работы. В ответе всегда есть `total` и `truncated`: модель видит, что
 осталось, и просит следующий кусок номерами строк или страниц.
@@ -73,7 +73,7 @@ from uml_generator import objektis
 from . import build as build_mod, fill as fill_mod, schema as schema_mod
 from .errors import OrchestratorError, hint
 
-# Сколько знаков содержимого отдаётся за один `read_file`. Потолок нужен не ради
+# Сколько знаков содержимого отдаётся за один `read_material`. Потолок нужен не ради
 # денег, а ради работоспособности: материал на сотни килобайт, отданный целиком,
 # либо не влезет в окно, либо вытеснит из него всё остальное — и то и другое
 # кончается прогоном, который ничего не поставил.
@@ -188,7 +188,7 @@ def _obj(props: dict, required=()) -> dict:
             "additionalProperties": False}
 
 
-_ID = {"type": "string", "description": "идентификатор материала из list_project_files"}
+_ID = {"type": "string", "description": "идентификатор материала из list_materials"}
 _ARTIFACT = {"type": "string"}
 
 
@@ -197,35 +197,41 @@ def tools() -> list[llm.Tool]:
 
     Порядок и состав постоянны намеренно: список едет в каждом запросе прогона и
     стоит в кэшируемом префиксе. Собирать его «по обстановке» (нет материалов —
-    убрать `read_file`) значило бы платить за префикс заново на каждом ходу и
+    убрать `read_material`) значило бы платить за префикс заново на каждом ходу и
     менять правила игры посреди прогона.
 
     Известная беда, не наша: инструмент без аргументов сегодня до нас не
     доходит. `llm.loop._call_tool` (`loop.py:252`) считает вызов с
     `raw_arguments="{}"` и пустым разбором битым JSON и отвечает модели ошибкой
     сам — а `"{}"` присылает всякий поставщик, у которого поле аргументов
-    обязательно. Значит `list_project_files` и `preview` работают только там,
+    обязательно. Значит `list_materials` и `preview` работают только там,
     где поле аргументов не присылается вовсе. Чинится это в `llm` одним
     условием; заводить здесь фиктивный аргумент ради обхода нельзя — модель
     всё равно вправе прислать `{}`, а лишний параметр останется навсегда.
 
-    Имена — те, что названы в `status.md`. Записка `koritsu-kadai-2026-08-31.md`
-    (Г.2) предлагает переименовать первые два в `list_materials` / `read_material`,
-    и довод у неё верный: файлов у нас нет, есть материалы с идентификатором.
-    Смысл здесь именно такой — **пути не принимаются ни в одном аргументе**, — а
-    имена лежат в этом одном месте, поэтому переименование стоит одной правки.
+    Имена первых двух — `list_materials` и `read_material`, как просила записка
+    `koritsu-kadai-2026-08-31.md` (Г.2), а не прежние `list_project_files` /
+    `read_file`. Смысл не менялся ни на день — **пути не принимаются ни в одном
+    аргументе**, — но слова видит модель, и `read_file` звало её к файловой
+    системе, которой у неё нет: файлов у нас не существует, есть материалы с
+    идентификатором-хешем. Имя файла подделывается содержимым, идентификатор —
+    нет, и назвать это разными словами в разных местах значило бы объяснять
+    модели устройство хранилища дважды и по-разному.
     """
     value = schema_mod.any_value_schema()
     return [
-        llm.Tool(name="list_project_files", schema=_obj({}), description=(
-            "Материалы проекта: идентификатор, имя, вид, чем нумеруется "
-            "содержимое и сколько его. Ничего не читает — читает read_file. "
-            "Без аргументов; пустой список означает, что материалов нет.")),
-        llm.Tool(name="read_file", description=(
-            "Кусок содержимого материала по идентификатору. Границы включительно, "
+        llm.Tool(name="list_materials", schema=_obj({}), description=(
+            "Опись материалов проекта: идентификатор, имя, вид, чем нумеруется "
+            "содержимое и сколько его. Содержимого не отдаёт — его отдаёт "
+            "read_material по идентификатору. Без аргументов; пустой список "
+            "означает, что материалов нет.")),
+        llm.Tool(name="read_material", description=(
+            "Кусок содержимого материала по его идентификатору из list_materials. "
+            "Границы включительно, "
             f"нумерация с 1, за один вызов не больше {READ_CHARS} знаков. "
             "В ответе total (сколько всего единиц) и truncated (кусок обрезан) — "
-            "по ним запрашивай следующий кусок. Путь к файлу не принимается."),
+            "по ним запрашивай следующий кусок. Другого способа адресовать "
+            "материал нет: имён и путей инструмент не принимает."),
             schema=_obj({
                 "id": _ID,
                 "start": {"type": ["integer", "null"], "minimum": 1,
@@ -278,7 +284,7 @@ def tools() -> list[llm.Tool]:
     ]
 
 
-TOOL_NAMES = ("list_project_files", "read_file", "make_flowchart",
+TOOL_NAMES = ("list_materials", "read_material", "make_flowchart",
               "make_class_diagram", "make_object_diagram", "set_tag", "preview")
 
 
@@ -323,8 +329,8 @@ class ToolBox:
         self.calls: int = 0
         self._typed = fill_mod._typed_values(project, skip=None)
         self._handlers = {
-            "list_project_files": self._list_project_files,
-            "read_file": self._read_file,
+            "list_materials": self._list_materials,
+            "read_material": self._read_material,
             "make_flowchart": self._make_flowchart,
             "make_class_diagram": self._make_class_diagram,
             "make_object_diagram": self._make_object_diagram,
@@ -382,14 +388,14 @@ class ToolBox:
         self.project.save_run(self.run)
 
     # ── чтение материалов ───────────────────────────────────────────────────
-    def _list_project_files(self, args: dict) -> dict:
+    def _list_materials(self, args: dict) -> dict:
         """Опись материалов. Не отказывает никогда: пустой проект — пустой список."""
         store = self.project.store()
-        return {"files": [{"id": m.id, "name": m.name, "kind": m.kind,
+        return {"materials": [{"id": m.id, "name": m.name, "kind": m.kind,
                            "unit": m.unit, "count": m.count, "lang": m.lang,
                            "notes": list(m.notes)} for m in store.list()]}
 
-    def _read_file(self, args: dict) -> dict:
+    def _read_material(self, args: dict) -> dict:
         """Кусок материала по идентификатору, не длиннее `READ_CHARS`.
 
         Обрезка молчаливой не бывает: `truncated` и `total` в ответе — это то,
@@ -468,11 +474,20 @@ class ToolBox:
         трассировка не поняла. Пересказать их короче значило бы решить за
         модель, какая недосказанность неважна, — а именно она и попадает потом в
         отчёт как утверждение.
+
+        Первый материал — точка входа (модуль, `Main()`, `main()`), остальные
+        едут соседними файлами. Первый в `files` **не повторяется**: `cs_static`
+        и `cpp_static` склеивают точку входа со всеми соседями в один текст
+        (`cs_static.py:390`), и вход, поданный дважды, разбирался бы дважды. На
+        C# с операторами верхнего уровня это видно глазом: `new Двигатель(120)`
+        в исходнике один, а на схеме появлялся второй, `двигатель2`, которого в
+        коде студента нет. Придуманный экземпляр в отчёте хуже отсутствующей
+        схемы: его не с чем сверить.
         """
         sources = self._sources(args.get("ids"))
         language = _one_of(args.get("language"), _LANGS, "language")
         theme = _one_of(args.get("theme") or "dark", _THEMES, "theme")
-        files = [{"filename": s.name, "code": s.text} for s in sources]
+        files = [{"filename": s.name, "code": s.text} for s in sources[1:]]
         graph = objektis.extract_objects(sources[0].text, language, files=files)
         if graph.is_empty():
             raise ToolError("no_objects",
@@ -564,7 +579,7 @@ class ToolBox:
         if not hokoku.wire.ARTIFACT_RE.match(mid) or ".." in mid:
             raise ToolError("bad_id",
                             f"{mid!r} — не идентификатор материала. Пути не "
-                            "принимаются: идентификаторы даёт list_project_files")
+                            "принимаются: идентификаторы даёт list_materials")
         store = self.project.store()
         try:
             return store.get(mid)
