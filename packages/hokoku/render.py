@@ -85,6 +85,15 @@ def render(template, values: dict, output=None, *,
         template.save(buf)
         template = buf.getvalue()
     doc = open_document(template)
+    try:
+        # запасной стиль заголовка создаётся глубоко внутри docx_ops.set_style, куда
+        # словарь оформления не доходит; без этой передачи render(style={"headings": …})
+        # молча не действовал бы на шаблон, в котором стилей Heading N нет.
+        # Пометка на документе безопасна: переданный Document мы не рендерим, а копируем
+        # через bytes (выше), поэтому два вызова с разным style не мешают друг другу
+        doc._hokoku_heading_sizes = st["headings"]
+    except AttributeError:                                # экзотический объект документа
+        pass
     values = {norm_key(str(k)): v for k, v in values.items()}
     result = RenderResult(output=output if isinstance(output, str) else None)
     ctx = _Ctx(doc, result, st, images_dir, strict_paths, on_error, drawio_timeout)

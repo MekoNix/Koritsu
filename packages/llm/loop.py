@@ -249,7 +249,11 @@ def _call_tool(on_call, call) -> ToolResult:
     Битые аргументы (`arguments` пустые при непустом `raw_arguments`) — тот же
     случай: модель ошиблась, и сказать ей об этом надо ответом инструмента.
     """
-    if call.raw_arguments.strip() and not call.arguments:
+    # `{}` — законный вызов инструмента без аргументов, а не битый JSON: его шлёт
+    # всякий openai-совместимый поставщик. Без этой оговорки инструменты без
+    # аргументов (`list_project_files`, `preview`) отвергались бы всегда, не доходя
+    # до вызова, — и молча, потому что модель получала бы внятный отказ и «чинилась».
+    if call.raw_arguments.strip() not in ("", "{}") and not call.arguments:
         return ToolResult(call_id=call.id, is_error=True,
                           content="аргументы не разобрались как JSON; "
                                   "повтори вызов с корректным JSON")

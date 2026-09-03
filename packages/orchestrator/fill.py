@@ -302,14 +302,20 @@ def _tag_of_stream(project, manifest, key, value_json, run, *, typed, seen,
 # ── общее: проверка и запись ─────────────────────────────────────────────────
 
 def _accept(project, manifest, key: str, value_json: dict, *, run, result, parts,
-            others: dict, template, stop: str = "") -> TagFill:
-    """Значение модели → проверки → версия. Общий хвост обоих уровней.
+            others: dict, template, stop: str = "", extra_flags=()) -> TagFill:
+    """Значение модели → проверки → версия. Общий хвост **всех трёх** уровней.
 
     Порядок проверок содержательный и меняться не должен: сначала `wire`
     (значение вообще выражается, тип известен, артефакт достался — это
     единственный способ узнать, что артефакт существует), потом `hokoku.validate`
     (годность против шаблона и манифеста). Обратный порядок означал бы проверку
     лимитов у значения, которое ещё неизвестно чем является.
+
+    `extra_flags` — пометки, которые ставит не проверка значения, а условия
+    прогона: сегодня это «проверить» уровня 3 на endpoint'е без операторского
+    канала (`tools.operator_channel_gate`). Параметр, а не второй путь записи:
+    инструмент `set_tag` обязан быть этой самой функцией, иначе защита правки
+    человека, версии и `source` разойдутся на первой же правке.
     """
     stop = stop or (result.stop if result is not None else "")
     usage = llm.usage_of(result) if result is not None else {}
@@ -339,7 +345,7 @@ def _accept(project, manifest, key: str, value_json: dict, *, run, result, parts
         return TagFill(key=key, ok=False, value=value_json, stop=stop, usage=usage,
                        problems=problems)
 
-    flags = [f"{p['code']}: {p['message']}" for p in problems]
+    flags = [*extra_flags] + [f"{p['code']}: {p['message']}" for p in problems]
     version = project.set_value(
         key, value_json, source="agent", run=run.id, flags=flags,
         meta={"endpoint": run.endpoint,

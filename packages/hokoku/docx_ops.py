@@ -122,7 +122,15 @@ def has_style(doc, name: str) -> bool:
 
 
 def set_style(doc, p_elem, name: str) -> bool:
+    """Стиль абзаца по имени. Чего в документе нет — создаём, если это наш запасной
+    (`template.STYLE_SPECS`: Heading N, Code, Caption, Quote): один механизм на «шаблон
+    без стилей» и «документ без шаблона». Остальные имена (List Paragraph, TOC Heading,
+    Hyperlink) сочинять нельзя — их вид задаёт шаблон, и подделка была бы хуже прямого
+    форматирования, которым эти места обходятся сегодня."""
     style_id = style_ids(doc).get(name)
+    if style_id is None:
+        from .template import ensure_style           # поздний импорт: template знает docx_ops
+        style_id = ensure_style(doc, name)
     if style_id is None:
         return False
     set_child(get_ppr(p_elem), "w:pStyle", val=style_id)
@@ -242,13 +250,8 @@ class Numbering:
     def _element(self):
         if self._numbering is not None or self._failed:
             return self._numbering
-        try:
-            self._numbering = self.doc.part.numbering_part.element
-        except NotImplementedError:
-            try:
-                self._numbering = _create_numbering_part(self.doc).element
-            except Exception:                                  # noqa: BLE001
-                self._failed = True
+        self._numbering = numbering_element(self.doc)
+        self._failed = self._numbering is None
         return self._numbering
 
     def _next_id(self, tag: str, attr: str) -> int:
@@ -273,6 +276,47 @@ class Numbering:
         ov.set(qn("w:ilvl"), "0")
         set_child(ov, "w:startOverride", val=start)
         num.append(ov)
+        self._numbering.append(num)
+        return num_id
+
+    def new_heading_numbering(self, style_ids: list[str], fmt: str = "%1.") -> int | None:
+        """Многоуровневая нумерация заголовков («1.», «1.1.», …), привязанная к стилям.
+
+        Нумерует Word, а не мы: вписать «1.1» текстом в заголовок значит получить отчёт,
+        в котором вставка раздела перенумеровывает всё вручную. Привязка двусторонняя —
+        `w:pStyle` в уровне и `w:numPr` в самом стиле: Word довольствуется первой,
+        LibreOffice без второй нумерацию не показывает.
+        """
+        if self._element() is None or not style_ids:
+            return None
+        abs_id = self._next_id("w:abstractNum", "w:abstractNumId")
+        absn = OxmlElement("w:abstractNum")
+        absn.set(qn("w:abstractNumId"), str(abs_id))
+        set_child(absn, "w:multiLevelType", val="multilevel")
+        for lvl, sid in enumerate(style_ids):
+            l = OxmlElement("w:lvl")
+            l.set(qn("w:ilvl"), str(lvl))
+            set_child(l, "w:start", val=1)
+            set_child(l, "w:numFmt", val="decimal")
+            set_child(l, "w:pStyle", val=sid)
+            set_child(l, "w:lvlText", val=".".join(f"%{i + 1}" for i in range(lvl + 1)) + fmt[-1])
+            set_child(l, "w:lvlJc", val="left")
+            ppr = OxmlElement("w:pPr")
+            ind = OxmlElement("w:ind")
+            ind.set(qn("w:left"), "0")
+            ind.set(qn("w:hanging"), "0")
+            ppr.append(ind)
+            insert_ordered(l, ppr)
+            absn.append(l)
+        nums = self._numbering.findall(qn("w:num"))
+        if nums:
+            nums[0].addprevious(absn)
+        else:
+            self._numbering.append(absn)
+        num_id = self._next_id("w:num", "w:numId")
+        num = OxmlElement("w:num")
+        num.set(qn("w:numId"), str(num_id))
+        set_child(num, "w:abstractNumId", val=abs_id)
         self._numbering.append(num)
         return num_id
 
@@ -307,6 +351,18 @@ class Numbering:
         else:
             self._numbering.append(absn)
         return abs_id
+
+
+def numbering_element(doc):
+    """Корень numbering.xml; части в шаблоне может не быть — тогда создаём.
+    None — не вышло: списки рисуются маркером-текстом, нумерация заголовков не ставится."""
+    try:
+        return doc.part.numbering_part.element
+    except NotImplementedError:
+        try:
+            return _create_numbering_part(doc).element
+        except Exception:                                      # noqa: BLE001
+            return None
 
 
 def _create_numbering_part(doc):
@@ -542,6 +598,11 @@ def _field(instr: str, cached: str):
     f.set(qn("w:instr"), instr)
     f.append(make_run(cached, None))
     return f
+
+
+def page_number_field(cached: str = "1"):
+    """Поле PAGE — номер страницы. Текстом номер писать нельзя: он не пересчитается."""
+    return _field(" PAGE ", cached)
 
 
 _CAPTION_REF_RE = re.compile(r"\{ref:([^\s{}]+)\}")

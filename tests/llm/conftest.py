@@ -13,11 +13,13 @@
 from __future__ import annotations
 
 import json
+import os
 
 import httpx
 import pytest
 
 import llm
+from llm.backends.cli import CliRunner
 
 
 @pytest.fixture(autouse=True)
@@ -123,6 +125,100 @@ def make_endpoint():
         registered = endpoint(recorder, spec, **overrides)
         return registered, recorder
     return build
+
+
+# ── поддельный подпроцесс для протокола cli ─────────────────────────────────
+class FakeCli(CliRunner):
+    """Поддельный запускатель команды: подделка того же места, что MockTransport.
+
+    Настоящую команду `claude` тесты звать не должны — это деньги и секунды, — а
+    запрет на сеть её не ловит: она ходит из другого процесса. Поэтому
+    подменяется ровно один метод, `run_once`; всё остальное — записки о
+    повторах, идентификатор ответа, политика повторов — берётся у настоящего
+    `CliRunner`, иначе тесты проверяли бы не тот код, который работает.
+
+    Заготовка — либо кортеж `(код возврата, stdout, stderr)`, либо вызываемый
+    объект `(argv, промпт, cancel) -> кортеж`, который волен и бросить.
+    """
+
+    def __init__(self, responses, retry=None, command="claude"):
+        super().__init__(command=command, retry=retry or llm.Retry(attempts=1))
+        self.responses = list(responses)
+        self.runs: list = []          # что именно запускали, по разу на попытку
+
+    def executable(self):
+        return "/поддельный/путь/claude"
+
+    def run_once(self, argv, stdin_text, cwd, env, timeout_s, cancel=None,
+                 endpoint_id=""):
+        argv = list(argv)
+        system = ""
+        if "--system-prompt-file" in argv:
+            path = argv[argv.index("--system-prompt-file") + 1]
+            with open(path, "r", encoding="utf-8") as fh:
+                system = fh.read()
+        self.runs.append({"argv": argv, "prompt": stdin_text, "system": system,
+                          "cwd": cwd, "env": dict(env), "timeout_s": timeout_s,
+                          # что лежало в рабочем каталоге на момент запуска:
+                          # проверить это после вызова уже нельзя, каталог убран
+                          "в_каталоге": sorted(os.listdir(cwd))})
+        if not self.responses:
+            raise AssertionError("запусков больше, чем заготовлено ответов")
+        item = self.responses.pop(0)
+        return item(argv, stdin_text, cancel) if callable(item) else item
+
+    @property
+    def last(self) -> dict:
+        return self.runs[-1] if self.runs else {}
+
+
+def cli_json(result: str = "готово", *, model_usage=None, turn_usage=None,
+             is_error: bool = False, stop_reason: str = "end_turn",
+             denials=None, session_id: str = "sess_тест",
+             total_cost_usd: float = 0.0016, **extra) -> str:
+    """Записанный ответ `claude -p --output-format json`.
+
+    Поля и их значения сняты с живого вызова 2026-08-31; здесь их ровно столько,
+    сколько читает бэкенд, плюс те, что он кладёт в raw_usage.
+    """
+    payload = {
+        "type": "result", "subtype": "success", "is_error": is_error,
+        "stop_reason": stop_reason, "num_turns": 1, "duration_ms": 1435,
+        "session_id": session_id, "total_cost_usd": total_cost_usd,
+        "permission_denials": list(denials or []),
+        "result": result,
+        "usage": turn_usage if turn_usage is not None else {
+            "input_tokens": 252, "output_tokens": 74,
+            "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+            "output_tokens_details": {"thinking_tokens": 64},
+        },
+    }
+    if model_usage is not None:
+        payload["modelUsage"] = model_usage
+    elif turn_usage is None:
+        payload["modelUsage"] = {"claude-haiku-4-5-20251001": {
+            "inputTokens": 1151, "outputTokens": 82,
+            "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0,
+            "costUSD": total_cost_usd, "contextWindow": 200000,
+            "maxOutputTokens": 32000, "canonicalModel": "claude-haiku-4-5"}}
+    payload.update(extra)
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def cli_endpoint(responses, spec=None, retry=None, **overrides):
+    """Регистрирует endpoint протокола cli на поддельном запускателе."""
+    spec = spec or llm.presets.claude_cli_proba()
+    for name, value in overrides.items():
+        setattr(spec, name, value)
+    runner = FakeCli(responses, retry=retry)
+    llm.register_endpoint(spec, transport=runner)
+    return spec, runner
+
+
+@pytest.fixture
+def make_cli():
+    """Фабрика: (список заготовок) → (spec, поддельный запускатель)."""
+    return cli_endpoint
 
 
 # ── типовые записанные потоки ───────────────────────────────────────────────

@@ -12,7 +12,8 @@ cards — короткая карточка материала и опись п�
 from __future__ import annotations
 
 from ._text import first_lines
-from .model import KIND_IMAGE, KIND_PDF, KIND_UNKNOWN, UNIT_PAGE, Card, Material
+from .model import (KIND_DOCX, KIND_IMAGE, KIND_PDF, KIND_UNKNOWN, UNIT_PAGE,
+                    UNIT_PARAGRAPH, Card, Material)
 
 # Больше этого карточка не бывает: 20 материалов × 8 строк — это ещё промпт,
 # а не простыня.
@@ -40,12 +41,19 @@ def _plural(n: int, forms: tuple[str, str, str]) -> str:
     return forms[2]
 
 
+# Формы числительного на каждую единицу разбора. Без своей строки для абзацев
+# карточка word-документа сказала бы «12 строк» про двенадцать абзацев.
+_UNIT_FORMS = {
+    UNIT_PAGE: ("страница", "страницы", "страниц"),
+    UNIT_PARAGRAPH: ("абзац", "абзаца", "абзацев"),
+}
+
+
 def _amount(m: Material) -> str:
     if not m.unit or not m.count:
         return ""
-    if m.unit == UNIT_PAGE:
-        return f"{m.count} {_plural(m.count, ('страница', 'страницы', 'страниц'))}"
-    return f"{m.count} {_plural(m.count, ('строка', 'строки', 'строк'))}"
+    forms = _UNIT_FORMS.get(m.unit, ("строка", "строки", "строк"))
+    return f"{m.count} {_plural(m.count, forms)}"
 
 
 def preview_of(units: list[str]) -> list[str]:
@@ -68,11 +76,13 @@ def card(material: Material) -> Card:
     lines = [f"[{m.id}] {m.name} — " + ", ".join(head)]
 
     if m.origin and m.origin.get("parent_name"):
-        page = m.origin.get("page")
-        where = f", страница {page}" if page else ""
+        # Откуда вынули: у PDF это страница, у Word — номер абзаца. Без этой
+        # строки картинку в описи не отличить от отдельно загруженной.
+        page, para = m.origin.get("page"), m.origin.get("paragraph")
+        where = f", страница {page}" if page else (f", абзац {para}" if para else "")
         lines.append(f"источник: «{m.origin['parent_name']}»{where}")
 
-    if m.kind == KIND_PDF:
+    if m.kind in (KIND_PDF, KIND_DOCX):
         if m.extra.get("title"):
             lines.append(f"заголовок: {m.extra['title']}")
         counts = []

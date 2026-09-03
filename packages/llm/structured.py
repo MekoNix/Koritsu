@@ -60,6 +60,12 @@ def degraded_for(step: str, caps) -> list:
             marks.append("no_effort")
         if caps.operator_channel != OperatorChannel.MESSAGES_SYSTEM:
             marks.append("no_operator_channel")
+        if caps.usage_contaminated:
+            # Не обход, а предупреждение о самих цифрах записи: счётчики этого
+            # endpoint'а включают расход посредника, а не только наш вызов.
+            # Место то же и по той же причине: `degraded` и заведён затем, чтобы
+            # цифру в журнале было чем объяснить, когда её спросят.
+            marks.append("usage_with_agent_overhead")
     return marks
 
 

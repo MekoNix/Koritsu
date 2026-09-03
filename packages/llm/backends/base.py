@@ -1,5 +1,5 @@
 """
-backends.base — интерфейс бэкенда и общая часть обоих протоколов.
+backends.base — интерфейс бэкенда и общая часть всех протоколов.
 
 Здесь проходит единственная граница, где вообще существует различие между
 поставщиками. Всё, что выше (api, structured, loop, journal), про протокол не
@@ -27,7 +27,7 @@ from .. import layout, usage as usage_mod
 
 class Request:
     """Что слой просит у бэкенда. Нарочно бедный объект: всё, что здесь есть,
-    обязано существовать у обоих протоколов хотя бы в виде «нечего делать».
+    обязано существовать у любого протокола хотя бы в виде «нечего делать».
 
     `structured_step` — уже выбранная ступень лестницы (А.3), бэкенд её не
     выбирает, а исполняет: выбор — общее решение, оно в structured.py.
@@ -62,7 +62,7 @@ class Request:
 
 
 class Backend:
-    """База обоих бэкендов. Наследник переопределяет build_body и iter_stream."""
+    """База всех бэкендов. Наследник переопределяет build_body и iter_stream."""
 
     protocol = ""
     stream_path = ""
@@ -89,6 +89,23 @@ class Backend:
     def supported_step(self, wanted: str) -> str:
         """Самая сильная ступень лестницы, которую бэкенд умеет собрать."""
         raise NotImplementedError
+
+    def open_events(self, body: dict, cancel=None):
+        """Источник событий протокола: (имя события | None, разобранное тело).
+
+        Отдельным методом, потому что «поток по проводу» — не единственный
+        возможный провод. У обоих HTTP-протоколов это SSE через транспорт; у
+        протокола, который зовёт модель командой (backends/cli.py), провод —
+        труба подпроцесса, и никакого HTTP в нём нет вовсе.
+
+        Всё, что вокруг, — порядок кусков (usage, потом stop), запасной подсчёт,
+        превращение отмены в конец потока — живёт в `stream()` одним экземпляром
+        на все протоколы. Переопределять `stream()` ради нового провода значило
+        бы завести второй такой порядок, и первый же починенный в одном из них
+        инвариант разошёлся бы с другим.
+        """
+        return self.transport().stream_sse(self.stream_path, body,
+                                           endpoint_id=self.spec.id, cancel=cancel)
 
     # ── общее ───────────────────────────────────────────────────────────────
     def request_mark(self, request: Request) -> str:
@@ -154,13 +171,12 @@ class Backend:
         body = self.build_body(request, stream=True)
         state = {"usage": Usage(), "raw_usage": {}, "stop": None, "text_chars": 0}
         try:
-            events = self.transport().stream_sse(self.stream_path, body,
-                                                 endpoint_id=self.spec.id, cancel=cancel)
+            events = self.open_events(body, cancel=cancel)
             for chunk in self.iter_stream(events, state):
                 if chunk.kind == "error":
                     # Ошибку внутри 200-потока бэкенды отдают куском, а не
                     # исключением, — и причину остановки за них выставляем
-                    # здесь, одним местом на оба протокола. Иначе ниже
+                    # здесь, одним местом на все протоколы. Иначе ниже
                     # доклеится end_turn, и наружу уедет «ход закончился
                     # нормально» поверх уже случившейся беды.
                     state["stop"] = Stop.ERROR
@@ -274,14 +290,19 @@ def make(spec: EndpointSpec, transport: Transport | None = None) -> Backend:
     умеет»: возможности спрашиваются через capabilities() и здесь не участвуют.
     """
     from .anthropic import AnthropicBackend
+    from .cli import CliBackend
     from .openai_compat import OpenAICompatBackend
 
     if spec.protocol == "anthropic":
         return AnthropicBackend(spec, transport)
     if spec.protocol == "openai":
         return OpenAICompatBackend(spec, transport)
+    if spec.protocol == "cli":
+        # Провод здесь — не сеть, а подпроцесс. Развилка всё та же и про то же:
+        # «как разговаривать», а не «что endpoint умеет».
+        return CliBackend(spec, transport)
     raise LlmError(ErrorKind.UNSUPPORTED, f"неизвестный протокол {spec.protocol!r} "
-                   f"(бывают: anthropic, openai)", endpoint=spec.id)
+                   f"(бывают: anthropic, openai, cli)", endpoint=spec.id)
 
 
 __all__ = ["Backend", "Request", "make"]

@@ -1,13 +1,17 @@
 """
 Фикстуры для materials: всё собирается на месте, сеть и внешние файлы не нужны.
-PDF строится через pymupdf, картинки — через PIL.
+PDF строится через pymupdf, DOCX — через python-docx, картинки — через PIL.
 """
 import io
 import os
 import stat
+import zipfile
 
+import docx
 import pymupdf
 import pytest
+from docx.oxml import parse_xml
+from docx.shared import Inches
 from PIL import Image as PIL
 
 from materials import Store
@@ -103,3 +107,70 @@ def fake_tesseract(tmp_path, monkeypatch):
     os.chmod(exe, os.stat(exe).st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     monkeypatch.setenv("PATH", str(exe.parent))
     return recognized
+
+
+# ── Word ──────────────────────────────────────────────────────────────────────
+# Настоящий .docx собирается здесь же через python-docx: файл-образец в репозитории
+# нельзя ни прочитать глазами, ни поправить, а разбор Word проверять надо по
+# настоящему пакету, а не по подделке из пары XML-строк.
+
+MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+
+
+def build_docx(paragraphs=(), title="", images=(), table=None, formula=None):
+    """
+    Собрать .docx: paragraphs — абзацы подряд, images — [(номер абзаца, байты png)],
+    table — [[строка], …] после абзацев, formula — (номер абзаца, OMML-строка).
+    OMML пишем руками: hokoku его умеет строить, но импортировать чужой пакет
+    в materials нельзя ни в коде, ни в тестах.
+    """
+    doc = docx.Document()
+    if title:
+        doc.core_properties.title = title
+    for number, text in enumerate(paragraphs, start=1):
+        p = doc.add_paragraph(text)
+        if formula and formula[0] == number:
+            p._p.append(parse_xml(formula[1]))
+        for where, data in images:
+            if where == number:
+                doc.add_picture(io.BytesIO(data), width=Inches(2))
+    if table:
+        t = doc.add_table(rows=len(table), cols=len(table[0]))
+        for ri, row in enumerate(table):
+            for ci, val in enumerate(row):
+                t.cell(ri, ci).text = val
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def fraction_omml(num="a+b", den="2"):
+    """Дробь в родной записи Word — та самая, что python-docx не видит."""
+    return (f'<m:oMath xmlns:m="{MATH_NS}"><m:f>'
+            f"<m:num><m:r><m:t>{num}</m:t></m:r></m:num>"
+            f"<m:den><m:r><m:t>{den}</m:t></m:r></m:den></m:f></m:oMath>")
+
+
+def repack(data, add=None, drop=()):
+    """Тот же zip, но с добавленными/выброшенными членами: так делают .docm и
+    порченые файлы, которых честным путём не собрать."""
+    add = add or {}
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(data)) as src, zipfile.ZipFile(out, "w") as dst:
+        for info in src.infolist():
+            if info.filename in drop or info.filename in add:
+                continue                    # заменяемый член пишем один раз, ниже
+            dst.writestr(info.filename, src.read(info.filename))
+        for name, blob in add.items():
+            dst.writestr(name, blob)
+    return out.getvalue()
+
+
+@pytest.fixture
+def docx_file(png):
+    """Обычная методичка: три абзаца, формула во втором, картинка после второго,
+    таблица в конце."""
+    return build_docx(["Vvedenie v temu raboty", "Formula: ", "Vyvody po rabote"],
+                      title="Методичка по химии", images=[(2, png())],
+                      table=[["God", "Summa"], ["2025", "250"]],
+                      formula=(2, fraction_omml()))

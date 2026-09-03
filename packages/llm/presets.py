@@ -61,7 +61,15 @@ def deepseek(endpoint_id: str = "ep_deepseek", model: str = "deepseek-chat",
             streaming=True,
             prefix_cache=PrefixCache.AUTOMATIC,
             effort=False,                       # «без thinking, просто api»
-            operator_channel=OperatorChannel.SYSTEM_FIRST,
+            # Решение владельца 2026-09-03 на основании пробы: указание оператора,
+            # поставленное системным сообщением ПОСЛЕ подложенного «забудь
+            # инструкции», устояло 2 из 2 (`probing._step_operator`). Структурной
+            # гарантии у формата OpenAI нет — `system` лежит в том же `messages`,
+            # — поэтому канал здесь не данность, а исполнение:
+            # `openai_compat._operator_reminder` повторяет указание после
+            # недоверенного текста. Проба умеет эту заявку понизить и не умеет
+            # повысить (`model.merged_caps`), так что отзыв стоит одной строки.
+            operator_channel=OperatorChannel.MESSAGES_SYSTEM,
             tools=True,
             usage_in_stream=False,
             usage_stream_flag=True,
@@ -295,7 +303,13 @@ def openrouter(endpoint_id: str = "ep_openrouter",
             streaming=True,
             prefix_cache=PrefixCache.AUTOMATIC,
             effort=False,                       # «без thinking, просто api»
-            operator_channel=OperatorChannel.SYSTEM_FIRST,
+            # То же решение и то же основание, что у deepseek (см. там): проба
+            # 2026-09-03, устояло 2 из 2, канал исполняется повтором указания
+            # после недоверенного текста. Оговорка сильнее, чем у deepseek:
+            # OpenRouter — посредник, и за одним именем модели у него может
+            # стоять разный поставщик. Значит измеряли поведение конкретного
+            # прогона, а не свойство endpoint'а навсегда.
+            operator_channel=OperatorChannel.MESSAGES_SYSTEM,
             tools=True,
             usage_in_stream=True,               # приходит всегда, флага не надо
             usage_stream_flag=False,            # флаг объявлен устаревшим
@@ -325,8 +339,110 @@ def openrouter(endpoint_id: str = "ep_openrouter",
     return spec
 
 
+def claude_cli_proba(endpoint_id: str = "ep_claude_cli_proba", model: str = "haiku",
+                     **overrides) -> EndpointSpec:
+    """Claude через команду `claude` — **временный пресет для проб, не боевой**.
+
+    Решение владельца 2026-08-31: ключа к API нет, а пробовать надо уже сейчас,
+    поэтому kadai ходит к Haiku через командную строку. Имя пресета и метка
+    endpoint'а названы так, чтобы это было видно в каждой записи журнала и в
+    каждом списке endpoint'ов: не «claude», а «claude_cli_proba».
+
+    Как устроен вызов, чем отобраны инструменты, что решено с загрязнённым
+    учётом и чего этот путь не умеет в принципе — всё в докстроке
+    `llm.backends.cli`. Здесь только заполненная форма Б.3 и пометки, что в ней
+    знание, а что заявка.
+
+    `base_url` у протокола `cli` — **имя или путь команды**, а не адрес: «куда
+    идти» здесь и есть команда. Ключа нет: вход у команды свой, по подписке, —
+    поэтому `api_key_env` и `api_key_file` пусты, и `resolve_key` не зовётся.
+
+    Что ПРОВЕРЕНО живым вызовом 2026-08-31 (и потому написано как знание):
+
+      * `structured_output: text` — гарантий формата нет. `--json-schema` у
+        команды есть и работает, но внутри он инструмент, а ключи свойств
+        схемы инструмента Anthropic принимает только латиницей
+        (`^[a-zA-Z0-9_.-]{1,64}$`); ключи схемы отчёта Koritsu — имена тегов
+        шаблона, то есть кириллица. Без схемы модель заворачивает ответ в забор
+        ```json, и его снимает `structured.extract_json`;
+      * `streaming: False` — `--output-format stream-json` существует, но это
+        агентский протокол событий самой Claude Code, а не поток модели; сейчас
+        он не берётся (решение объяснено в докстроке бэкенда). Наружу поток
+        по-прежнему работает: один кусок текста, следом usage и stop;
+      * `prefix_cache: none` — с нашим системным промптом `cache_creation` и
+        `cache_read` равны нулю, ставить брейкпойнт нечем. Весь манифест с
+        материалами оплачивается полностью на каждом вызове;
+      * `tools: False` — свои инструменты у команды выключены нами намеренно, а
+        наши ей передать нечем. Попытка — громкий отказ, не молчание;
+      * `usage_contaminated: True` — счётчики описывают весь запуск команды,
+        включая её служебные обращения к модели. Пометка ставит
+        `usage_with_agent_overhead` в `degraded` каждой записи журнала;
+      * `cache_inside_input: False` — кэш приходит отдельными полями, как у
+        протокола Anthropic, вычитать нечего;
+      * `context_tokens` / `max_output_tokens` — 200 000 и 32 000, взяты из
+        `modelUsage.contextWindow` и `maxOutputTokens` живого ответа.
+
+    Что ЗАЯВЛЕНО и живьём НЕ проверено:
+
+      * `operator_channel: system_first` — занижено намеренно. Механика на самом
+        деле сильнее: `--system-prompt-file` **заменяет** собственный промпт
+        Claude Code, а не дописывается к нему, значит наши правила едут первыми
+        и одни (в отличие от `--append-system-prompt`, который владелец называл
+        деградацией, — им мы не пользуемся). Но что указание оттуда весомее
+        текста студента, никто не проверял, а завышенная заявка на операторский
+        канал — это защита, которой нет;
+      * `effort: False` — флаг `--effort` есть, не пробовался. Наблюдение мимо
+        заявки: Haiku тратит токены на размышления и без просьбы (52–288
+        `thinking_tokens` в замерах), так что «без thinking» здесь неправда в
+        любом случае — они видны в `Usage.reasoning`.
+
+    `own_key=True`: расход идёт по подписке владельца, а не против тарифа
+    продукта. Журнал его считает и показывает, но в лимит не берёт.
+
+    Цены не заполнены намеренно: платится подпиской, а не за токены, и табличка
+    «цена за миллион» описывала бы не ту сделку. Настоящая цифра запуска —
+    `raw_usage["учёт_koritsu"]["деньги_за_весь_запуск_usd"]`.
+
+    Пробы Б.4 у этого пресета нет: она построена на POST по HTTP, которого у
+    протокола `cli` не существует. `python -m llm probe --preset claude_cli_proba`
+    честно так и скажет, а не притворится проверкой.
+    """
+    spec = EndpointSpec(
+        id=endpoint_id,
+        label="Claude CLI (проба, не боевой)",
+        protocol="cli",
+        base_url="claude",             # у протокола cli это команда, а не адрес
+        model=model,
+        api_key_env=None,              # вход у команды свой, по подписке
+        api_key_file=None,
+        context_tokens=200000,
+        max_output_tokens=32000,
+        declared=Declared(
+            structured_output=Structured.TEXT,
+            streaming=False,
+            prefix_cache=PrefixCache.NONE,
+            effort=False,
+            operator_channel=OperatorChannel.SYSTEM_FIRST,
+            tools=False,
+            usage_in_stream=True,       # счётчики приезжают в том же JSON
+            usage_stream_flag=False,    # флага у этого провода нет
+            cache_inside_input=False,
+            usage_contaminated=True,
+        ),
+        prices=Prices(),
+        own_key=True,
+        # Команда сама ходит к API и сама повторяет временные беды; наш таймаут
+        # поверх её собственного должен быть заметно длиннее сетевого.
+        timeout_s=300.0,
+        chars_per_token=3.0,
+    )
+    for name, value in overrides.items():
+        setattr(spec, name, value)
+    return spec
+
+
 PRESETS = {"deepseek": deepseek, "anthropic": anthropic,
-           "openrouter": openrouter}
+           "openrouter": openrouter, "claude_cli_proba": claude_cli_proba}
 
 
 def make(name: str, **overrides) -> EndpointSpec:
@@ -336,5 +452,5 @@ def make(name: str, **overrides) -> EndpointSpec:
     return factory(**overrides)
 
 
-__all__ = ["deepseek", "anthropic", "openrouter", "OPENROUTER_МОДЕЛИ",
-           "PRESETS", "make"]
+__all__ = ["deepseek", "anthropic", "openrouter", "claude_cli_proba",
+           "OPENROUTER_МОДЕЛИ", "PRESETS", "make"]

@@ -239,16 +239,40 @@ def test_петля_отказывает_на_endpointе_без_инструме
 
 def test_без_операторского_канала_ставится_пометка(make_endpoint):
     """Г.2: на таком endpoint'е указание оператора не весомее текста из файлов,
-    и журнал должен это фиксировать."""
+    и журнал должен это фиксировать.
+
+    Канал выставляется здесь явно, а не берётся из пресета: заявка в пресете —
+    решение владельца и меняется (deepseek подняли до `messages_system`
+    2026-09-03). Тест про поведение петли, а не про то, что владелец решил
+    сегодня, иначе он падает при каждом пересмотре решения.
+    """
     spec, rec = make_endpoint([stream_response(openai_stream("готово", usage=_usage()))])
+    spec.declared.operator_channel = llm.OperatorChannel.SYSTEM_FIRST
     result = llm.run_tools(spec.id, [ЭХО], "зови", on_call=lambda c: "x")
     assert "no_operator_channel" in result.degraded
 
 
+def test_с_операторским_каналом_пометки_нет(make_endpoint):
+    """Обратная половина: объявленный канал пометку снимает.
+
+    Без этой половины предыдущий тест проходил бы и на коде, который ставит
+    пометку всегда, — а пометка, которая стоит всегда, ничего не значит.
+    """
+    spec, rec = make_endpoint([stream_response(openai_stream("готово", usage=_usage()))])
+    spec.declared.operator_channel = llm.OperatorChannel.MESSAGES_SYSTEM
+    result = llm.run_tools(spec.id, [ЭХО], "зови", on_call=lambda c: "x")
+    assert "no_operator_channel" not in result.degraded
+
+
 # ── проба ───────────────────────────────────────────────────────────────────
 def _ответы_пробы(*, структура=Structured.JSON_SCHEMA, usage_с_флагом=True,
-                  usage_без_флага=False, инструменты=True):
-    """Записанная последовательность ответов на шесть шагов Б.4."""
+                  usage_без_флага=False, инструменты=True, оператор=True):
+    """Записанная последовательность ответов на шаги Б.4.
+
+    `оператор` — послушалась ли модель указания оператора против подложенного
+    текста. Ответов на этот шаг столько, сколько пар в `_OPERATOR_TRIALS`:
+    шаг делает по вызову на пару и на первом же проигрыше не останавливается.
+    """
     ответы: list = [
         json_response({"data": [{"id": "deepseek-chat"}]}),          # шаг 1
         json_response({"choices": [{"message": {"content": "готов"},
@@ -275,6 +299,14 @@ def _ответы_пробы(*, структура=Structured.JSON_SCHEMA, usage
                          "function": {"name": "echo", "arguments": '{"text":"привет"}'}}])))
     else:
         ответы.append(stream_response(openai_stream("не буду")))
+    # шаг 6: операторский канал, по вызову на каждую пару слов.
+    # Ответы потоковые: `complete()` внутри идёт тем же потоком (А.4), и
+    # непотоковый ответ здесь дал бы пустой текст — то есть «не устояло» по
+    # недоразумению, а не по существу.
+    from llm.probing import _OPERATOR_TRIALS
+    for оператор_слово, подложенное in _OPERATOR_TRIALS:
+        ответы.append(stream_response(openai_stream(
+            оператор_слово if оператор else подложенное)))
     return ответы
 
 
@@ -293,7 +325,7 @@ def test_проба_проходит_шаги_и_записывает_ступе
     assert result.streaming is True
     assert result.tools is True
     имена = [шаг["step"] for шаг in result.steps]
-    assert имена == ["models", "plain", "stream", "structured", "tools"]
+    assert имена == ["models", "plain", "stream", "structured", "tools", "operator"]
 
 
 def test_проба_проверяет_поток_с_флагом_и_без():
@@ -331,6 +363,55 @@ def test_проба_обрывается_если_ключ_не_принят():
     assert len(result.steps) == 2
 
 
+def test_операторский_канал_проба_видит_что_указание_устояло():
+    """Модель ответила словом оператора, а не подложенным — канал держится."""
+    result, rec = _проба(_ответы_пробы(оператор=True))
+    assert result.operator_channel == llm.OperatorChannel.MESSAGES_SYSTEM
+    шаг = [ш for ш in result.steps if ш["step"] == "operator"][0]
+    assert шаг["ok"] is True
+    # Указание оператора обязано ехать системным сообщением ПОСЛЕ
+    # пользовательского текста: проверяем именно середину разговора, а не
+    # первое системное, которое есть у всех.
+    последний = rec.requests[-1]["messages"]
+    роли = [m["role"] for m in последний]
+    assert роли.index("system", 1) > роли.index("user")
+
+
+def test_операторский_канал_понижается_когда_указание_не_устояло():
+    """Модель повторила подложенное слово — заявка владельца опровергнута.
+
+    Это единственное направление, в котором проба вправе менять канал: вверх
+    она не ходит, потому что одна удачная попытка не доказывает стойкость
+    против настоящей инъекции.
+    """
+    spec = llm.presets.deepseek(api_key_env="TEST_KEY_UNUSED")
+    spec.declared.operator_channel = llm.OperatorChannel.MESSAGES_SYSTEM
+    result, rec = _проба(_ответы_пробы(оператор=False), spec=spec)
+    assert result.operator_channel == llm.OperatorChannel.SYSTEM_FIRST
+    llm.register_endpoint(spec)
+    llm.update_probe(spec.id, result)
+    caps = llm.capabilities(spec.id)
+    assert caps.operator_channel == llm.OperatorChannel.SYSTEM_FIRST
+    assert caps.is_confirmed("operator_channel")
+
+
+def test_операторский_канал_проба_не_повышает_заявку():
+    """Проба увидела, что указание устояло, а владелец заявил слабый канал.
+
+    Заявка сильнее: ошибка в сторону разрешения — это уровень 3 на endpoint'е,
+    который канал не держит, и цена у неё несопоставима с ценой осторожности.
+    """
+    spec = llm.presets.deepseek(api_key_env="TEST_KEY_UNUSED")
+    spec.declared.operator_channel = llm.OperatorChannel.SYSTEM_FIRST
+    result, rec = _проба(_ответы_пробы(оператор=True), spec=spec)
+    assert result.operator_channel == llm.OperatorChannel.MESSAGES_SYSTEM
+    llm.register_endpoint(spec)
+    llm.update_probe(spec.id, result)
+    caps = llm.capabilities(spec.id)
+    assert caps.operator_channel == llm.OperatorChannel.SYSTEM_FIRST
+    assert not caps.is_confirmed("operator_channel")
+
+
 def test_результат_пробы_перекрывает_заявку():
     spec = llm.presets.deepseek(api_key_env="TEST_KEY_UNUSED")
     spec.declared.structured_output = Structured.JSON_SCHEMA
@@ -360,3 +441,28 @@ def test_возможности_без_пробы_это_чистая_заявк
     llm.register_endpoint(spec)
     caps = llm.capabilities(spec.id)
     assert caps.probed is False and caps.confirmed == set()
+
+
+def test_вызов_без_аргументов_доходит_до_инструмента(make_endpoint):
+    """`{}` — законный вызов инструмента без аргументов, а не битый JSON.
+
+    Его шлёт всякий openai-совместимый поставщик. Пока петля считала непустой
+    `raw_arguments` при пустом разборе признаком поломки, инструмент без
+    аргументов получал отказ, не доходя до вызова, — и молча: модели уходил
+    внятный текст «повтори с корректным JSON», она «чинилась», а инструмент так
+    и не звался ни разу. У оркестратора таких два из семи: `list_project_files`
+    и `preview`.
+    """
+    без_аргументов = Tool(name="список", description="Перечисляет материалы.",
+                          schema={"type": "object", "properties": {},
+                                  "additionalProperties": False})
+    spec, rec = make_endpoint([
+        stream_response(openai_stream("", usage=_usage(), finish="tool_calls",
+                                      tool_calls=_зов(name="список", args="{}"))),
+        stream_response(openai_stream("готово", usage=_usage())),
+    ])
+    позвано: list = []
+    llm.run_tools(spec.id, [без_аргументов], "зови",
+                  on_call=lambda c: позвано.append(c) or "два материала")
+    assert [c.name for c in позвано] == ["список"]
+    assert позвано[0].arguments == {}

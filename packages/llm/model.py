@@ -56,6 +56,19 @@ class OperatorChannel:
     NONE = "none"
 
 
+# Порядок по силе канала. Нужен ровно затем, чтобы проба умела понижать и не
+# умела повышать (`merged_caps`): без него «понизить» пришлось бы писать
+# перечислением пар, и первая же новая ступень его бы разошлась.
+_CHANNEL_ORDER = (OperatorChannel.NONE, OperatorChannel.SYSTEM_FIRST,
+                  OperatorChannel.MESSAGES_SYSTEM)
+
+
+def _channel_rank(value: str) -> int:
+    """Сила канала числом. Незнакомое значение считаем самым слабым: неизвестное
+    свойство не должно открывать ворота."""
+    return _CHANNEL_ORDER.index(value) if value in _CHANNEL_ORDER else 0
+
+
 @dataclass
 class Prices:
     """Цены за миллион токенов. Необязательны.
@@ -117,6 +130,15 @@ class Declared:
     # кэшированные токены посчитаются дважды и приведённые единицы соврут.
     cache_inside_input: bool = False
     vision: bool = False   # объявляться может, но слой картинки НЕ отправляет
+    # Счётчики endpoint'а описывают не только НАШ вызов. Так бывает, когда между
+    # нами и моделью сидит посредник со своими обращениями к ней: у бэкенда cli
+    # это сама Claude Code, у неё свой системный промпт и свои служебные вызовы,
+    # и в её отчёте о расходе они неотделимы от нашего хода. Поле не меняет
+    # арифметику — оно ставит на КАЖДУЮ запись журнала пометку
+    # `usage_with_agent_overhead` (structured.degraded_for). Без неё цифры
+    # расхода выглядели бы обычными, а объяснить их через месяц было бы нечем;
+    # молчаливо завышенный учёт хуже отсутствующего.
+    usage_contaminated: bool = False
 
 
 @dataclass
@@ -130,6 +152,10 @@ class Probe:
     usage_in_stream: bool | None = None
     usage_stream_flag_needed: bool | None = None
     tools: bool | None = None
+    # Устояло ли указание оператора против текста, который пришёл раньше и
+    # притворялся указанием. None — шаг не проводился. Проба поведенческая,
+    # поэтому в `merged_caps` она умеет только понижать (см. там же).
+    operator_channel: str | None = None
     prefix_cache_works: bool | None = None   # None — шаг не проводился/неубедителен
     # Уточнённый по измеренному usage коэффициент «символов на токен» (В.3).
     # None — уточнить не удалось: usage не пришёл ни на одном шаге, и трогать
@@ -261,6 +287,7 @@ class Caps:
     operator_channel: str = OperatorChannel.SYSTEM_FIRST
     tools: bool = False
     usage_in_stream: bool = False
+    usage_contaminated: bool = False   # в счётчиках сидит расход посредника
     context_tokens: int | None = None
     max_output_tokens: int = 4096
     confirmed: set = field(default_factory=set)   # имена подтверждённых пробой полей
@@ -466,10 +493,25 @@ def merged_caps(spec: EndpointSpec) -> Caps:
         operator_channel=d.operator_channel,
         tools=pick(p.tools, d.tools, "tools"),
         usage_in_stream=pick(p.usage_in_stream, d.usage_in_stream, "usage_in_stream"),
+        # Загрязнение счётчиков пробой не проверяется и проверено быть не может:
+        # чтобы отличить наш расход от расхода посредника, нужен второй,
+        # независимый счёт того же вызова, а его нет. Значит это заявка — и
+        # остаётся заявкой навсегда.
+        usage_contaminated=d.usage_contaminated,
         context_tokens=spec.context_tokens,
         max_output_tokens=spec.max_output_tokens,
         probed=bool(p.at),
     )
+    # Операторский канал: пробой можно **понизить, но не повысить**. Проба
+    # поведенческая — она показывает, что модель послушалась оператора в этот
+    # раз, а не что канал устоит против настоящей инъекции. Ошибка в сторону
+    # строгости стоит осторожности; ошибка в сторону разрешения — это уровень 3
+    # на endpoint'е, который канал не держит. Поэтому повышение остаётся
+    # решением владельца, а проба его только опровергает.
+    if p.operator_channel is not None and \
+            _channel_rank(p.operator_channel) < _channel_rank(d.operator_channel):
+        caps.operator_channel = p.operator_channel
+        confirmed.add("operator_channel")
     # Кэш: пробой подтверждается только положительный результат. Отрицательный
     # на автокэше неубедителен (Б.4, шаг 6), поэтому заявку он не отменяет.
     if p.prefix_cache_works is True:

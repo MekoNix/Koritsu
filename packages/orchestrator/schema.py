@@ -29,6 +29,29 @@ def tag_schema(spec: hokoku.TagSpec) -> dict:
     return hokoku.value_schema(spec.type, for_model=True)
 
 
+def any_value_schema() -> dict:
+    """Схема любого значения — аргумент `value` инструмента `set_tag` (уровень 3).
+
+    Уровни 1 и 2 знают тип заранее: тег назван до вызова, схема строится по его
+    типу. У инструмента такой роскоши нет — объявление инструментов постоянно на
+    весь прогон и стоит в кэшируемом префиксе, а тег модель выбирает на ходу.
+    Собирать схему под каждый тег значило бы менять список инструментов между
+    ходами: кэш префикса рушится на каждом ходу, а «инструмент то есть, то нет»
+    — то самое непредсказуемое поведение, ради которого набор и зафиксирован.
+
+    Отсюда помеченное объединение по всем типам `hokoku`: у каждого варианта
+    дискриминатор `type` с `const`, и ровно такое `anyOf` разрешает
+    `llm.jsonschema` (`check_schema`), а `strictify` расширяет по веткам.
+    `hokoku.value_schema()` без имени типа не годится не по вкусу, а по устройству:
+    у неё в корне `$schema`, которого подмножество не знает.
+
+    Тип, поставленный не тот, инструмент не чинит: несовпадение с манифестом
+    ловит `hokoku.validate` тем же замечанием, что и у человека.
+    """
+    return {"anyOf": [hokoku.value_schema(name, for_model=True)
+                      for name in hokoku.VALUE_TYPES]}
+
+
 def report_schema(manifest: hokoku.Manifest, *, keys) -> dict:
     """Схема всего ответа — уровень 2: `{ключ тега: схема его типа}`.
 
@@ -84,4 +107,4 @@ def spec_of(manifest: hokoku.Manifest, key: str) -> hokoku.TagSpec:
     return spec
 
 
-__all__ = ["tag_schema", "report_schema", "fillable", "spec_of"]
+__all__ = ["tag_schema", "any_value_schema", "report_schema", "fillable", "spec_of"]

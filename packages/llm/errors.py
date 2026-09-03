@@ -98,7 +98,7 @@ class LlmError(Exception):
 
 
 def kind_from_status(status: int) -> str:
-    """HTTP-код → ErrorKind. Общая часть для обоих протоколов.
+    """HTTP-код → ErrorKind. Общая часть для всех протоколов.
 
     401/403/402 → auth, 404 → not_found, 429 → rate_limit, 408/504 → timeout,
     прочие 4xx → transport (не bad_response: тело мы ещё не разбирали),

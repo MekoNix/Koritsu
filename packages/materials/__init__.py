@@ -6,7 +6,7 @@ materials — хранилище материалов пользователя �
 области — он умеет только «сохранить, разобрать, показать коротко, отдать кусок».
 
     store = Store("проект/материалы")
-    store.add("методичка.pdf")            # разбор считается один раз
+    store.add("методичка.docx")           # разбор считается один раз
     print(store.inventory())              # опись — это и есть промпт по умолчанию
     ctx = build_context(store, [("a1b2…", 4, 6)])   # плюс запрошенные куски
     print(ctx.tokens)                     # грубая оценка стоимости
@@ -28,7 +28,8 @@ from .cards import card, human_size, inventory
 from .context import (CHARS_PER_TOKEN_DEFAULT, Context, Request, build_context,
                       estimate_tokens)
 from .model import (Card, Chunk, Derived, Material, MaterialsError, Parsed, anchor,
-                    KIND_IMAGE, KIND_PDF, KIND_TEXT, KIND_UNKNOWN, UNIT_LINE, UNIT_PAGE)
+                    KIND_DOCX, KIND_IMAGE, KIND_PDF, KIND_TEXT, KIND_UNKNOWN,
+                    UNIT_LINE, UNIT_PAGE, UNIT_PARAGRAPH)
 from ._parse import parse
 from .store import Store, material_id
 from . import ocr
@@ -36,7 +37,8 @@ from . import ocr
 __all__ = [
     "Store", "material_id",
     "Material", "Card", "Chunk", "Parsed", "Derived", "MaterialsError", "anchor",
-    "KIND_TEXT", "KIND_PDF", "KIND_IMAGE", "KIND_UNKNOWN", "UNIT_LINE", "UNIT_PAGE",
+    "KIND_TEXT", "KIND_PDF", "KIND_DOCX", "KIND_IMAGE", "KIND_UNKNOWN",
+    "UNIT_LINE", "UNIT_PAGE", "UNIT_PARAGRAPH",
     "parse", "card", "inventory", "human_size",
     "build_context", "estimate_tokens", "Context", "Request", "ocr",
     "CHARS_PER_TOKEN_DEFAULT",

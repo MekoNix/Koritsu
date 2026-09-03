@@ -165,7 +165,8 @@ class Store:
         return make_card(self.get(mid))
 
     def tables(self, mid: str) -> list[dict]:
-        """Таблицы, извлечённые из PDF: [{"page": 4, "rows": [[...]]}, …]."""
+        """Таблицы материала: у PDF [{"page": 4, "rows": …}], у Word —
+        [{"paragraph": 7, "rows": …}]: номер единицы, на которой таблица стоит."""
         return list(self.get(mid).extra.get("tables") or ())
 
     def inventory(self) -> str:

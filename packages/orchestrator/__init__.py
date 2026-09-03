@@ -27,6 +27,7 @@ orchestrator — единственный, кто знает про все па�
                                          версии, манифест, прогоны, журнал
     fill_tag(project, key, endpoint=…)    уровень 1: один тег
     fill_report(project, endpoint=…)      уровень 2: весь отчёт потоком
+    fill_agent(project, endpoint=…)       уровень 3: агент с инструментами
     build(project)                        значения → validate → build_report
     build_parts(project, keys=…)          раскладка промпта в пять ролей
 
@@ -38,27 +39,43 @@ orchestrator — единственный, кто знает про все па�
     schema.py    какие теги просить и по какой схеме
     stream.py    поток уровня 2 → пары (ключ, значение) по мере закрытия
     fill.py      уровни 1 и 2, проверка и запись версий
+    tools.py     семь инструментов уровня 3 поверх той же механики
+    agent.py     уровень 3: петля llm.run_tools, отбор, ворота, исход
     build.py     значения → hokoku.build_report
 
+Три уровня — не три службы: у всех один отбор тегов, одна раскладка промпта,
+один валидатор и одна точка записи версии. Инструмент уровня 3 — тонкая
+обёртка над тем, что уже есть: `set_tag` это `fill._accept`, `preview` это
+`check`. Второй путь записи значения был бы вторым набором правил про версии,
+`source` и защиту правки человека, и разошлись бы они молча.
+
 Чего здесь нет намеренно: HTTP, сервера и CLI сайта (их в этой версии нет
-вовсе), уровня 3 (агент с инструментами — упирается в нерешённый вопрос
-владельца) и любого выполнения пользовательского кода.
+вовсе) и любого выполнения пользовательского кода — схемы строятся разбором
+tree-sitter'ом, ни `exec`, ни подпроцесса, ни поиска в сети.
+
+Уровень 3 на endpoint'е без операторского канала — открытый вопрос владельца;
+решение 2026-08-31 «заглушка, идём дальше» стоит одним переключателем
+`tools.WITHOUT_OPERATOR_CHANNEL` (`allow` | `flag` | `deny`) и работает через
+единственные ворота `tools.operator_channel_gate`.
 """
 from .errors import OrchestratorError
 from .project import Project, Run, SOURCES, Version, artifact_id
 from .prompt import RULES, build_parts, prompt_hash, render, seal_mark
-from .schema import fillable, report_schema, tag_schema
+from .schema import any_value_schema, fillable, report_schema, tag_schema
 from .stream import TagStream
 from .fill import RunResult, TagFill, fill_report, fill_tag
+from .tools import ToolBox, ToolError, operator_channel_gate
+from .agent import AgentResult, fill_agent
 from .build import check, job_of
 from .build import build
 
 __all__ = [
     "Project", "Version", "Run", "SOURCES", "artifact_id",
     "fill_tag", "fill_report", "TagFill", "RunResult",
+    "fill_agent", "AgentResult", "ToolBox", "ToolError", "operator_channel_gate",
     "build", "check", "job_of",
     "build_parts", "seal_mark", "render", "prompt_hash", "RULES",
-    "tag_schema", "report_schema", "fillable", "TagStream",
+    "tag_schema", "any_value_schema", "report_schema", "fillable", "TagStream",
     "OrchestratorError",
-    "prompt", "schema", "stream", "fill",
+    "prompt", "schema", "stream", "fill", "tools", "agent",
 ]

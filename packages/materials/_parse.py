@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 
+from ._docx import parse_word
 from ._image import parse_image
 from ._pdf import parse_pdf
 from ._text import looks_like_text, parse_text
@@ -30,6 +31,13 @@ TEXT_EXT = {
 }
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".tiff", ".ppm"}
 PDF_EXT = {".pdf"}
+# Word: и документы, и шаблоны, и версии с макросами, и старый двоичный .doc.
+# Все они идут в один разбор — он сам смотрит на сигнатуру файла, потому что
+# расширение врёт: `.doc`, сохранённый из LibreOffice, часто оказывается zip.
+# Цена пропуска здесь особая: .docx — самый частый формат методички, и раньше
+# он попадал в «неизвестный тип», то есть человек видел принятый файл, а модель
+# не получала ни строки.
+WORD_EXT = {".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot"}
 
 
 def ext_of(name: str) -> str:
@@ -44,6 +52,8 @@ def parse(data: bytes, name: str, do_ocr: bool = True) -> Parsed:
     ext = ext_of(name)
     if ext in PDF_EXT:
         return parse_pdf(data, name=name, do_ocr=do_ocr)
+    if ext in WORD_EXT:
+        return parse_word(data, name=name, ext=ext)
     if ext in IMAGE_EXT:
         return parse_image(data, ext=ext, do_ocr=do_ocr)
     if ext in TEXT_EXT:
