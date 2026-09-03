@@ -13,7 +13,7 @@ query.py — извлечение полей узлов через tree-sitter Q
 
 from tree_sitter import Query, QueryCursor
 
-from .ts import get_language
+from kyotsu.ts import get_language
 
 
 class Caps(dict):

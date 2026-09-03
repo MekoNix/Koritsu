@@ -10,6 +10,8 @@ shapes.py — Все фигуры draw.io для flowchart-диаграмм, и�
 import html
 import math
 
+from kyotsu.text import text_width
+
 from ._drawpyo import drawpyo
 
 
@@ -29,54 +31,13 @@ def _esc(s) -> str:
 # ИЗМЕРЕНИЕ ТЕКСТА
 # ═══════════════════════════════════════════════════════════════════════════
 #
-# draw.io рендерит текст Helvetica/Arial. Точных метрик без шрифта нет,
-# но ширины символов этих шрифтов хорошо группируются по классам —
-# ниже таблица в долях em (1 em = размер шрифта в px). Погрешность
+# draw.io рендерит текст Helvetica/Arial; таблица ширин символов — общая
+# (`kyotsu.text`), потому что тот же шрифт меряет uml_generator. Погрешность
 # на строке из 30 символов — единицы px, что перекрывается pad_x.
-
-_EM = {
-    'narrow':    0.28,   # i j l I . , : ; ! | ' `
-    'thin':      0.36,   # f t r ( ) [ ] { } / \ - "
-    'space':     0.28,
-    'digit':     0.56,
-    'lat_lower': 0.54,
-    'lat_upper': 0.68,
-    'cyr_lower': 0.58,
-    'cyr_upper': 0.70,
-    'wide':      0.85,   # m w M W % @ & ш щ ж ю ф Ш Щ Ж Ю Ф Д Ц
-    'other':     0.60,
-}
-
-_NARROW = set("iljI.,:;!|'`")
-_THIN = set('ftr()[]{}/\\-"')
-_WIDE = set("mwMW%@&шщжюфШЩЖЮФДЦ")
-
-
-def _char_em(c: str) -> float:
-    if c == ' ':
-        return _EM['space']
-    if c in _NARROW:
-        return _EM['narrow']
-    if c in _THIN:
-        return _EM['thin']
-    if c in _WIDE:
-        return _EM['wide']
-    if c.isdigit():
-        return _EM['digit']
-    if 'a' <= c <= 'z':
-        return _EM['lat_lower']
-    if 'A' <= c <= 'Z':
-        return _EM['lat_upper']
-    if 'а' <= c <= 'я' or c == 'ё':
-        return _EM['cyr_lower']
-    if 'А' <= c <= 'Я' or c == 'Ё':
-        return _EM['cyr_upper']
-    return _EM['other']
-
-
-def text_width(s: str, font_px: float) -> float:
-    """Оценка ширины строки в px."""
-    return sum(_char_em(c) for c in s) * font_px
+# Запас на подстановку шрифта здесь не берётся: блок-схема считает ширину
+# фигуры сама и переносит текст, лишние px уехали бы в раскладку страницы.
+# `text_width` импортируется наверху и переэкспортируется отсюда: renderer.py
+# берёт её из `shapes`, потому что размер фигуры считается только здесь.
 
 
 def wrap_text(s: str, max_w: float, font_px: float) -> list:

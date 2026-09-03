@@ -36,7 +36,7 @@ def template() -> bytes:
 
 
 def codes(warnings, key=None) -> list[str]:
-    return [w["code"] for w in warnings if key is None or w["key"] == key]
+    return [w.code for w in warnings if key is None or w.key == key]
 
 
 # ── заготовка ─────────────────────────────────────────────────────────────────
@@ -156,8 +156,8 @@ def test_похоже_на_переименование(template):
     перепутанные значения. Только подсказка человеку."""
     m = manifest_from_template(template)
     m.tags["замеры_"] = m.tags.pop("замеры")
-    w = [x for x in check_manifest(m, template) if x["key"] == "замеры_"]
-    assert w and "переименовали" in w[0]["message"]
+    w = [x for x in check_manifest(m, template) if x.key == "замеры_"]
+    assert w and "переименовали" in w[0].message
 
 
 def test_метка_изменилась_и_тип_догадка(template):
@@ -264,7 +264,7 @@ def test_известное_исчезновение_не_кричит(template)
     m = manifest_from_template(template)
     tpl2 = docx_bytes(lambda d: d.add_paragraph("{{цель:Цель работы}}"))
     m2 = manifest_from_template(tpl2, base=m)
-    levels = {w["level"] for w in check_manifest(m2, tpl2) if w["code"] == "entry_without_tag"}
+    levels = {w.level for w in check_manifest(m2, tpl2) if w.code == "entry_without_tag"}
     assert levels == {"info"}
 
 

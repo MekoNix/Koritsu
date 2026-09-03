@@ -401,7 +401,7 @@ def _collect_cpp(node, src: bytes, result: list, outer: str | None = None, scope
 
 
 def extract_cpp(source: str) -> list[ClassInfo]:
-    from ._ts import get_parser
+    from kyotsu.ts import get_parser
     src = source.encode("utf-8")
     tree = get_parser("cpp").parse(src)
     result: list[ClassInfo] = []
@@ -672,7 +672,7 @@ def _collect_cs(node, src: bytes, result: list, outer: str | None = None, scope:
 
 
 def extract_cs(source: str) -> list[ClassInfo]:
-    from ._ts import get_parser
+    from kyotsu.ts import get_parser
     src = source.encode("utf-8")
     tree = get_parser("c_sharp").parse(src)
     result: list[ClassInfo] = []
@@ -883,7 +883,7 @@ def _collect_py(node, src: bytes, result: list, outer: str | None = None, scope:
 
 
 def extract_py(source: str) -> list[ClassInfo]:
-    from ._ts import get_parser
+    from kyotsu.ts import get_parser
     src = source.encode("utf-8")
     tree = get_parser("python").parse(src)
     result: list[ClassInfo] = []

@@ -15,7 +15,7 @@ from docx.oxml.ns import qn
 from docx.shared import Emu, Pt
 from docx.text.paragraph import Paragraph
 
-from ._text import text_width
+from kyotsu.text import text_width
 from .images import EMU_PER_CM
 from .markdown import Span, split_refs
 

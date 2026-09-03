@@ -1,0 +1,128 @@
+"""
+Правило разреза с общим пакетом — проверяется, а не обещается.
+
+Правило до 2.0.0a4.2 звучало так: `hokoku`, `llm`, `materials`, `fragmos` и
+`uml_generator` друг о друге не знают, соседей импортирует только
+`orchestrator`. Плата за него — копии: загрузчик tree-sitter лежал двумя
+байт-в-байт файлами, таблица ширин символов — тремя. Копия расходится молча.
+
+Поправка: появился `kyotsu` — пакет без предметной области. Он разрешён всем
+как зависимость, но **сам не импортирует ничего из проекта**. Оба пункта
+проверяются здесь: без второго `kyotsu` за пару версий станет местом, через
+которое `fragmos` дотянется до `hokoku`, и правило кончится, не будучи отменено.
+
+Читается это, как и соседнее правило в `tests/kadai/test_border.py`, — по
+исходникам: докстроки называют запрещённое поимённо, поэтому смотреть надо на
+код, а не на прозу.
+"""
+from __future__ import annotations
+
+import io
+import re
+import tokenize
+from pathlib import Path
+
+import kyotsu
+
+КОРЕНЬ = Path(kyotsu.__file__).parent.parent          # packages/
+
+ОБЩИЙ = "kyotsu"
+# Листья: предметные пакеты, которые друг о друге не знают.
+ЛИСТЬЯ = ("hokoku", "llm", "materials", "fragmos", "uml_generator")
+# `orchestrator` импортирует соседей по должности, `kadai` — никого (свой тест).
+ВСЕ = ЛИСТЬЯ + (ОБЩИЙ, "orchestrator", "kadai")
+
+
+def код(path: Path) -> str:
+    """Исходник без строк и комментариев."""
+    out = []
+    for tok in tokenize.generate_tokens(io.StringIO(path.read_text("utf-8")).readline):
+        if tok.type in (tokenize.COMMENT, tokenize.STRING):
+            continue
+        out.append("\n" if tok.type in (tokenize.NL, tokenize.NEWLINE) else tok.string)
+    return "\n".join(out)
+
+
+def импорты(path: Path) -> set[str]:
+    """Пакеты проекта, которые импортирует файл."""
+    текст = код(path)
+    return {имя for имя in ВСЕ
+            if re.search(rf"^\s*(?:import {имя}\b|from {имя}[.\s])", текст, re.MULTILINE)}
+
+
+def файлы(пакет: str) -> list[Path]:
+    return sorted((КОРЕНЬ / пакет).rglob("*.py"))
+
+
+def test_общий_пакет_не_импортирует_никого_из_проекта():
+    """Иначе он перестаёт быть общим: зависеть от него станет дорого."""
+    for path in файлы(ОБЩИЙ):
+        чужие = импорты(path) - {ОБЩИЙ}
+        assert not чужие, f"{path.name}: {sorted(чужие)}"
+
+
+def test_общий_пакет_разрешён_листьям_а_соседи_нет():
+    for пакет in ЛИСТЬЯ:
+        for path in файлы(пакет):
+            лишние = импорты(path) - {ОБЩИЙ, пакет}
+            assert not лишние, f"{пакет}/{path.name}: {sorted(лишние)}"
+
+
+def test_общий_пакет_состоит_из_названного():
+    """Список — заслон складу «просто общего»: файл сюда добавляют осознанно.
+
+    `notice.py` (2.0.0a4.2) — форма предупреждения, одна на все пакеты. Это
+    единственная модель данных, которую сюда пустили, и пустили по тому же
+    правилу: у неё нет мнения о предметной области — ни одного кода
+    предупреждения `kyotsu` не знает.
+    """
+    assert {p.name for p in файлы(ОБЩИЙ)} == {"__init__.py", "ts.py", "text.py",
+                                              "notice.py"}
+
+
+def test_копий_загрузчика_tree_sitter_не_осталось():
+    """`Parser`/`Language` строятся в одном месте, иначе и кэш грамматик двойной."""
+    for пакет in ЛИСТЬЯ:
+        for path in файлы(пакет):
+            найдено = re.search(r"^\s*from tree_sitter import .*\b(Parser|Language)\b",
+                                код(path), re.MULTILINE)
+            assert найдено is None, f"{пакет}/{path.name}: свой загрузчик грамматик"
+
+
+def test_копий_таблицы_ширин_не_осталось():
+    """Разъехавшиеся копии не падают — они рисуют текст за рамкой блока.
+
+    С 2.0.0a4.2 проверяются все три бывших владельца копии: `hokoku` тоже мерит
+    ширину из `kyotsu.text` (`docx_ops`), и `hokoku/_text.py` больше нет.
+    """
+    for пакет in ("fragmos", "uml_generator", "hokoku"):
+        for path in файлы(пакет):
+            assert "lat_lower" not in код(path), f"{пакет}/{path.name}: своя таблица ширин"
+
+
+# ── одна таблица и один загрузчик не только на бумаге ────────────────────────
+
+def test_обе_диаграммы_меряют_текст_одной_таблицей():
+    from fragmos.builder import shapes
+    from uml_generator import _text
+
+    assert shapes.text_width is kyotsu.text_width
+    строка = "Двигатель: мощность = 120"
+    assert _text.text_width(строка, 12) == kyotsu.text_width(
+        строка, 12, safety=_text.SAFETY)
+
+
+def test_и_hokoku_меряет_ею_же():
+    """Третий владелец копии. Ширину он мерит ради колонок таблицы в DOCX:
+    разъехавшись, копия дала бы колонки не той ширины — и заметно это стало бы
+    на распечатке, а не в тесте."""
+    from hokoku import docx_ops
+
+    assert docx_ops.text_width is kyotsu.text_width
+
+
+def test_парсер_берётся_из_одного_кэша():
+    from fragmos.ast_generators import base
+
+    assert base.get_parser is kyotsu.get_parser
+    assert kyotsu.get_parser("python") is kyotsu.get_parser("python")

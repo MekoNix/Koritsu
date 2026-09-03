@@ -66,11 +66,11 @@ def values():
 
 
 def codes(problems, key=None) -> list[str]:
-    return [p["code"] for p in problems if key is None or p["key"] == key]
+    return [p.code for p in problems if key is None or p.key == key]
 
 
 def one(problems, code) -> dict:
-    found = [p for p in problems if p["code"] == code]
+    found = [p for p in problems if p.code == code]
     assert len(found) == 1, f"ждали одну проблему {code}, получили {problems}"
     return found[0]
 
@@ -86,9 +86,9 @@ def test_проблема_машиночитаема(template, values, manifest)
     записью с полями, а не строкой прозой."""
     values["замеры"] = Markdown("не таблица")
     p = one(validate(template, values, manifest), "type_mismatch")
-    assert p["module"] == "hokoku" and p["level"] == "error" and p["key"] == "замеры"
-    assert (p["expected"], p["got"]) == ("table", "markdown")
-    assert isinstance(p["message"], str) and p["message"]
+    assert p.module == "hokoku" and p.level == "error" and p.key == "замеры"
+    assert (p.expected, p.got) == ("table", "markdown")
+    assert isinstance(p.message, str) and p.message
 
 
 def test_все_проблемы_сразу_а_не_первая(template, values, manifest):
@@ -107,20 +107,20 @@ def test_тип_не_тот(template, values, manifest):
     на готовом отчёте."""
     values["схема"] = Markdown("нарисовать не смог")
     p = one(validate(template, values, manifest), "type_mismatch")
-    assert (p["key"], p["expected"], p["got"]) == ("схема", "diagram", "markdown")
+    assert (p.key, p.expected, p.got) == ("схема", "diagram", "markdown")
 
 
 def test_голая_строка_это_text(template, values, manifest):
     """`str`/`int`/`bool` render вставляет как простой текст — значит и тип у них text."""
     values["цель"] = "Изучить работу алгоритма."
     p = one(validate(template, values, manifest), "type_mismatch")
-    assert (p["expected"], p["got"]) == ("markdown", "text")
+    assert (p.expected, p.got) == ("markdown", "text")
 
 
 def test_обязательный_тег_без_значения(template, values, manifest):
     del values["цель"]
     p = one(validate(template, values, manifest), "missing_required")
-    assert p["key"] == "цель" and p["level"] == "error"
+    assert p.key == "цель" and p.level == "error"
 
 
 def test_необязательный_тег_без_значения_не_ошибка(template, values, manifest):
@@ -128,7 +128,7 @@ def test_необязательный_тег_без_значения_не_оши
     del values["кафедра"]
     problems = validate(template, values, manifest)
     assert codes(problems) == ["tag_unfilled"]
-    assert problems[0]["level"] == "info"
+    assert problems[0].level == "info"
 
 
 def test_пустое_значение_ошибка(template, values, manifest):
@@ -136,14 +136,14 @@ def test_пустое_значение_ошибка(template, values, manifest):
     а не ронять сборку на середине."""
     values["вывод"] = Markdown("   ")
     p = one(validate(template, values, manifest), "empty_value")
-    assert p["key"] == "вывод" and p["level"] == "error"
+    assert p.key == "вывод" and p.level == "error"
 
 
 def test_значение_без_тега_с_подсказкой(template, values, manifest):
     """Опечатка в ключе (в том числе у модели) молча теряла целое значение."""
     values["цел"] = Markdown("Изучить.")
     p = one(validate(template, values, manifest), "unknown_key")
-    assert p["key"] == "цел" and "цель" in p["message"]
+    assert p.key == "цел" and "цель" in p.message
 
 
 def test_тег_без_записи_в_манифесте_проверяется_по_умолчанию(template, values, manifest):
@@ -153,7 +153,7 @@ def test_тег_без_записи_в_манифесте_проверяется
     values["цель"] = Table(rows=[["a"]])
     del values["кафедра"]
     problems = validate(template, values, manifest)
-    assert one(problems, "type_mismatch")["expected"] == "markdown"
+    assert one(problems, "type_mismatch").expected == "markdown"
     assert codes(problems, "кафедра") == ["tag_unfilled"]
 
 
@@ -163,7 +163,7 @@ def test_лимит_знаков(template, values, manifest):
     manifest.tags["цель"].limits = {"max_chars": 20}
     values["цель"] = Markdown("а" * 500)
     p = one(validate(template, values, manifest), "limit_max_chars")
-    assert (p["key"], p["expected"], p["got"]) == ("цель", 20, 500)
+    assert (p.key, p.expected, p.got) == ("цель", 20, 500)
 
 
 def test_лимит_знаков_считает_подписи(template, values, manifest):
@@ -172,13 +172,13 @@ def test_лимит_знаков_считает_подписи(template, values,
     manifest.tags["схема"].limits = {"max_chars": 20}
     values["схема"] = Diagram(xml="<mxfile/>" * 100, caption="а" * 50)
     p = one(validate(template, values, manifest), "limit_max_chars")
-    assert (p["key"], p["got"]) == ("схема", 50)          # XML генератора по-прежнему мимо счёта
+    assert (p.key, p.got) == ("схема", 50)          # XML генератора по-прежнему мимо счёта
 
     manifest.tags["схема"].limits = {}
     manifest.tags["замеры"].limits = {"max_chars": 20}
     values["замеры"] = Table(rows=[["ab"]], caption="в" * 30)
     p = one(validate(template, values, manifest), "limit_max_chars")
-    assert (p["key"], p["got"]) == ("замеры", 32)         # подпись плюс ячейки
+    assert (p.key, p.got) == ("замеры", 32)         # подпись плюс ячейки
 
 
 def test_лимит_строк_таблицы(template, values, manifest):
@@ -186,7 +186,7 @@ def test_лимит_строк_таблицы(template, values, manifest):
     manifest.tags["замеры"].limits = {"max_rows": 20}
     values["замеры"] = Table(rows=[[str(i)] for i in range(500)])
     p = one(validate(template, values, manifest), "limit_max_rows")
-    assert (p["expected"], p["got"]) == (20, 500)
+    assert (p.expected, p.got) == (20, 500)
 
 
 def test_лимит_строк_видит_таблицу_внутри_markdown(template, values, manifest):
@@ -194,21 +194,21 @@ def test_лимит_строк_видит_таблицу_внутри_markdown(t
     manifest.tags["цель"].limits = {"max_rows": 2}
     rows = "\n".join(f"| {i} | {i} |" for i in range(10))
     values["цель"] = Markdown("| a | b |\n| --- | --- |\n" + rows)
-    assert one(validate(template, values, manifest), "limit_max_rows")["got"] == 11
+    assert one(validate(template, values, manifest), "limit_max_rows").got == 11
 
 
 def test_лимит_строк_видит_таблицу_внутри_blocks(template, values, manifest):
     manifest.tags["цель"].type = "blocks"
     manifest.tags["цель"].limits = {"max_rows": 2}
     values["цель"] = Blocks(items=[Text("вот замеры"), Table(rows=[["a"], ["b"], ["c"]])])
-    assert one(validate(template, values, manifest), "limit_max_rows")["got"] == 3
+    assert one(validate(template, values, manifest), "limit_max_rows").got == 3
 
 
 def test_лимит_колонок(template, values, manifest):
     manifest.tags["замеры"].limits = {"max_cols": 3}
     values["замеры"] = Table(rows=[["a", "b"], ["1", "2", "3", "4"]])
     p = one(validate(template, values, manifest), "limit_max_cols")
-    assert (p["expected"], p["got"]) == (3, 4)
+    assert (p.expected, p.got) == (3, 4)
 
 
 def test_заголовков_не_ставить(template, values, manifest):
@@ -216,8 +216,8 @@ def test_заголовков_не_ставить(template, values, manifest):
     manifest.tags["цель"].limits = {"headings": False}
     values["цель"] = Markdown("## Цель работы\n\nИзучить алгоритм.")
     p = one(validate(template, values, manifest), "limit_headings")
-    assert (p["key"], p["expected"], p["got"]) == ("цель", 0, 1)
-    assert "Цель работы" in p["message"]
+    assert (p.key, p.expected, p.got) == ("цель", 0, 1)
+    assert "Цель работы" in p.message
 
 
 def test_заголовки_разрешены_по_умолчанию(template, values, manifest):
@@ -232,7 +232,7 @@ def test_заголовок_из_простого_текста_ловится(te
     manifest.tags["цель"].limits = {"headings": False}
     values["цель"] = Text("# Цель работы\n\nКак видно на {ref:схема}, всё сходится.")
     p = one(validate(template, values, manifest), "limit_headings")
-    assert (p["key"], p["got"]) == ("цель", 1) and "Цель работы" in p["message"]
+    assert (p.key, p.got) == ("цель", 1) and "Цель работы" in p.message
     # и это не буквы «# » в абзаце, а настоящий заголовок, ломающий нумерацию оглавления
     d = built(template, {"цель": values["цель"]})
     assert "Heading 1" in [p.style.name for p in d.paragraphs]
@@ -243,7 +243,7 @@ def test_заголовок_из_голой_строки_ловится(template
     manifest.tags["цель"].type = "text"
     manifest.tags["цель"].limits = {"headings": False}
     values["цель"] = "# Цель работы\n\nСм. {ref:схема}."
-    assert one(validate(template, values, manifest), "limit_headings")["got"] == 1
+    assert one(validate(template, values, manifest), "limit_headings").got == 1
     d = built(template, {"цель": values["цель"]})
     assert "Heading 1" in [p.style.name for p in d.paragraphs]
 
@@ -255,7 +255,7 @@ def test_лимит_строк_обходился_ссылкой_в_просто
     manifest.tags["цель"].limits = {"max_rows": 2}
     rows = "\n".join(f"| {i} | {i} |" for i in range(10))
     values["цель"] = Text("См. {ref:схема}.\n\n| a | b |\n| --- | --- |\n" + rows)
-    assert one(validate(template, values, manifest), "limit_max_rows")["got"] == 11
+    assert one(validate(template, values, manifest), "limit_max_rows").got == 11
     assert [len(t.rows) for t in built(template, {"цель": values["цель"]}).tables] == [11]
 
 
@@ -287,7 +287,7 @@ def test_зависимость_на_несуществующий_тег(templat
     """Опечатка в depends_on делала связь украшением: молчит и не проверяет ничего."""
     manifest.tags["вывод"].depends_on = ["замерры"]
     p = one(validate(template, values, manifest), "depends_on_missing")
-    assert (p["key"], p["got"]) == ("вывод", "замерры")
+    assert (p.key, p.got) == ("вывод", "замерры")
 
 
 def test_зависимость_на_незаполненный_тег(template, values, manifest):
@@ -296,7 +296,7 @@ def test_зависимость_на_незаполненный_тег(template,
     manifest.tags["замеры"].required = False
     del values["замеры"]
     p = one(validate(template, values, manifest), "depends_on_unfilled")
-    assert (p["key"], p["got"]) == ("вывод", "замеры")
+    assert (p.key, p.got) == ("вывод", "замеры")
 
 
 def test_зависимость_незаполненного_необязательного_тега_молчит(template, values, manifest):
@@ -315,7 +315,7 @@ def test_ссылка_в_никуда(template, values, manifest):
     """`{ref:}` мимо тега становится «?» в готовом документе — заметно уже на кафедре."""
     values["вывод"] = Markdown("Как видно на {ref:схемма}, всё сходится.")
     p = one(validate(template, values, manifest), "unresolved_ref")
-    assert (p["key"], p["got"], p["level"]) == ("вывод", "схемма", "warning")
+    assert (p.key, p.got, p.level) == ("вывод", "схемма", "warning")
 
 
 def test_ссылка_на_тег_шаблона_законна(template, values, manifest):
@@ -341,14 +341,14 @@ def test_ссылка_в_подписи_рисунка(template, values, manifes
     manifest.tags["схема"].type = "image"
     values["схема"] = Image(source=png, caption="ср. {ref:схемма}")
     p = one(validate(template, values, manifest), "unresolved_ref")
-    assert (p["key"], p["got"]) == ("схема", "схемма") and "схема" in p["message"]
+    assert (p.key, p.got) == ("схема", "схемма") and "схема" in p.message
     d = built(template, {"схема": values["схема"]})
     assert [t for t in map(ptext, d.paragraphs) if t.startswith("Рисунок")] == ["Рисунок 1 — ср. ?"]
 
 
 def test_ссылка_в_подписи_таблицы(template, values, manifest, png):
     values["замеры"] = Table(rows=[["t"], ["1"]], caption="см. {ref:нетути}")
-    assert one(validate(template, values, manifest), "unresolved_ref")["got"] == "нетути"
+    assert one(validate(template, values, manifest), "unresolved_ref").got == "нетути"
     d = built(template, {"замеры": values["замеры"]})
     assert [t for t in map(ptext, d.paragraphs) if t.startswith("Таблица")] == ["Таблица 1 — см. ?"]
 
@@ -357,7 +357,7 @@ def test_ссылка_в_подписи_схемы(template, values, manifest):
     """У схемы подпись идёт тем же путём (`render._emit_image`); сборка тут не зовётся —
     для неё нужен drawio CLI."""
     values["схема"] = Diagram(xml="<mxfile/>", caption="ср. {ref:нетути}")
-    assert one(validate(template, values, manifest), "unresolved_ref")["got"] == "нетути"
+    assert one(validate(template, values, manifest), "unresolved_ref").got == "нетути"
 
 
 def test_подпись_на_тег_шаблона_законна(template, values, manifest, png):

@@ -393,7 +393,7 @@ def extract(source: str, *, files=None) -> ObjectGraph:
     code = "\n".join(p for p in parts if p)
     if not code.strip():
         return ObjectGraph(notes=[f"{_LANG}: пустой исходник"])
-    from .._ts import get_parser
+    from kyotsu.ts import get_parser
     src = code.encode("utf-8")
     root = get_parser("cpp").parse(src).root_node
     tr = _Tracer(src)

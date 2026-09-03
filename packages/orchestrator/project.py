@@ -26,6 +26,7 @@ project — состояние одной работы студента на д�
     <path>/manifest.json           manifest_to_json (hokoku)
     <path>/materials/              materials.Store(root) — как есть
     <path>/artifacts/<id>          плоский каталог: шаблон, XML схем, картинки
+    <path>/artifacts/notices/<id>.json  замечания того, кто артефакт построил
     <path>/values/<slug>/vN.json   {"version": шапка, "value": значение wire}
     <path>/runs/<id>.json          прогон: уровень, endpoint, метка рамки, шаги
     <path>/journal.jsonl           по записи на вызов модели (форма В.4 слоя llm)
@@ -54,6 +55,7 @@ from dataclasses import asdict, dataclass, field
 import hokoku
 import llm
 import materials
+from kyotsu import Notice
 
 from .errors import OrchestratorError, hint
 
@@ -303,19 +305,49 @@ class Project:
         """Хранилище материалов проекта — `materials.Store` как есть, без надстроек."""
         return materials.Store(self._materials_dir())
 
-    def put_artifact(self, data: bytes, *, name: str = "") -> str:
+    def put_artifact(self, data: bytes, *, name: str = "", notices=()) -> str:
         """Байты в хранилище артефактов → идентификатор.
 
         Адресация по содержимому, а не по имени: `name` нигде не участвует и
         принимается только для читаемости вызова. Одинаковые байты дважды —
         один артефакт, поэтому повторная сборка схемы не плодит мусор.
+
+        `notices` — замечания того, кто артефакт построил (`kyotsu.Notice`;
+        сегодня это `fragmos`: «в схему не вошло: goto case»). Они кладутся
+        рядом с артефактом, а не в значение тега, по двум причинам: замечание
+        описывает **схему**, а не тег (одну и ту же схему могут поставить в два
+        тега, и правда о ней одна), и живёт оно ровно столько, сколько живёт
+        артефакт. Без записи на диск замечание умирало бы вместе с прогоном, а
+        человек смотрит на отчёт позже и другим глазом.
         """
         art = artifact_id(bytes(data))
         path = os.path.join(self._artifacts_dir(), art)
         if not os.path.isfile(path):
             os.makedirs(self._artifacts_dir(), exist_ok=True)
             self._write_bytes(path, bytes(data))
+        if notices:
+            folder = os.path.join(self._artifacts_dir(), "notices")
+            os.makedirs(folder, exist_ok=True)
+            self._write_json(os.path.join(folder, f"{art}.json"),
+                             [n.to_dict() for n in notices])
         return art
+
+    def artifact_notices(self, art_id: str) -> list:
+        """Замечания, с которыми артефакт был построен. Пусто — их не было.
+
+        Возвращается общая форма (`kyotsu.Notice`), а не словарь: список
+        замечаний проекта один, и разбирать половину его словарями, а половину
+        полями значило бы завести второй разбор в интерфейсе.
+        """
+        path = os.path.join(self._artifacts_dir(), "notices", f"{str(art_id)}.json")
+        out = []
+        for raw in self._read_json(path, []) or []:
+            if not isinstance(raw, dict):
+                continue
+            out.append(Notice(module=raw.get("module", ""), level=raw.get("level", "warning"),
+                              code=raw.get("code", ""), message=raw.get("message", ""),
+                              file=raw.get("file"), line=raw.get("line")))
+        return out
 
     def resolve_artifact(self, art_id: str) -> bytes:
         """Байты по идентификатору: сначала материалы, потом артефакты.
@@ -573,7 +605,8 @@ class Project:
         return os.path.join(self.path, "journal.jsonl")
 
     def outdir(self) -> str:
-        """Каталог готовых файлов — `workdir` для `build_report` (режим один, `report.py:77`)."""
+        """Каталог готовых файлов — `workdir` для `build_report`: у проекта есть каталог,
+        а хранилища артефактов с записью (режим `store_artifact`) ещё нет."""
         path = os.path.join(self.path, "out")
         os.makedirs(path, exist_ok=True)
         return path

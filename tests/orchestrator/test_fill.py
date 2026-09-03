@@ -71,7 +71,7 @@ def test_значение_модели_проходит_тот_же_валида
     fill = orchestrator.fill_tag(project, "цель", endpoint=ep)
 
     assert fill.ok is False
-    assert [p["code"] for p in fill.problems] == ["limit_max_chars"]
+    assert [p.code for p in fill.problems] == ["limit_max_chars"]
     # Жёсткая беда версии не заводит: «Вернуть» не должно предлагать битое.
     assert project.versions("цель") == []
     assert project.value("цель") is None
@@ -85,8 +85,8 @@ def test_невыразимое_значение_не_становится_ве�
     ep, _ = endpoint(script('{"type": "table", "rows": [["а", "б"], ["в"]]}'))
     fill = orchestrator.fill_tag(project, "таблица", endpoint=ep)
     assert fill.ok is False
-    assert fill.problems[0]["code"] == "wire"
-    assert "в первой" in fill.problems[0]["message"]
+    assert fill.problems[0].code == "wire"
+    assert "в первой" in fill.problems[0].message
     assert project.versions("таблица") == []
 
 
@@ -106,7 +106,7 @@ def test_отказ_модели_не_заводит_версию(project, endpo
     ep, _ = endpoint(script("извините", stop=llm.Stop.REFUSED))
     fill = orchestrator.fill_tag(project, "цель", endpoint=ep)
     assert fill.ok is False and project.versions("цель") == []
-    assert fill.problems[0]["code"] == "model_failed"
+    assert fill.problems[0].code == "model_failed"
     # Отказ стоил денег и обязан быть в журнале.
     assert len(journal_lines(project)) == 1
 
@@ -123,7 +123,7 @@ def test_лимит_останавливает_до_вызова(project, endpoi
     assert fill.ok is False
     assert backend.requests == []                  # вызова не было
     assert journal_lines(project) == []            # и записывать нечего
-    assert "лимит" in fill.problems[0]["message"]
+    assert "лимит" in fill.problems[0].message
 
 
 # ── уровень 2 ────────────────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ def test_обрыв_потока_оставляет_готовое_в_проек
     assert project.value("цель") is not None and project.value("введение") is not None
     assert project.value("таблица") is None
     assert project.run(итог.run.id).outcome == "interrupted"
-    коды = {p["code"] for p in итог.problems}
+    коды = {p.code for p in итог.problems}
     assert "stream_failed" in коды and "truncated" in коды
     # Оборванный вызов всё равно стоил денег и записан.
     assert len(journal_lines(project)) == 1
@@ -174,8 +174,8 @@ def test_лишний_ключ_от_модели_виден_и_не_сохран
     ep, _ = endpoint(script(ответ, pieces=10))
     итог = orchestrator.fill_report(project, endpoint=ep)
     assert итог.filled == ["цель"]
-    беда = next(p for p in итог.problems if p["code"] == "unknown_key")
-    assert "цельь" in беда["message"] and "похоже на" in беда["message"]
+    беда = next(p for p in итог.problems if p.code == "unknown_key")
+    assert "цельь" in беда.message and "похоже на" in беда.message
 
 
 def test_негодный_тег_не_отменяет_остальные(project, endpoint):
@@ -185,7 +185,7 @@ def test_негодный_тег_не_отменяет_остальные(projec
     итог = orchestrator.fill_report(project, endpoint=ep)
     assert итог.filled == ["цель", "таблица"]
     assert project.value("введение") is None
-    assert any(p["code"] == "limit_max_chars" for p in итог.problems)
+    assert any(p.code == "limit_max_chars" for p in итог.problems)
     assert итог.outcome == "done"       # прогон дошёл до конца, а тег не годен
 
 
@@ -200,7 +200,7 @@ def test_соседи_подставляются_по_ходу_прогона(pr
     ep, _ = endpoint(script(ответ, pieces=15))
     итог = orchestrator.fill_report(project, endpoint=ep)
     assert итог.filled == ["цель", "введение"]
-    assert not any(p["code"] == "depends_on_unfilled" for p in итог.problems)
+    assert not any(p.code == "depends_on_unfilled" for p in итог.problems)
 
 
 def test_лимит_останавливает_уровень_два_до_потока(project, endpoint):
@@ -214,7 +214,7 @@ def test_лимит_останавливает_уровень_два_до_пот
     assert итог.ok is False and итог.filled == []
     assert backend.requests == []
     assert journal_lines(project) == []
-    assert any("лимит" in p["message"] for p in итог.problems)
+    assert any("лимит" in p.message for p in итог.problems)
 
 
 def test_метка_прогона_записана_и_совпадает_с_проводом(project, endpoint):
@@ -263,8 +263,8 @@ def test_прогон_не_трогает_написанное_человеко�
 
     assert project.value("цель")["text"] == "ЦЕЛЬ, НАПИСАННАЯ РУКОЙ СТУДЕНТА"
     assert [v.source for v in project.versions("цель")] == ["manual"]
-    оставлен = next(p for p in итог.problems if p["key"] == "цель")
-    assert оставлен["code"] == "kept" and оставлен["level"] == "info"
+    оставлен = next(p for p in итог.problems if p.key == "цель")
+    assert оставлен.code == "kept" and оставлен.level == "info"
     # Тег у модели даже не просили: платить за переписывание чужого незачем.
     запрос = next(p for p in backend.requests[0].parts if p.role == "request")
     assert "[цель]" not in запрос.text
@@ -358,9 +358,9 @@ def test_необязательный_тег_модель_вправе_не_за
     итог = orchestrator.fill_report(project, endpoint=ep)
 
     assert итог.filled == ["цель", "таблица"] and итог.outcome == "done"
-    про_введение = [p for p in итог.problems if p["key"] == "введение"]
-    assert [p["code"] for p in про_введение] == ["left_unset"]
-    assert про_введение[0]["level"] == "info"
+    про_введение = [p for p in итог.problems if p.key == "введение"]
+    assert [p.code for p in про_введение] == ["left_unset"]
+    assert про_введение[0].level == "info"
     assert project.value("введение") is None
 
 
@@ -370,8 +370,8 @@ def test_обязательный_тег_null_остаётся_бедой(projec
     ответ = report_json(цель=None, введение=ВВЕДЕНИЕ, таблица=ТАБЛИЦА)
     ep, _ = endpoint(script(ответ, pieces=25), step=STRICT)
     итог = orchestrator.fill_report(project, endpoint=ep)
-    беда = next(p for p in итог.problems if p["key"] == "цель")
-    assert беда["code"] == "not_an_object" and беда["level"] == "error"
+    беда = next(p for p in итог.problems if p.key == "цель")
+    assert беда.code == "not_an_object" and беда.level == "error"
 
 
 def test_два_тега_одного_прогона_делят_метку(project, endpoint):
@@ -398,6 +398,6 @@ def test_невернувшийся_тег_виден_сразу_а_не_при_
     ep, _ = endpoint(script(report_json(цель=ЦЕЛЬ, введение=ВВЕДЕНИЕ), pieces=8))
     итог = orchestrator.fill_report(project, endpoint=ep)
     assert итог.outcome == "done" and итог.filled == ["цель", "введение"]
-    пропуск = [p for p in итог.problems if p["code"] == "not_returned"]
-    assert [p["key"] for p in пропуск] == ["таблица"]
-    assert пропуск[0]["level"] == "info"
+    пропуск = [p for p in итог.problems if p.code == "not_returned"]
+    assert [p.key for p in пропуск] == ["таблица"]
+    assert пропуск[0].level == "info"

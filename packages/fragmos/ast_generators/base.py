@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
-from .ts import get_parser
+from kyotsu import Notice
+from kyotsu.ts import get_parser
 
 
 class ASTGenerator(ABC):
@@ -26,6 +27,29 @@ class ASTGenerator(ABC):
     # Тело try (первый блок) и поле тела у catch/except-клауз.
     TRY_CLAUSES: tuple = ('catch_clause',)
     FINALLY_CLAUSE = 'finally_clause'
+
+    def __init__(self) -> None:
+        # Что разобрать не удалось и потому в схему не вошло. До 2.0.0a4.2
+        # такого списка не было вовсе: файл с ошибкой разбора пропускался
+        # молча (`builder._merge_files`), `goto case` без цели оставался
+        # обрывком, — и узнавал об этом человек, глядя на готовую схему, где
+        # ветки просто нет. Записи — `kyotsu.Notice`, та же форма, что у
+        # замечаний `hokoku` и службы.
+        self.warnings: list[Notice] = []
+        # Имя разбираемого файла: при многофайловом входе один генератор
+        # проходит по нескольким, и «не разобралось» без имени бесполезно.
+        self.filename: str = ''
+
+    def _warn(self, code: str, message: str, *, line: int | None = None) -> None:
+        """Замечание о том, что в схему не вошло. Разбор при этом продолжается.
+
+        Бросать здесь нельзя: один невыразимый оператор не повод оставить
+        студента без схемы вовсе — остальное рисуется, а о дырке он узнаёт
+        словами, а не разглядыванием.
+        """
+        self.warnings.append(Notice(module="fragmos", level="warning", code=code,
+                                    message=message, file=self.filename or None,
+                                    line=line))
 
     def generate(self, code: str) -> dict:
         tree = get_parser(self.GRAMMAR).parse(bytes(code, 'utf-8'))

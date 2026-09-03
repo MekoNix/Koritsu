@@ -5,6 +5,7 @@ build_report и `python -m hokoku.build`: прогон целиком на по�
 не зная о диске. Отдельно — проверка, что контракт выражает всё, что hokoku умеет
 (случаи лаборатории labs/check).
 """
+import hashlib
 import io
 import json
 import os
@@ -93,6 +94,16 @@ def test_в_ответе_имена_файлов_а_не_пути(job, resolve, 
     assert "workdir" not in json.dumps(res) and str(tmp_path) not in json.dumps(res)
 
 
+def test_наружу_кладётся_только_то_что_просили(job, resolve, tmp_path):
+    """`outputs: ["pdf"]` — и DOCX в каталоге не появляется. Раньше он писался туда
+    всегда, потому что LibreOffice звали по пути; теперь PDF считается из байтов, и
+    файл, которого не просили, класть больше незачем."""
+    job["options"]["outputs"] = ["pdf"]
+    run(job, resolve, tmp_path)
+    assert [p.name for p in (tmp_path / "out").iterdir()
+            if p.name.endswith(".docx")] == []
+
+
 def test_частичный_успех(job, resolve, tmp_path):
     """ok означает ровно одно: DOCX собран. Отчёт с пометками полезнее отказа."""
     job["values"]["битая"] = {"v": 1, "type": "image", "artifact": "af_broken"}
@@ -106,6 +117,26 @@ def test_частичный_успех(job, resolve, tmp_path):
     assert res["unknown_keys"] == ["цел"]
     warn = next(w for w in res["warnings"] if w["code"] == "unknown_key")
     assert warn["key"] == "цел" and warn["suggest"] == ["цель"]
+
+
+def test_форма_предупреждения_в_json_не_поменялась(job, resolve, tmp_path):
+    """Внутри пакета предупреждение стало `Problem` (общий `kyotsu.Notice`), но
+    наружу уезжает `to_dict()` — те же ключи, что и до 2.0.0a4.2.
+
+    Проверяется именно JSON, а не объект: результат `build_report` печатается
+    `python -m hokoku.build`, и разбирает его чужой скрипт, который про наши
+    dataclass'ы ничего не знает. Заодно — что запись сериализуется: объект,
+    просочившийся в результат, свалил бы `json.dumps` уже у вызывающего.
+    """
+    job["values"]["цел"] = {"v": 1, "type": "text", "text": "опечатка в ключе"}
+    res = run(job, resolve, tmp_path)
+    warn = next(w for w in res["warnings"] if w["code"] == "unknown_key")
+    assert set(warn) == {"module", "level", "code", "key", "message", "suggest"}
+    assert warn["module"] == "hokoku" and warn["level"] == "warning"
+    # Позиции в исходнике у предупреждений о тегах нет — и она не притворяется
+    # пустой: незаданное поле в JSON не попадает вовсе.
+    assert "file" not in warn and "line" not in warn
+    json.dumps(res, ensure_ascii=False)
 
 
 def test_пустое_значение_считает_render(job, resolve, tmp_path):
@@ -144,13 +175,106 @@ def test_схема_листом_и_целиком(job, resolve, tmp_path):
     assert "лист 9" in res["errors"][0]["message"]
 
 
+# ── режим store_artifact ──────────────────────────────────────────────────────
+
+@pytest.fixture
+def store_mode(store):
+    """Поддельное хранилище: тот же словарь «идентификатор → байты», что и на чтении.
+
+    Ровно так же ляжет настоящее (`materials.Store.blob(mid) -> bytes` — это и есть
+    сигнатура `resolve_artifact`), но `hokoku` про него не знает ничего: он отдал
+    байты в функцию и получил взамен строку.
+    """
+    put = []
+
+    def store_artifact(name, data, kind):
+        art_id = f"af_{kind}_{len(put)}"
+        store[art_id] = data
+        put.append((name, kind, art_id))
+        return art_id
+    store_artifact.put = put
+    return store_artifact
+
+
+def test_в_ответе_идентификаторы_а_не_файлы(job, resolve, store, store_mode, tmp_path):
+    """`hok-bytes-output`: на диске не появляется ничего, документ адресуется
+    идентификатором — тем же, по которому его завтра можно вставить в другой отчёт."""
+    было = set(tmp_path.iterdir())
+    res = build_report(job, resolve_artifact=resolve, store_artifact=store_mode)
+    assert res["ok"] and "file" not in res["outputs"]["docx"]
+    art = res["outputs"]["docx"]["artifact"]
+    assert store_mode.put == [("otchet.docx", "docx", art)]
+    assert store[art][:2] == b"PK" and Document(io.BytesIO(store[art])).paragraphs
+    assert res["outputs"]["docx"]["bytes"] == len(store[art])
+    assert res["outputs"]["docx"]["sha256"] == hashlib.sha256(store[art]).hexdigest()
+    assert set(tmp_path.iterdir()) == было               # ни одного файла наружу
+
+
+def test_остальной_ответ_у_режимов_один(job, resolve, store_mode, tmp_path):
+    """Режим — свойство приёмника байтов, а не сборки: всё, кроме `outputs`, совпадает."""
+    a = build_report(job, resolve_artifact=resolve, store_artifact=store_mode)
+    b = run(job, resolve, tmp_path)
+    del a["outputs"], a["timings_ms"], b["outputs"], b["timings_ms"]
+    assert a == b
+
+
+def test_идентификатор_проверяется_той_же_регуляркой(job, resolve, tmp_path):
+    """Строка от хранилища завтра приедет обратно во вход. Хранилище, отдавшее путь,
+    сделало бы дырой не себя, а нас, — поэтому ARTIFACT_RE и на выходе."""
+    for bad in ("out/otchet.docx", "../otchet", "", "af " * 40, 17, None):
+        res = build_report(job, resolve_artifact=resolve,
+                           store_artifact=lambda n, d, k, v=bad: v)
+        assert res["ok"] is False and res["error"]["code"] == "internal"
+        assert "идентификатор" in res["error"]["message"]
+
+
+def test_отказ_хранилища_это_отказ_задания(job, resolve, tmp_path):
+    def сломанное(name, data, kind):
+        raise OSError("места нет")
+
+    res = build_report(job, resolve_artifact=resolve, store_artifact=сломанное)
+    assert res["ok"] is False and res["error"]["code"] == "internal"
+    assert "места нет" in res["error"]["message"]
+
+
+def test_потолок_срабатывает_и_без_каталога(job, resolve, store_mode):
+    """Проверки уровня задания режима не знают: они до приёмника."""
+    job["options"]["limits"] = {"max_table_rows": 1}
+    res = build_report(job, resolve_artifact=resolve, store_artifact=store_mode)
+    assert res["ok"] is False and res["error"]["code"] == "limit_exceeded"
+    assert store_mode.put == []
+
+
+@pytest.mark.skipif(not libreoffice_available(), reason="нужен LibreOffice")
+def test_pdf_тоже_уезжает_артефактом(job, resolve, store, store_mode, tmp_path):
+    job["options"]["outputs"] = ["docx", "pdf"]
+    было = set(tmp_path.iterdir())
+    res = build_report(job, resolve_artifact=resolve, store_artifact=store_mode)
+    assert res["ok"] and [k for _, k, _ in store_mode.put] == ["docx", "pdf"]
+    assert store[res["outputs"]["pdf"]["artifact"]][:4] == b"%PDF"
+    assert set(tmp_path.iterdir()) == было               # PDF считался во временном каталоге
+
+
+@pytest.mark.skipif(libreoffice_available(), reason="LibreOffice установлен — беда не воспроизводится")
+def test_без_libreoffice_docx_уезжает_и_здесь(job, resolve, store_mode):
+    job["options"]["outputs"] = ["docx", "pdf"]
+    res = build_report(job, resolve_artifact=resolve, store_artifact=store_mode)
+    assert res["ok"] and "pdf" not in res["outputs"] and res["outputs"]["docx"]["artifact"]
+    assert [e["stage"] for e in res["errors"]] == ["pdf"]
+
+
 # ── отказы уровня задания ─────────────────────────────────────────────────────
 
 def test_нужен_ровно_один_приёмник(job, resolve, tmp_path):
-    with pytest.raises(ValueError, match="ровно один"):
+    """Ни одного и оба — одинаково отказ: молча выбранный режим это готовый отчёт,
+    оставшийся не там, где его будут искать."""
+    with pytest.raises(ValueError, match="ровно один.*ни один"):
         build_report(job, resolve_artifact=resolve)
-    with pytest.raises(NotImplementedError, match="workdir"):
-        build_report(job, resolve_artifact=resolve, store_artifact=lambda n, d, k: "af_1")
+    with pytest.raises(ValueError, match="ровно один.*оба"):
+        build_report(job, resolve_artifact=resolve, workdir=str(tmp_path / "out"),
+                     store_artifact=lambda n, d, k: "af_1")
+    with pytest.raises(ValueError, match="store_artifact"):
+        build_report(job, resolve_artifact=resolve, store_artifact="не функция")
 
 
 def test_коды_отказов(job, resolve, tmp_path):
@@ -277,6 +401,30 @@ def test_cli_собирает_отчёт(job, store, tmp_path):
     r = _cli(["--stdin", "--artifacts", "arts", "--out", "out", "--pretty"], tmp_path,
              stdin=json.dumps(job, ensure_ascii=False))
     assert r.returncode == 0 and json.loads(r.stdout)["ok"]
+
+
+def test_cli_без_out_кладёт_отчёт_артефактом(job, store, tmp_path):
+    """Второй режим виден и из скрипта: без `--out` готовый DOCX уезжает в каталог
+    артефактов под именем от содержимого, а в JSON стоит идентификатор, не имя файла."""
+    arts = tmp_path / "arts"
+    arts.mkdir()
+    for art_id, data in store.items():
+        (arts / art_id).write_bytes(data)
+    (tmp_path / "job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+
+    было = {p.name for p in arts.iterdir()}
+    r = _cli(["job.json", "--artifacts", "arts"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    res = json.loads(r.stdout)
+    art = res["outputs"]["docx"]["artifact"]
+    assert "file" not in res["outputs"]["docx"] and art.startswith("af_")
+    assert not (tmp_path / "out").exists()          # каталога с именами не завелось
+    assert {p.name for p in arts.iterdir()} - было == {art}
+    assert Document(str(arts / art)).paragraphs
+
+    # ни каталога, ни хранилища — «так звать нельзя», а не молчаливый выбор режима
+    r = _cli(["job.json"], tmp_path)
+    assert r.returncode == 2 and "так звать нельзя" in r.stderr
 
 
 # ── возможности лаборатории labs/check ────────────────────────────────────────

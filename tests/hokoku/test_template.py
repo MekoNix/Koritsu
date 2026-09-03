@@ -196,31 +196,31 @@ def test_check_template_clean_on_blank():
 
 def test_check_template_reports_missing_styles():
     problems = check_template(_strip_styles(Document()))
-    warned = {p["key"] for p in problems if p["level"] == "warning"}
+    warned = {p.key for p in problems if p.level == "warning"}
     assert warned == {"Heading 1", "Heading 2", "Heading 3", "Caption"}
-    assert all(p["module"] == "template" and p["code"] == "style_missing" for p in problems)
-    assert "подставит свой" in [p for p in problems if p["key"] == "Caption"][0]["message"]
+    assert all(p.module == "template" and p.code == "style_missing" for p in problems)
+    assert "подставит свой" in [p for p in problems if p.key == "Caption"][0].message
 
 
 def test_check_template_code_style_is_only_info():
     """У заводского документа Word нет стиля Code — это не повод пугать человека."""
     problems = check_template(Document())
-    assert [p["level"] for p in problems] == ["info"]
-    assert problems[0]["key"] == "Code"
+    assert [p.level for p in problems] == ["info"]
+    assert problems[0].key == "Code"
 
 
 def test_check_template_margins_wider_than_page():
     d = blank_document()
     d.sections[0].left_margin = Cm(20)
-    problems = [p for p in check_template(d) if p["level"] == "error"]
-    assert problems and problems[0]["code"] == "no_text_area"
-    assert "за край" in problems[0]["message"]
+    problems = [p for p in check_template(d) if p.level == "error"]
+    assert problems and problems[0].code == "no_text_area"
+    assert "за край" in problems[0].message
 
 
 def test_check_template_narrow_text_area():
     d = blank_document()
     d.sections[0].left_margin = Cm(12)
-    codes = [p["code"] for p in check_template(d)]
+    codes = [p.code for p in check_template(d)]
     assert "narrow_text_area" in codes
 
 

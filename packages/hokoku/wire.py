@@ -226,7 +226,12 @@ class _Spec:
 _CAPTION = _Field({"anyOf": [{"type": "string"}, {"type": "null"}, {"const": False}]}, _caption,
                   model_schema={"type": ["string", "null"]})
 _WIDTH = _Field({"type": ["number", "null"], "exclusiveMinimum": 0}, _opt_number)
-_ALIGN_ONE = _Field({"enum": list(_ALIGN)}, _align)
+# «enum» без «type» — схема без типа: наш валидатор её понимает, а строгий режим
+# поставщика на такое поле отвечает 400. Тип пишем явно, как у _WIDTH и _REF; null
+# сюда не входит намеренно — выравнивание по умолчанию задаёт стиль, а не значение,
+# и «промолчать» модели даёт strictify, дописывая null необязательному полю сам.
+_ALIGN_SCHEMA = {"type": "string", "enum": list(_ALIGN)}
+_ALIGN_ONE = _Field(dict(_ALIGN_SCHEMA), _align)
 _REF = _Field({"type": ["string", "null"]}, _opt_string)
 _TEXT = _Field({"type": "string"}, _string, required=True)
 _ART_SCHEMA = {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,64}$"}
@@ -262,7 +267,8 @@ _TYPES: dict[str, _Spec] = {s.name: s for s in (
         "header": _Field({"type": "boolean"}, _flag),
         "caption": _CAPTION,
         "col_widths_cm": _Field({"type": ["array", "null"], "items": {"type": "number"}}, _opt_widths),
-        "align": _Field({"type": ["array", "null"], "items": {"enum": list(_ALIGN)}}, _opt_align_list),
+        "align": _Field({"type": ["array", "null"], "items": dict(_ALIGN_SCHEMA)},
+                        _opt_align_list),
         "ref": _REF}),
     _spec("formula", Formula, {
         "latex": _Field({"type": "string"}, _string, required=True),

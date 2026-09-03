@@ -2,9 +2,9 @@
 builder — sub-package для генерации draw.io flowchart XML.
 
 Публичный API:
-  generate_xml(code, language, *, files, mode_id, cfg_overrides) → str  — XML строкой
-  generate_from_code(code, language, out_path, mode_id, cfg_overrides) → str  — путь
-  generate_from_files(files, language, out_path, mode_id, cfg_overrides) → str  — путь
+  generate_xml(code, language, *, files, mode_id, cfg_overrides, warnings) → str  — XML строкой
+  generate_from_code(code, language, out_path, mode_id, cfg_overrides, warnings) → str  — путь
+  generate_from_files(files, language, out_path, mode_id, cfg_overrides, warnings) → str  — путь
   DEFAULT_CFG — словарь конфигурации по умолчанию
 
 Схема наружу отдаётся строкой: `uml_generator.build_xml` делает так же, а вызывающему
@@ -120,14 +120,16 @@ def _render_ast(ast_dict, mode_id, cfg_overrides) -> str:
     return _pages_xml(nodes, cfg)
 
 
-def _merge_files(files, language: str) -> dict:
+def _merge_files(files, language: str, gen) -> dict:
     """AST нескольких файлов в один program-узел.
 
     Каждый файл парсится отдельно — иначе tree-sitter ругается на повторные
     #include и inline-определения через границы файлов.
-    """
-    from ..ast_generators import get_ast_generator
 
+    Генератор передаётся снаружи один на все файлы: в нём копятся замечания о
+    том, что в схему не вошло, и заводить по генератору на файл значило бы
+    растерять их по дороге.
+    """
     pairs = []
     for item in files:
         if isinstance(item, dict):
@@ -139,17 +141,23 @@ def _merge_files(files, language: str) -> dict:
     if not pairs:
         raise ValueError("generate_xml: пустой список файлов")
 
-    gen = get_ast_generator(language)
     merged_body: list = []
-    for _name, code in pairs:
+    for name, code in pairs:
+        gen.filename = name
         try:
             ast_dict = gen.generate(code)
-        except SyntaxError:
+        except SyntaxError as exc:
             # Файл с ошибками парсинга пропускаем — остальные диаграмма
             # всё равно получит. Иначе один бракованный файл утащил бы
-            # за собой всю flowchart.
+            # за собой всю flowchart. Молча пропускать нельзя: пропавшую
+            # функцию на схеме из десяти страниц не замечает никто, и
+            # «схема неполна» выясняется на защите.
+            gen._warn("file_not_parsed",
+                      f"в схему не вошло: файл {name or '<без имени>'} не "
+                      f"разобрался как {language} ({exc})")
             continue
         merged_body.extend(ast_dict.get("body") or [])
+    gen.filename = ''
 
     return {"type": "program", "body": merged_body, "metadata": {"language": language}}
 
@@ -157,7 +165,8 @@ def _merge_files(files, language: str) -> dict:
 def generate_xml(code: str = None, language: str = 'python', *,
                  files=None,
                  mode_id: str = 'default',
-                 cfg_overrides: dict = None) -> str:
+                 cfg_overrides: dict = None,
+                 warnings: list = None) -> str:
     """
     Исходный код → draw.io XML строкой. На диск ничего не пишется.
 
@@ -169,24 +178,37 @@ def generate_xml(code: str = None, language: str = 'python', *,
                        C#-WinForms-проектам, где `main()` сам по себе пуст.
         mode_id:       режим из modes.yaml ('default' | 'loopLimit' | 'plain')
         cfg_overrides: перегрузки конфигурации (см. config.DEFAULT_CFG)
+        warnings:      список, куда дописать `kyotsu.Notice` о том, что в схему
+                       не вошло (файл не разобрался, `goto case` без цели).
+                       None — не собирать.
 
     Returns:
         XML многостраничного mxfile (одна страница на функцию).
+
+    Почему замечания списком-приёмником, а не вторым значением: схема наружу
+    отдаётся **строкой**, и вызывающему (службе, прогону отчёта) нужен XML, а не
+    пара. Сменить возврат на кортеж значило бы сломать всех сегодняшних
+    вызывающих ради тех, кому замечания не нужны; так их спрашивает тот, кому
+    есть где показать, и не спрашивает остальные.
     """
     from ..ast_generators import get_ast_generator
 
     if (code is None) == (files is None):
         raise ValueError("generate_xml: нужно ровно одно из code и files")
+    gen = get_ast_generator(language)
     if files is not None:
-        ast_dict = _merge_files(files, language)
+        ast_dict = _merge_files(files, language, gen)
     else:
-        ast_dict = get_ast_generator(language).generate(code)
+        ast_dict = gen.generate(code)
+    if warnings is not None:
+        warnings.extend(gen.warnings)
     return _render_ast(ast_dict, mode_id, cfg_overrides)
 
 
 def generate_from_code(code: str, language: str, out_path: str,
                        mode_id: str = 'default',
-                       cfg_overrides: dict = None) -> str:
+                       cfg_overrides: dict = None,
+                       warnings: list = None) -> str:
     """
     То же, что generate_xml(code, language, …), но с сохранением в файл.
 
@@ -196,13 +218,15 @@ def generate_from_code(code: str, language: str, out_path: str,
     Returns:
         Путь к созданному XML-файлу.
     """
-    return _save(generate_xml(code, language, mode_id=mode_id, cfg_overrides=cfg_overrides),
+    return _save(generate_xml(code, language, mode_id=mode_id,
+                             cfg_overrides=cfg_overrides, warnings=warnings),
                  out_path)
 
 
 def generate_from_files(files, language: str, out_path: str,
                         mode_id: str = 'default',
-                        cfg_overrides: dict = None) -> str:
+                        cfg_overrides: dict = None,
+                        warnings: list = None) -> str:
     """
     То же, что generate_xml(files=…), но с сохранением в файл.
 
@@ -210,5 +234,5 @@ def generate_from_files(files, language: str, out_path: str,
         Путь к созданному XML-файлу.
     """
     return _save(generate_xml(None, language, files=files, mode_id=mode_id,
-                              cfg_overrides=cfg_overrides),
+                              cfg_overrides=cfg_overrides, warnings=warnings),
                  out_path)

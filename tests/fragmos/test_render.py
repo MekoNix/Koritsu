@@ -310,6 +310,49 @@ class TestGenerateXml(unittest.TestCase):
         plain = fragmos.generate_xml(self.CODE, 'python', mode_id='gost_19_701_90')
         self.assertNotEqual(plain, fragmos.generate_xml(self.CODE, 'python'))
 
+    def test_непонятый_файл_больше_не_пропадает_молча(self):
+        """Файл с ошибкой разбора пропускается — остальные схему всё равно
+        получат. Но пропуск теперь называется вслух: пропавшую функцию на схеме
+        из десяти страниц не замечает никто, и «схема неполна» выясняется на
+        защите.
+
+        `file` в замечании — то самое поле, ради которого оно необязательное:
+        здесь имя файла есть, у «goto case» его нет.
+        """
+        import fragmos
+        замечания = []
+        xml_str = fragmos.generate_xml(
+            None, 'python',
+            files=[('a.py', self.CODE), ('bad.py', 'def broken(:\n')],
+            warnings=замечания)
+        self.assertIn('f(x)', xml_str)              # годный файл в схему вошёл
+        self.assertEqual([n.code for n in замечания], ['file_not_parsed'])
+        self.assertEqual(замечания[0].file, 'bad.py')
+        self.assertEqual(замечания[0].module, 'fragmos')
+        self.assertIn('в схему не вошло', замечания[0].message)
+
+    def test_замечания_не_спрашивают_если_не_просят(self):
+        """`warnings` необязателен: старые вызывающие не менялись, и схема —
+        по-прежнему строка, а не пара."""
+        import fragmos
+        без = fragmos.generate_xml(None, 'python',
+                                   files=[('a.py', self.CODE), ('bad.py', 'def broken(:\n')])
+        замечания = []
+        с = fragmos.generate_xml(None, 'python',
+                                 files=[('a.py', self.CODE), ('bad.py', 'def broken(:\n')],
+                                 warnings=замечания)
+        self.assertEqual(без, с)
+        self.assertTrue(замечания)
+
+    def test_разобравшиеся_файлы_замечаний_не_дают(self):
+        """Обратная половина: список, непустой всегда, ничего не значит."""
+        import fragmos
+        замечания = []
+        fragmos.generate_xml(None, 'python',
+                             files=[('a.py', self.CODE), ('b.py', self.OTHER)],
+                             warnings=замечания)
+        self.assertEqual(замечания, [])
+
 
 if __name__ == '__main__':
     unittest.main()

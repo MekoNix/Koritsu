@@ -9,20 +9,22 @@ hokoku (報告 — «отчёт») — отчёты из DOCX-шаблонов �
   build_report(job, …)                   → задание JSON → отчёт и результат JSON (wire.py)
   manifest_from_template(template)       → манифест шаблона: тип и промпт на каждый тег
   manifest_schema(manifest)              → JSON Schema всего ответа: {ключ тега: схема типа}
-  validate(template, values, manifest)   → [проблема] до сборки: типы, лимиты, {ref:} в никуда
+  validate(template, values, manifest)   → [Problem] до сборки: типы, лимиты, {ref:} в никуда
   blank_document()                       → Document с нуля: стили, поля, номера страниц (шаблона нет)
-  check_template(template)               → [проблема] шаблона: нет стилей, полей шире листа
+  check_template(template)               → [Problem] шаблона: нет стилей, полей шире листа
   style_from_sample(sample)              → StyleProfile — оформление чужого готового отчёта (не шаблона!)
   apply_style(doc, profile)              → наложить это оформление на наш документ
   outline_from_sample(sample)            → [{level, text, number}] — строение примера, не оформление
 
 Значения — типизированные (model.py): Text, Markdown, Code, Image, Diagram, Table, Formula, Toc, Blocks, PageBreak.
+Замечания — `Problem` (`kyotsu.Notice` плюс тег): одна форма на `validate`, `check_manifest`,
+`check_template` и предупреждения `build_report`; в JSON уезжает `to_dict()`.
 Оформление — styles.yaml (render(..., style={...}) перегружает).
 Inline-значения подставляются внутрь runs, не трогая форматирование соседей;
 блочные — новыми абзацами после абзаца с тегом.
 """
-from .model import (Blocks, Code, Diagram, Formula, Image, Markdown, PageBreak, RenderResult, Table, Tag,
-                    Text, Toc, HokokuError, Value)
+from .model import (Blocks, Code, Diagram, Formula, Image, Markdown, PageBreak, Problem, RenderResult,
+                    Table, Tag, Text, Toc, HokokuError, Value)
 from .tags import extract_tags
 from .render import render
 from .safety import validate_docx, DocxValidationError, safe_name
@@ -44,7 +46,7 @@ from .sample import (HeadingLook, SampleError, StyleProfile, apply_heading_numbe
 
 __all__ = [
     "Text", "Markdown", "Code", "Image", "Diagram", "Table", "Formula", "Toc", "Blocks", "PageBreak", "Value",
-    "Tag", "RenderResult", "HokokuError",
+    "Tag", "RenderResult", "HokokuError", "Problem",
     "extract_tags", "render", "docx_to_pdf", "docx_bytes_to_pdf",
     "validate_docx", "DocxValidationError", "safe_name",
     "WIRE_VERSION", "VALUE_TYPES", "count_pages", "WireError", "value_from_json", "value_to_json",

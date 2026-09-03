@@ -340,14 +340,14 @@ def _accept(project, manifest, key: str, value_json: dict, *, run, result, parts
                        problems=[_problem("wire", key, exc.detail)])
 
     problems = _check(template, manifest, key, typed, others)
-    hard = [p for p in problems if p.get("level") == "error"]
+    hard = [p for p in problems if p.level == "error"]
     if hard:
         # Жёсткая беда версии не заводит: история значения не должна собирать
         # то, к чему «Вернуть» возвращаться не имеет права.
         return TagFill(key=key, ok=False, value=value_json, stop=stop, usage=usage,
                        problems=problems)
 
-    flags = [*extra_flags] + [f"{p['code']}: {p['message']}" for p in problems]
+    flags = [*extra_flags] + [f"{p.code}: {p.message}" for p in problems]
     version = project.set_value(
         key, value_json, source="agent", run=run.id, flags=flags,
         meta={"endpoint": run.endpoint,
@@ -375,7 +375,7 @@ def _check(template, manifest, key: str, typed, others: dict) -> list:
     except Exception as exc:                       # noqa: BLE001 — шаблон чужой
         return [_problem("validate_failed", key,
                          f"проверка значения не удалась: {type(exc).__name__}: {exc}")]
-    return [p for p in problems if p.get("key") == key]
+    return [p for p in problems if p.key == key]
 
 
 def _held_by(project, key: str) -> str | None:
@@ -471,14 +471,19 @@ def _why(result) -> str:
     return f"вызов не удался (stop={result.stop})"
 
 
-def _problem(code: str, key, message: str, level: str = "error") -> dict:
-    """Форма записи та же, что у `hokoku.validate` и `check_manifest`.
+def _problem(code: str, key, message: str, level: str = "error") -> hokoku.Problem:
+    """Замечание службы. Запись та же, что у `hokoku.validate` и `check_manifest`.
 
-    Один канал замечаний на три пакета: интерфейс разбирает `{module, level,
-    code, key, message}` и не должен знать, кто именно ругнулся.
+    Один канал замечаний на все пакеты (`kyotsu.Notice`, а с тегом —
+    `hokoku.Problem`): интерфейс разбирает `module`, `level`, `code`, `key`,
+    `message` и не должен знать, кто именно ругнулся. `module` здесь
+    `orchestrator` — по нему и видно, что беда не в значении, а в прогоне.
+
+    Своего такого же класса служба не заводит: два одинаковых dataclass'а — это
+    два места, где чинить одно и то же поле, и ровно так каналы и разъезжались.
     """
-    return {"module": "orchestrator", "level": level, "code": code, "key": key,
-            "message": message}
+    return hokoku.Problem(module="orchestrator", level=level, code=code, key=key,
+                          message=message)
 
 
 __all__ = ["TagFill", "RunResult", "fill_tag", "fill_report"]

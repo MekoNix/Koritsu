@@ -336,7 +336,9 @@ class CSharpAST(ASTGenerator):
         Блок «goto case N» сам по себе ничего не говорит о потоке: раньше
         схема на нём просто обрывалась. Подставляем вместо него копию тела
         цели — так поток на схеме честный. Если цель не нашлась или case-ы
-        ссылаются друг на друга по кругу, блок остаётся как был.
+        ссылаются друг на друга по кругу, блок остаётся как был — и об этом
+        говорится вслух (`self._warn`): схема в этом месте обрывается, а
+        обрыв, о котором не сказано, читается как «дальше ничего нет».
         """
         by_pattern: dict = {}
         for c in cases:
@@ -347,11 +349,20 @@ class CSharpAST(ASTGenerator):
             body = case['body']
             if not body or body[-1].get('type') != 'process':
                 return
-            m = _GOTO_CASE_RE.match((body[-1].get('value') or '').strip())
+            текст = (body[-1].get('value') or '').strip()
+            m = _GOTO_CASE_RE.match(текст)
             if m is None:
                 return
             target = by_pattern.get('_' if m.group('default') else m.group('pat').strip())
-            if target is None or id(target) in seen:
+            if target is None:
+                self._warn("goto_case_unresolved",
+                           f"в схему не вошло: {текст!r} — случая с таким образцом "
+                           f"в switch нет, поток на этом блоке обрывается")
+                return
+            if id(target) in seen:
+                self._warn("goto_case_unresolved",
+                           f"в схему не вошло: {текст!r} — случаи ссылаются друг на "
+                           f"друга по кругу, подставить тело цели нечем")
                 return
             resolve(target, seen | {id(target)})
             body[-1:] = deepcopy(target['body'])

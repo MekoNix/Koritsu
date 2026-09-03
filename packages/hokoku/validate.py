@@ -8,10 +8,11 @@ validate — значения против шаблона и манифеста,
 в коде — `report.HARD_LIMITS` (2000 строк) — защита от абсурда, а не от ошибки.
 
 Проверка возвращает список, а не бросает на первой беде: модель должна получить все
-замечания за один повтор, а человек — увидеть их разом. Форма записи та же, что
-у `check_manifest` и предупреждений `build_report` ({module, level, code, key, message}),
-плюс машиночитаемые `expected` и `got`: проблему показывают в интерфейсе и отдают
-модели, и разбирать прозу ни тому, ни другому нечем.
+замечания за один повтор, а человек — увидеть их разом. Запись — `model.Problem`,
+то есть общая на проект форма замечания (`kyotsu.Notice`: module, level, code,
+message) плюс тег и машиночитаемые `expected`/`got`: проблему показывают в
+интерфейсе и отдают модели, и разбирать прозу ни тому, ни другому нечем. Та же
+запись у `check_manifest`, `check_template` и предупреждений `build_report`.
 
 Уровни:
   error   — собирать нельзя: render либо упадёт (пустое значение), либо соберёт не то;
@@ -28,8 +29,8 @@ import difflib
 
 from . import markdown as md
 from .manifest import Manifest, default_spec
-from .model import (Blocks, Code, Diagram, Formula, Image, Markdown, PageBreak, Table,
-                    Text, Toc)
+from .model import (Blocks, Code, Diagram, Formula, Image, Markdown, PageBreak, Problem,
+                    Table, Text, Toc)
 from .render import REF_TEXT_RE, _empty_value
 from .report import _chars
 from .tags import extract_tags, norm_key
@@ -53,7 +54,7 @@ def _check_types() -> None:
 _check_types()
 
 
-def validate(template, values: dict, manifest: Manifest) -> list[dict]:
+def validate(template, values: dict, manifest: Manifest) -> list[Problem]:
     """Значения против тегов шаблона и записей манифеста → список проблем.
 
     Пустой список означает ровно одно: `build_report` соберёт из этих значений тот отчёт,
@@ -67,7 +68,7 @@ def validate(template, values: dict, manifest: Manifest) -> list[dict]:
     tags = {t.key: t for t in extract_tags(template)}
     values = {norm_key(str(k)): v for k, v in values.items()}   # ключи в NFC с обеих сторон
     filled = {k for k, v in values.items() if v is not None and not _empty_value(v)}
-    out: list[dict] = []
+    out: list[Problem] = []
     for key in values:
         if key not in tags:
             # опечатка в ключе (в том числе у модели) молча теряла целое значение
@@ -80,8 +81,8 @@ def validate(template, values: dict, manifest: Manifest) -> list[dict]:
     return out
 
 
-def _tag(key: str, spec, values: dict, filled: set, tags: dict) -> list[dict]:
-    out: list[dict] = []
+def _tag(key: str, spec, values: dict, filled: set, tags: dict) -> list[Problem]:
+    out: list[Problem] = []
     for dep in spec.depends_on:
         if dep not in tags:
             out.append(_p("error", "depends_on_missing", key,
@@ -209,7 +210,7 @@ def _headings(v) -> list[str]:
 
 # ── ссылки {ref:имя} ──────────────────────────────────────────────────────────
 
-def _refs(values: dict, tags: dict) -> list[dict]:
+def _refs(values: dict, tags: dict) -> list[Problem]:
     """`{ref:имя}` мимо цели render превращает в «?» прямо в тексте отчёта — беда видна
     только глазами и только на готовом документе.
 
@@ -219,7 +220,7 @@ def _refs(values: dict, tags: dict) -> list[dict]:
     known = set(tags)
     for v in values.values():
         known |= _own_refs(v)
-    out: list[dict] = []
+    out: list[Problem] = []
     for key, v in values.items():
         for name in dict.fromkeys(REF_TEXT_RE.findall(_ref_text(v))):
             if name not in known:
@@ -277,13 +278,9 @@ def _caption(v) -> str:
 
 # ── запись о проблеме ─────────────────────────────────────────────────────────
 
-def _p(level: str, code: str, key: str, message: str, *, expected=None, got=None) -> dict:
-    out = {"module": "hokoku", "level": level, "code": code, "key": key, "message": message}
-    if expected is not None:
-        out["expected"] = expected
-    if got is not None:
-        out["got"] = got
-    return out
+def _p(level: str, code: str, key: str, message: str, *, expected=None, got=None) -> Problem:
+    return Problem(module="hokoku", level=level, code=code, key=key, message=message,
+                   expected=expected, got=got)
 
 
 def _hint(name: str, known) -> str:

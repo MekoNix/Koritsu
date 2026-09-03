@@ -503,13 +503,35 @@ def test_имя_модели_не_из_списка_даёт_предупреж�
     result, rec = _проба(ответы)
     assert result.ok                                  # проба всё равно прошла
     assert result.model_listed is False
-    предупреждение = " ".join(result.warnings)
+    предупреждение = " ".join(n.message for n in result.warnings)
     assert "deepseek-chat" in предупреждение
     # Предупреждение без «а как надо» отправляет человека за списком руками:
     # похожее имя подсказывается прямо здесь.
     assert "deepseek-chat-v3.2" in предупреждение
     шаг = [ш for ш in result.steps if ш["step"] == "models"][0]
     assert шаг["ok"] is False
+
+
+def test_предупреждение_пробы_той_же_формы_что_у_остальных():
+    """До 2.0.0a4.2 здесь лежала голая строка: ни уровня, ни кода, отобрать
+    нечем, а в `--json` уезжала проза.
+
+    Форма теперь общая на проект (`kyotsu.Notice`), и текст никуда не делся —
+    он в `message`. Проверяется и `to_dict()`: `--json` зовут из скриптов,
+    и разбирать они будут именно его.
+    """
+    import kyotsu
+
+    ответы = _ответы_пробы()
+    ответы[0] = json_response({"data": [{"id": "deepseek-chat-v3.2"}]})
+    result, rec = _проба(ответы)
+    [замечание] = result.warnings
+    assert isinstance(замечание, kyotsu.Notice)
+    assert (замечание.module, замечание.level, замечание.code) == (
+        "llm", "warning", "model_not_listed")
+    запись = замечание.to_dict()
+    assert set(запись) == {"module", "level", "code", "message"}
+    assert "deepseek-chat" in запись["message"]
 
 
 def test_имя_модели_из_списка_предупреждений_не_даёт():
@@ -663,7 +685,7 @@ def test_посредник_помечает_пробу_как_измеренн�
     ответы[0] = json_response({"data": [{"id": spec.model}]})
     result, rec = _проба(ответы, spec=spec)
     assert result.provider_routed is True
-    assert any("посредник" in текст for текст in result.warnings)
+    assert any("посредник" in n.message for n in result.warnings)
     llm.register_endpoint(spec)
     llm.update_probe(spec.id, result)
     caps = llm.capabilities(spec.id)
@@ -694,7 +716,7 @@ def test_фактический_поставщик_из_ответа_запис�
     # Названный исполнитель доказывает маршрутизацию даже там, где её не
     # объявляли: заявке пресета такое известно быть не обязано.
     assert result.provider_routed is True
-    assert any("DeepInfra" in текст for текст in result.warnings)
+    assert any("DeepInfra" in n.message for n in result.warnings)
 
 
 def test_поле_provider_не_строкой_поставщиком_не_считается():

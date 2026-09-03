@@ -1,9 +1,15 @@
 """
-build — `python -m hokoku.build job.json --artifacts DIR --out DIR`.
+build — `python -m hokoku.build job.json --artifacts DIR [--out DIR]`.
 
 Тонкий скрипт: прочитать задание, позвать build_report, напечатать результат. Никакой
 логики сверх разбора аргументов и двух колбэков поверх плоского каталога — вся сборка
 живёт в report.py, чтобы очередь, скрипт и endpoint не разошлись в умолчаниях.
+
+Два режима `build_report` видны и здесь. С `--out DIR` готовые файлы кладутся туда под
+человеческими именами (`workdir`); без него они уезжают в `--artifacts` под именем
+из содержимого, и в результате стоят идентификаторы (`store_artifact`) — то же самое,
+что увидит служба, когда у неё появится настоящее хранилище. Ровно один из режимов:
+`--artifacts` при этом нужен всегда, из него берутся шаблон и картинки.
 
 Результат JSON — на stdout, всё человеческое — на stderr: тогда
 `python -m hokoku.build job.json --artifacts a --out . | jq .refs` работает без флагов.
@@ -15,6 +21,7 @@ build — `python -m hokoku.build job.json --artifacts DIR --out DIR`.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -37,12 +44,31 @@ def _resolver(root: str | None):
     return resolve
 
 
+def _storer(root: str | None):
+    """store_artifact поверх того же плоского каталога: имя артефакта — от содержимого.
+
+    Не `otchet.docx` и не `name`: идентификатор в хранилище обязан пройти ARTIFACT_RE,
+    а `options.name` его не обязан — кириллица и пробелы там законны. Хэш годится
+    всегда и заодно не даёт двум прогонам затереть друг друга.
+    """
+    def store(name: str, data: bytes, kind: str) -> str:
+        if root is None:
+            raise FileNotFoundError("каталог артефактов не задан (--artifacts)")
+        art_id = f"af_{hashlib.sha256(data).hexdigest()[:32]}.{kind}"
+        os.makedirs(root, exist_ok=True)
+        with open(safe_join(root, art_id), "wb") as f:
+            f.write(data)
+        return art_id
+    return store
+
+
 def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="python -m hokoku.build",
                                  description="Собрать отчёт по заданию JSON.")
     ap.add_argument("job", nargs="?", help="файл задания (с --stdin не нужен)")
     ap.add_argument("--artifacts", metavar="DIR", help="плоский каталог артефактов: DIR/<id>")
-    ap.add_argument("--out", metavar="DIR", required=True, help="куда класть готовые файлы")
+    ap.add_argument("--out", metavar="DIR",
+                    help="куда класть готовые файлы; без него они уедут в --artifacts")
     ap.add_argument("--pretty", action="store_true", help="результат с отступами")
     ap.add_argument("--stdin", action="store_true", help="задание со стандартного ввода")
     return ap
@@ -62,8 +88,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"задание не прочиталось: {e}", file=sys.stderr)
         return 2
 
+    sink = ({"workdir": args.out} if args.out is not None
+            else {"store_artifact": _storer(args.artifacts)})
     try:
-        result = build_report(job, resolve_artifact=_resolver(args.artifacts), workdir=args.out)
+        if args.out is None and not args.artifacts:
+            raise ValueError("нужен --out или --artifacts: готовые файлы девать некуда")
+        result = build_report(job, resolve_artifact=_resolver(args.artifacts), **sink)
     except (ValueError, NotImplementedError) as e:           # так позвали, а не так собралось
         print(f"так звать нельзя: {e}", file=sys.stderr)
         return 2
@@ -74,8 +104,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"не собралось: {result['error']['code']} — {result['error']['message']}",
               file=sys.stderr)
         return 1
-    files = ", ".join(o["file"] for o in result["outputs"].values())
-    print(f"собрано: {files or '(ничего не просили)'} в {os.path.abspath(args.out)}; "
+    files = ", ".join(o.get("file") or o["artifact"] for o in result["outputs"].values())
+    where = os.path.abspath(args.out if args.out is not None else args.artifacts)
+    print(f"собрано: {files or '(ничего не просили)'} в {where}; "
           f"незаполненных тегов {len(result['unfilled'])}, ошибок {len(result['errors'])}",
           file=sys.stderr)
     return 0

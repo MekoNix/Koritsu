@@ -12,9 +12,14 @@ report — build_report: чистый JSON внутрь, чистый JSON на�
 on_error="skip", strict_paths=True, короткий таймаут схемы, validate_docx всегда.
 
 Готовые файлы наружу байтами не отдаём: тогда результат перестал бы быть JSON, его нельзя
-было бы ни в журнал записать, ни в очередь положить, ни отдать по HTTP как есть. Вызывающий
-называет каталог (`workdir`) и получает в ответе имена файлов; `store_artifact` — точка
-расширения под хранилище, оно появится вместе с самим хранилищем.
+было бы ни в журнал записать, ни в очередь положить, ни отдать по HTTP как есть. Отсюда два
+режима, ровно один за вызов: `workdir` — вызывающий называет каталог и получает в ответе
+имена файлов; `store_artifact` — вызывающий даёт функцию `(name, data, kind) -> artifact_id`,
+байты уезжают в его хранилище, а в ответе идентификаторы и ни одного пути.
+
+Хранилища внутри `hokoku` нет и не будет: пакет остаётся библиотекой без состояния. Про
+`materials`, `out/` и SQLite он не знает ничего — знает только, что байты кому-то отдал и
+получил взамен строку, которая проходит `ARTIFACT_RE` и потому годится обратно во вход.
 """
 from __future__ import annotations
 
@@ -23,14 +28,14 @@ import hashlib
 import os
 import time
 
-from .model import (Blocks, Code, Diagram, Formula, HokokuError, Image, Markdown, Table,
+from .model import (Blocks, Code, Diagram, Formula, HokokuError, Image, Markdown, Problem, Table,
                     Text, Toc)
-from .pdf import docx_to_pdf
+from .pdf import docx_bytes_to_pdf
 from .render import render
 from .safety import DocxValidationError, safe_name, validate_docx
 from .styles import get_style
 from .tags import extract_tags
-from .wire import WIRE_VERSION, WireError, values_from_json
+from .wire import ARTIFACT_RE, WIRE_VERSION, WireError, values_from_json
 
 # Потолки нужны (модель попросит таблицу на 10 000 строк не задумываясь), но щедрые: ни один
 # не должен срабатывать на обычном отчёте — журнал замеров на 300 строк это обычный отчёт
@@ -63,26 +68,37 @@ class _JobError(Exception):
 def build_report(job: dict, *,
                  resolve_artifact,                  # (artifact_id) -> bytes; обязателен
                  store_artifact=None,               # (name, data, kind) -> artifact_id
-                 workdir: str | None = None,        # куда класть файлы, пока хранилища нет
+                 workdir: str | None = None,        # куда класть файлы, если хранилища нет
                  images_dir: str | None = None,     # каталог файлов проекта для ![](имя)
                  ) -> dict:
     """Задание JSON → результат JSON. Ровно один из `store_artifact` и `workdir`.
+
+    Два режима — не удобство, а развилка «чистый JSON наружу» против «ни хранилища
+    внутри»: готовый DOCX это байты, а байты нельзя ни положить в JSON, ни назвать
+    идентификатором, не имея хранилища. `workdir` — путь скрипта и лаборатории
+    (`outputs.docx.file`, имя без пути), `store_artifact` — путь службы
+    (`outputs.docx.artifact`, и на диске рядом с вызывающим не появляется ничего).
+
+    Задать оба сразу или ни одного — `ValueError`, а не догадка: молча выбранный режим
+    это готовый отчёт, оставшийся не там, где его будут искать.
 
     `ok` означает ровно одно: DOCX собран. Отчёт с тремя записями в `errors` и одним
     `unfilled` — это `ok: true`: файл есть, и его можно показать человеку с пометками.
     """
     t0 = time.perf_counter()
-    if (store_artifact is None) == (workdir is None):
-        raise ValueError("нужен ровно один из store_artifact и workdir")
-    if store_artifact is not None:
-        raise NotImplementedError(
-            "store_artifact — точка расширения под хранилище, которого ещё нет; "
-            "сейчас поддержан режим workdir (в ответе имена файлов, а не идентификаторы)")
+    if store_artifact is not None and workdir is not None:
+        raise ValueError("нужен ровно один из store_artifact и workdir, а заданы оба: "
+                         "workdir кладёт файлы в каталог, store_artifact — в хранилище")
+    if store_artifact is None and workdir is None:
+        raise ValueError("нужен ровно один из store_artifact и workdir, а не задан ни один: "
+                         "готовый DOCX это байты, и деть их без одного из двух некуда")
+    if store_artifact is not None and not callable(store_artifact):
+        raise ValueError("store_artifact — функция (name, data, kind) -> artifact_id")
     if not callable(resolve_artifact):
         raise ValueError("resolve_artifact обязателен: байты шаблона и картинок брать больше неоткуда")
     timings: dict = {}
     try:
-        return _build(job, resolve_artifact, workdir, images_dir, t0, timings)
+        return _build(job, resolve_artifact, store_artifact, workdir, images_dir, t0, timings)
     except _JobError as e:
         out = {"ok": False, "wire_version": WIRE_VERSION,
                "error": {"code": e.code, "message": str(e)},
@@ -92,7 +108,8 @@ def build_report(job: dict, *,
         return out
 
 
-def _build(job, resolve_artifact, workdir, images_dir, t0, timings) -> dict:
+def _build(job, resolve_artifact, store_artifact, workdir, images_dir, t0,
+           timings) -> dict:
     if not isinstance(job, dict):
         raise _JobError("bad_job", f"задание должно быть объектом JSON, а не {type(job).__name__}")
     _known_keys(job, _JOB_KEYS, "задании")
@@ -138,7 +155,8 @@ def _build(job, resolve_artifact, workdir, images_dir, t0, timings) -> dict:
     errors += [{"key": e.get("key"), "stage": "render", "message": e.get("message")}
                for e in res.errors]
 
-    outputs = _write_outputs(res.data, opts, workdir, t0, errors, timings)
+    outputs = _write_outputs(res.data, opts, store_artifact, workdir, t0,
+                             errors, timings)
     return {"ok": True, "wire_version": WIRE_VERSION, "outputs": outputs,
             "template": template_info,
             "unfilled": list(res.unfilled), "unknown_keys": list(res.unknown_keys),
@@ -146,7 +164,7 @@ def _build(job, resolve_artifact, workdir, images_dir, t0, timings) -> dict:
             "unresolved_refs": list(res.unresolved_refs),
             "counts": {"figures": res.figures, "tables": res.tables, "formulas": res.formulas},
             "timings_ms": _timings(timings, t0),
-            "warnings": _warnings(res, template)}
+            "warnings": [w.to_dict() for w in _warnings(res, template)]}
 
 
 # ── шаблон, опции, потолки ────────────────────────────────────────────────────
@@ -312,31 +330,26 @@ def _caption_chars(v) -> int:
 
 # ── файлы, предупреждения, мелочи ─────────────────────────────────────────────
 
-def _write_outputs(data: bytes, opts: dict, workdir: str, t0: float,
-                   errors: list, timings: dict) -> dict:
-    """Файлы — в каталог, который назвал вызывающий; в ответе имена, а не пути: склеить
-    он умеет сам, а путь на диске в JSON — это то же самое, чего мы не пускаем внутрь."""
-    os.makedirs(workdir, exist_ok=True)
-    docx_name = safe_name(opts["name"], ".docx")
-    docx_path = os.path.join(workdir, docx_name)
-    with open(docx_path, "wb") as f:
-        f.write(data)
+def _write_outputs(data: bytes, opts: dict, store_artifact, workdir: str | None,
+                   t0: float, errors: list, timings: dict) -> dict:
+    """Готовые байты → в каталог или в хранилище. Ветвится ровно здесь и больше нигде:
+    выше `build_report` про диск не знает, а сборка PDF в обоих режимах одна и та же."""
+    put = _sink(store_artifact, workdir)
     outputs = {}
     if "docx" in opts["outputs"]:
-        outputs["docx"] = {"file": docx_name, "bytes": len(data),
-                           "sha256": hashlib.sha256(data).hexdigest()}
+        outputs["docx"] = put(safe_name(opts["name"], ".docx"), data, "docx")
     if "pdf" in opts["outputs"]:
-        pdf_name = safe_name(opts["name"], ".pdf")
-        pdf_path = os.path.join(workdir, pdf_name)
         mark = time.perf_counter()
-        left = opts["timeouts"]["total"] - (time.perf_counter() - t0)
         try:
+            left = opts["timeouts"]["total"] - (time.perf_counter() - t0)
             if left <= 0:
                 raise HokokuError("бюджет задания вышел до сборки PDF (timeouts.total)")
-            docx_to_pdf(docx_path, pdf_path, timeout=min(opts["timeouts"]["pdf"], left))
-            pdf = open(pdf_path, "rb").read()
-            outputs["pdf"] = {"file": pdf_name, "bytes": len(pdf),
-                              "sha256": hashlib.sha256(pdf).hexdigest()}
+            pdf = docx_bytes_to_pdf(data, timeout=min(opts["timeouts"]["pdf"], left))
+            outputs["pdf"] = put(safe_name(opts["name"], ".pdf"), pdf, "pdf")
+        except _JobError:
+            # хранилище не приняло байты — это не «PDF не собрался», это отказ службы,
+            # и глотать его в errors нельзя: следом за ним соврёт и docx.artifact
+            raise
         except Exception as e:                               # noqa: BLE001 — DOCX уже собран
             # PDF не собрался (нет LibreOffice, таймаут) — ронять из-за этого готовый DOCX нельзя
             if opts["on_error"] == "raise":
@@ -346,11 +359,52 @@ def _write_outputs(data: bytes, opts: dict, workdir: str, t0: float,
     return outputs
 
 
-def _warnings(res, template: bytes) -> list[dict]:
-    """Единый канал предупреждений на три пакета: {module, level, code, message} плюс key,
-    где это про тег. Ошибкой это не является: набор значений может быть шире шаблона
-    (переключили шаблон, значения остались), а битая ссылка видна в готовом документе."""
-    out = []
+def _sink(store_artifact, workdir: str | None):
+    """(имя, байты, вид) → запись `outputs`. Два режима, одна форма ответа с точностью
+    до одного ключа: `file` против `artifact`, а `bytes` и `sha256` общие — тому, кто
+    показывает результат человеку, режим знать незачем."""
+    if store_artifact is None:
+        os.makedirs(workdir, exist_ok=True)
+
+        def to_dir(name: str, data: bytes, kind: str) -> dict:
+            # в ответе имя, а не путь: каталог назвал вызывающий, склеить он умеет сам,
+            # а путь на диске в JSON — то же самое, чего мы не пускаем внутрь
+            with open(os.path.join(workdir, name), "wb") as f:
+                f.write(data)
+            return {"file": name, **_digest(data)}
+        return to_dir
+
+    def to_store(name: str, data: bytes, kind: str) -> dict:
+        try:
+            art = store_artifact(name, data, kind)
+        except Exception as e:                               # noqa: BLE001 — хранилище чужое
+            raise _JobError("internal", f"store_artifact({name!r}, …, {kind!r}) "
+                                        f"не принял байты: {type(e).__name__}: {e}") from None
+        # Идентификатор проверяем той же регуляркой, что и на входе: возвращённый наружу
+        # он завтра приедет обратно в `values[…].artifact`, и хранилище, отдавшее путь
+        # или строку с «..», сделало бы дырой не себя, а нас.
+        if not isinstance(art, str) or not ARTIFACT_RE.match(art) or ".." in art:
+            raise _JobError("internal", f"store_artifact вернул {art!r} — это не идентификатор "
+                                        "артефакта (буквы, цифры, «_.-», до 64 знаков)")
+        return {"artifact": art, **_digest(data)}
+    return to_store
+
+
+def _digest(data: bytes) -> dict:
+    return {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+
+def _warnings(res, template: bytes) -> list[Problem]:
+    """Единый канал предупреждений проекта: `model.Problem` (он же `kyotsu.Notice`
+    плюс тег). Ошибкой это не является: набор значений может быть шире шаблона
+    (переключили шаблон, значения остались), а битая ссылка видна в готовом документе.
+
+    Наружу (в JSON результата `build_report`) уезжает `to_dict()` — ровно те же
+    ключи, что и раньше: `module`, `level`, `code`, `key`, `message`, `suggest`.
+    Пустой `suggest` остаётся пустым списком, а не исчезает: `[]` значит «похожих
+    тегов не нашлось», и это ответ, а не отсутствие ответа.
+    """
+    out: list[Problem] = []
     if res.unknown_keys:
         try:
             tags = [t.key for t in extract_tags(template)]
@@ -358,11 +412,13 @@ def _warnings(res, template: bytes) -> list[dict]:
             tags = []
         for key in res.unknown_keys:
             near = difflib.get_close_matches(key, tags, n=2, cutoff=0.6)
-            out.append({"module": "hokoku", "level": "warning", "code": "unknown_key", "key": key,
-                        "message": f"значение {key!r} не нашло тега в шаблоне", "suggest": near})
+            out.append(Problem(module="hokoku", level="warning", code="unknown_key", key=key,
+                               message=f"значение {key!r} не нашло тега в шаблоне",
+                               suggest=near))
     for name in res.unresolved_refs:
-        out.append({"module": "hokoku", "level": "warning", "code": "unresolved_ref", "key": name,
-                    "message": f"ссылка {{ref:{name}}} никуда не ведёт: в документе стоит «?»"})
+        out.append(Problem(module="hokoku", level="warning", code="unresolved_ref", key=name,
+                           message=f"ссылка {{ref:{name}}} никуда не ведёт: "
+                                   "в документе стоит «?»"))
     return out
 
 

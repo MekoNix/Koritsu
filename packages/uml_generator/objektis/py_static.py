@@ -13,6 +13,9 @@ py_static — диаграмма объектов из Python-кода БЕЗ е
 
 Циклы, условия (кроме `__main__`) и всё, что не перечислено, пропускаются
 с заметкой в ObjectGraph.notes.
+
+Материалов бывает несколько: точка входа — `source`, соседние файлы — `files`.
+От соседей берутся только объявления, подробности у `extract`.
 """
 from ._trace import ClassDef, Method, Obj, TraceState
 from .model import ObjectGraph
@@ -273,18 +276,65 @@ class _Tracer(TraceState):
                 self.set_slot(owner, self.text(left.child_by_field_name("attribute")), done[key])
 
 
+# Типы операторов, которые у соседнего файла ничего не «выполняют»: объявления,
+# импорты и прочее, чьё отсутствие на схеме — не потеря.
+_ОБЪЯВЛЕНИЯ = ("class_definition", "function_definition", "decorated_definition",
+               "import_statement", "import_from_statement", "comment", "pass_statement",
+               "future_import_statement")
+
+
+def _объявление(st) -> bool:
+    """Оператор соседнего файла, о пропуске которого сообщать не о чем.
+
+    Докстрока модуля разбирается как `expression_statement`, и без этой
+    проверки заметка «код уровня модуля не исполняется» выскакивала бы на любом
+    соседе с шапкой — то есть почти на всех.
+    """
+    if st.type in _ОБЪЯВЛЕНИЯ:
+        return True
+    return (st.type == "expression_statement" and len(st.named_children) == 1
+            and st.named_children[0].type == "string")
+
+
 def extract(source: str, *, files=None) -> ObjectGraph:
+    """Граф объектов по точке входа `source`; `files` — соседние материалы.
+
+    Соседи склеиваются с точкой входа в один текст (так же, как в `cs_static` и
+    `cpp_static`), но трассируется только код точки входа: у Python код уровня
+    модуля исполняется, и запусти мы ещё и модули соседей — на схеме появились
+    бы экземпляры, которых при импорте не возникает. Поэтому от соседей берутся
+    одни объявления: классы и функции, видимые при трассировке входа.
+
+    Чего этот простой вариант не делает: импорты не разрешаются вовсе, так что
+    `import двигатель` + `двигатель.Двигатель(120)` не сработает — имя ищется без
+    квалификатора (`Двигатель(120)`); одноимённые классы из разных файлов
+    сливаются, побеждает последний; `from ... import ... as ...` не переименовывает.
+    """
     if not source or not source.strip():
         return ObjectGraph(notes=["objektis/python: пустой исходник"])
-    from .._ts import get_parser
-    src = source.encode("utf-8")
+    соседи = []
+    if files:
+        соседи = [f.get("code") or f.get("content") or "" for f in files if isinstance(f, dict)]
+    from kyotsu.ts import get_parser
+    вход = source.encode("utf-8")
+    код = "\n".join([source] + [c for c in соседи if c])
+    src = код.encode("utf-8")
     root = get_parser("python").parse(src).root_node
+    конец_входа = len(вход)          # байты за этой границей — соседние файлы
     tr = _Tracer(src)
     tr.collect(root)
     if not tr.classes:
         return ObjectGraph(notes=["objektis/python: в коде нет классов"])
+    свой = []
+    for st in root.named_children:
+        if st.start_byte < конец_входа:
+            свой.append(st)
+        elif not _объявление(st):
+            tr.note("objektis/python: у соседних файлов берутся только объявления — "
+                    "их код уровня модуля не исполняется")
     try:
-        tr.run_block(root)
+        for st in свой:
+            tr.statement(st)
     except Exception as e:  # noqa: BLE001 — уже построенные объекты не выбрасываем
         tr.note(f"objektis/python: трассировка прервана ({type(e).__name__})")
     return tr.graph("objektis/python: экземпляры пользовательских классов не найдены")

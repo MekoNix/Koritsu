@@ -333,6 +333,37 @@ class P { static void F(int c) {
                       cases('switch (x) { case 1: A(); goto case 2; '
                             'case 2: B(); goto case 1; }')[0][1])
 
+    def test_goto_case_без_цели_говорит_вслух(self):
+        """«В схему не вошло» молча — это обрыв ветки, который видит только тот,
+        кто сверяет схему с кодом построчно; на защите этого не делает никто.
+
+        Форма замечания общая на проект (`kyotsu.Notice`): у него есть уровень и
+        код, поэтому его можно показать рядом с замечаниями `hokoku`, а не
+        разбирать прозу.
+        """
+        gen = get_ast_generator('csharp')
+        gen.generate('class P { void M(int x) { switch (x) { '
+                     'case 1: A(); goto case 7; case 2: B(); break; } } }')
+        self.assertEqual([n.code for n in gen.warnings], ['goto_case_unresolved'])
+        n = gen.warnings[0]
+        self.assertEqual((n.module, n.level), ('fragmos', 'warning'))
+        self.assertIn('goto case 7', n.message)
+        self.assertIn('в схему не вошло', n.message)
+
+    def test_goto_case_по_кругу_тоже_замечание(self):
+        """Вторая половина того же: тело подставить нечем, блок остаётся обрывком."""
+        gen = get_ast_generator('csharp')
+        gen.generate('class P { void M(int x) { switch (x) { '
+                     'case 1: A(); goto case 2; case 2: B(); goto case 1; } } }')
+        self.assertTrue(any('по кругу' in n.message for n in gen.warnings))
+
+    def test_разобравшийся_switch_замечаний_не_даёт(self):
+        """Обратная половина: замечание, которое стоит всегда, не значит ничего."""
+        gen = get_ast_generator('csharp')
+        gen.generate('class P { void M(int x) { switch (x) { '
+                     'case 1: A(); goto case 2; case 2: B(); break; } } }')
+        self.assertEqual(gen.warnings, [])
+
     def test_members(self):
         nodes = ast('csharp', '''
 namespace N {

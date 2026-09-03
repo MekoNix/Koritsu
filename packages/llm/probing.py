@@ -40,6 +40,13 @@ probe` затеняет модуль функцией, и `import llm.probe` п�
 здесь) и endpoint оказался посредником (значит измерено на ТОМ прогоне и у
 ТОГО поставщика, а не про endpoint навсегда).
 
+С 2.0.0a4.2 это `kyotsu.Notice` — та же запись, что у замечаний `hokoku` и
+службы, а не голая строка. Строка держалась ровно до первого вопроса «покажи
+всё, что не так»: у неё нет ни уровня, ни кода, поэтому отобрать по ней
+(«только ошибки», «это предупреждение мы уже видели») нечем, а в `--json`
+уезжала проза, которую скрипту приходилось разбирать глазами. Тексты не
+изменились — они переехали в поле `message`.
+
 Попутно проба делает единственную вещь, которую больше сделать негде: уточняет
 коэффициент «символов на токен» (В.3). Только здесь рядом лежат наш собственный
 текст и ИЗМЕРЕННЫЕ токены за него; endpoint без usage иначе навсегда остался бы
@@ -59,6 +66,8 @@ import difflib
 import json
 import sys
 import time
+
+from kyotsu import Notice
 
 from .errors import LlmError
 from .model import (EndpointSpec, OperatorChannel, Part, PrefixCache, Probe,
@@ -218,11 +227,14 @@ def _пометить_посредника(spec: EndpointSpec, result: Probe) ->
         return
     кто = (f"на этом прогоне отвечал {', '.join(result.providers_seen)}"
            if result.providers_seen else "ответ фактического поставщика не назвал")
-    result.warnings.append(
-        f"endpoint — посредник: за одним именем модели у него может стоять "
-        f"разный поставщик, и умеют они разное ({кто}). Всё измеренное пробой "
-        f"описывает тот прогон и того поставщика, а не endpoint навсегда — "
-        f"перепроверять при смене модели и после долгих перерывов")
+    # Код назван по полю, которое эта же проба ставит (`Probe.provider_routed`):
+    # второго имени у одного и того же знания быть не должно.
+    result.warnings.append(Notice(
+        module="llm", level="warning", code="provider_routed",
+        message=f"endpoint — посредник: за одним именем модели у него может стоять "
+                f"разный поставщик, и умеют они разное ({кто}). Всё измеренное пробой "
+                f"описывает тот прогон и того поставщика, а не endpoint навсегда — "
+                f"перепроверять при смене модели и после долгих перерывов"))
 
 
 def _учесть(сбор: dict, chars: int, usage) -> None:
@@ -290,11 +302,12 @@ def _step_models(backend, result: Probe) -> tuple:
         result.model_listed = False
         похожие = _похожие_имена(backend.spec.model, names)
         подсказка = f"; похожие в списке: {', '.join(похожие)}" if похожие else ""
-        result.warnings.append(
-            f"имя модели {backend.spec.model!r} не найдено среди {len(names)} "
-            f"моделей, которые отдаёт API endpoint'а{подсказка}. Вызовы могут "
-            f"проходить и сейчас, но переименование у поставщика мы тогда узнаем "
-            f"отказом на боевом вызове — сверь имя в пресете")
+        result.warnings.append(Notice(
+            module="llm", level="warning", code="model_not_listed",
+            message=f"имя модели {backend.spec.model!r} не найдено среди {len(names)} "
+                    f"моделей, которые отдаёт API endpoint'а{подсказка}. Вызовы могут "
+                    f"проходить и сейчас, но переименование у поставщика мы тогда узнаем "
+                    f"отказом на боевом вызове — сверь имя в пресете"))
         return False, (f"модели {backend.spec.model!r} нет в списке "
                        f"({len(names)} шт.){подсказка}; работать всё равно попробуем")
     result.model_listed = True
@@ -679,7 +692,7 @@ def _report(spec: EndpointSpec, result: Probe) -> str:
         # строки таблицы, читается как примечание к строке, а эти относятся ко
         # всей пробе целиком.
         lines += ["", "предупреждения (пробу не отменяют, молчать о них нельзя):"]
-        lines += [f"  ! {текст}" for текст in result.warnings]
+        lines += [f"  ! {n.message}" for n in result.warnings]
     return "\n".join(lines)
 
 
@@ -755,7 +768,11 @@ def main(argv=None) -> int:
                    # Предупреждения в JSON обязаны быть: с --json отчёт не
                    # печатается вовсе, и без них расхождение имени модели
                    # исчезло бы ровно в том режиме, которым зовут из скриптов.
-                   "warnings": list(result.warnings),
+                   # Форма — общая на проект (`kyotsu.Notice.to_dict`), а не
+                   # строка: с 2.0.0a4.2 у каждого предупреждения есть `module`,
+                   # `level` и `code`, по которым скрипт отбирает, а прежний
+                   # текст лежит в `message`.
+                   "warnings": [n.to_dict() for n in result.warnings],
                    "chars_per_token": result.chars_per_token,
                    "latency_ms": result.latency_ms, "steps": result.steps}
         print(json.dumps(payload, ensure_ascii=False, indent=2))

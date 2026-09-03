@@ -59,7 +59,7 @@ def test_сборка_кладёт_документ_и_считает_замеч
     тексты = [p.text for p in Document(путь).paragraphs]
     assert any("Цель — сравнить алгоритмы." in t for t in тексты)
     assert итог["report"]["unfilled"] == []
-    assert [p for p in итог["problems"] if p["level"] == "error"] == []
+    assert [p for p in итог["problems"] if p.level == "error"] == []
 
 
 def test_полная_проверка_видит_то_чего_не_видит_проверка_одного_тега(project):
@@ -67,7 +67,7 @@ def test_полная_проверка_видит_то_чего_не_видит_
     перед сборкой — это ответ на вопрос «годен ли отчёт»."""
     project.set_value("цель", ЦЕЛЬ, source="manual")
     беды = orchestrator.check(project)
-    коды = {(p["key"], p["code"]) for p in беды}
+    коды = {(p.key, p.code) for p in беды}
     assert ("введение", "missing_required") in коды
     assert ("таблица", "missing_required") in коды
     assert ("цель", "missing_required") not in коды
@@ -82,7 +82,7 @@ def test_модель_заполнила_отчёт_и_он_собрался(pro
 
     итог = orchestrator.build(project)
     assert итог["ok"] is True
-    assert [p for p in итог["problems"] if p["level"] == "error"] == []
+    assert [p for p in итог["problems"] if p.level == "error"] == []
     путь = os.path.join(итог["workdir"], итог["report"]["outputs"]["docx"]["file"])
     тексты = "\n".join(p.text for p in Document(путь).paragraphs)
     assert "Постановка задачи." in тексты
@@ -99,7 +99,7 @@ def test_сборка_не_срывается_из_за_негодного_зн�
     project.set_value("таблица", ТАБЛИЦА, source="manual")
     итог = orchestrator.build(project)
     assert итог["ok"] is True
-    assert any(p["code"] == "unresolved_ref" for p in итог["problems"])
+    assert any(p.code == "unresolved_ref" for p in итог["problems"])
 
 
 def test_картинка_из_материалов_доезжает_до_документа(project, tmp_path):

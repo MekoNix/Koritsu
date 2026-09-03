@@ -41,6 +41,12 @@ class AgentResult:
     Разделение то же, что у `RunResult` уровня 2, и по той же причине: прогон,
     в котором модель поставила два тега из трёх и закончила, кончился штатно, а
     прогон, упёршийся в потолок ходов, — нет, хотя в обоих часть тегов пуста.
+
+    `problems` — записи общей формы (`kyotsu.Notice`), и разбирать их надо по
+    общим полям. Про тег там `hokoku.Problem` (есть `key`), про схему —
+    замечание `fragmos` (есть `file`, ключа нет: он о схеме, а не о теге).
+    Требовать `key` от каждой записи значит требовать, чтобы всякая беда была
+    про тег, — а прогон, оборвавшийся связью, не про тег.
     """
 
     run: object
@@ -91,7 +97,7 @@ def fill_agent(project, *, endpoint: str, keys=None, chunks=(), max_steps=None,
         if not wanted and kept:
             raise OrchestratorError(
                 "все запрошенные теги написаны не моделью: "
-                + ", ".join(repr(p["key"]) for p in kept)
+                + ", ".join(repr(p.key) for p in kept)
                 + ". Переписать — overwrite=True")
     if not wanted:
         raise OrchestratorError("нечего просить у модели: ни одного заполняемого тега")

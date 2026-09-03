@@ -11,9 +11,39 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from kyotsu import Notice
+
 
 class HokokuError(Exception):
     """Ошибка рендера: битое значение, недоступный файл, неверный шаблон."""
+
+
+@dataclass(frozen=True)
+class Problem(Notice):
+    """Замечание о теге: общая форма (`kyotsu.Notice`) плюс то, что есть у тега.
+
+    Тремя записями `{module, level, code, key, message}` пакет отвечал и раньше
+    (`validate`, `check_manifest`, `check_template`, предупреждения
+    `build_report`), но собирались они тремя почти одинаковыми функциями, и
+    ключи у них расходились по одному: `suggest` был только у `build_report`,
+    `expected`/`got` — только у `validate`. Здесь форма одна, а `to_dict()`
+    достаётся от `Notice` и сам кладёт в JSON поля подкласса — старые ключи
+    остались теми же.
+
+    `key` — ключ тега, а у `check_template` ещё и «section 2»: беда там не про
+    тег, а про секцию шаблона, и называть её нечем другим. Пустой `key`
+    (`None`) в JSON не попадает: беды бывают и не про тег.
+
+    `expected`/`got` — машиночитаемое «ждали / получили»: их показывают в
+    интерфейсе и отдают модели, и разбирать ради этого прозу нечем.
+    `suggest` — похожие имена («не `цел`, а `цель`»): предупреждение без «а как
+    надо» заставляет идти за списком тегов руками.
+    """
+
+    key: str | None = None
+    expected: str | None = None
+    got: str | None = None
+    suggest: list | None = None
 
 
 @dataclass

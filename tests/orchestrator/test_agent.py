@@ -59,9 +59,10 @@ from .conftest import LOOSE, journal_lines, script, set_prompts
     "список.добавить(первая)\n"
 )
 
-# C# нужен там, где проверяется склейка нескольких материалов: `py_static`
-# соседние файлы не читает вовсе, а `cs_static` склеивает вход с соседями в
-# один текст — и именно на этой склейке видно, разобрали вход один раз или два.
+# C# нужен там, где проверяется склейка нескольких материалов: `cs_static`
+# склеивает вход с соседями в один текст — и именно на этой склейке видно,
+# разобрали вход один раз или два. С 2.0.0a4.2 соседей видит и `py_static`,
+# но по-своему: у соседей берутся только объявления (PY_ВХОД / PY_БИБЛИОТЕКА).
 CS_ВЕРХНИЙ_УРОВЕНЬ = (
     "class Двигатель { public int Мощность; "
     "public Двигатель(int м) { Мощность = м; } }\n"
@@ -72,6 +73,13 @@ CS_ГЛАВНЫЙ = ("class Программа { static void Main() { "
               "Двигатель д = new Двигатель(120); } }\n")
 CS_БИБЛИОТЕКА = ("class Двигатель { public int Мощность; "
                  "public Двигатель(int м) { Мощность = м; } }\n")
+
+# Python: класс в одном материале, экземпляр — в другом. Обычная раскладка
+# студенческой работы, до 2.0.0a4.2 дававшая пустую схему без объяснений.
+PY_ВХОД = "д = Двигатель(120)\n"
+PY_БИБЛИОТЕКА = ("class Двигатель:\n"
+                 "    def __init__(self, мощность):\n"
+                 "        self.мощность = мощность\n")
 
 
 # ── оснастка ─────────────────────────────────────────────────────────────────
@@ -186,6 +194,69 @@ def test_цепочка_инструментов_доводит_схему_до_
                     "set_tag", "set_tag", "preview"]
 
 
+def test_чего_не_вошло_в_схему_доезжает_до_отчёта(project, agent_endpoint):
+    """«В схему не вошло: goto case» — от `fragmos` до проверки перед сборкой.
+
+    Три места, и все три нужны разным: ответ инструмента — модели (ей решать,
+    ставить ли такую схему), `problems` прогона — человеку сейчас, замечание
+    рядом с артефактом — человеку потом, когда он смотрит собранный отчёт и
+    прогон давно кончился.
+
+    `hokoku` про `fragmos` при этом по-прежнему не знает: замечание проводит
+    служба. Проверять надо именно это — что канал один, а не что пакеты
+    познакомились.
+    """
+    set_prompts(project, таблица={"type": "diagram"})
+    mid = положить(project, "class P { void M(int x) { switch (x) { "
+                            "case 1: A(); goto case 7; case 2: B(); break; } } }\n",
+                   "P.cs")
+    замечания: list = []
+    art = orchestrator.artifact_id(fragmos.generate_xml(
+        project.store().read(mid).text, "csharp", warnings=замечания).encode("utf-8"))
+    assert [n.code for n in замечания] == ["goto_case_unresolved"]   # есть о чём говорить
+
+    ep, backend = agent_endpoint(
+        turn(("make_flowchart", {"id": mid, "language": "csharp"})),
+        turn(("set_tag", {"key": "таблица",
+                          "value": {"type": "diagram", "artifact": art}})),
+        done())
+    out = orchestrator.fill_agent(project, endpoint=ep)
+
+    assert out.ok
+    # 1. Модель увидела, чего в схеме нет, — общей формой, а не прозой в note.
+    ответ = json.loads(ответы(backend, 0)[0]["content"])
+    assert [w["code"] for w in ответ["warnings"]] == ["goto_case_unresolved"]
+    assert ответ["warnings"][0]["module"] == "fragmos"
+    # 2. Человек видит это в замечаниях прогона.
+    assert any(p.code == "goto_case_unresolved" for p in out.problems)
+    # 3. И в полной проверке перед сборкой — уже с тегом, в котором схема стоит.
+    проблемы = orchestrator.check(project)
+    схема = [p for p in проблемы if p.code == "goto_case_unresolved"]
+    assert len(схема) == 1 and схема[0].key == "таблица"
+    assert "goto case 7" in схема[0].message
+
+
+def test_схема_без_пропусков_замечаний_не_добавляет(project, agent_endpoint):
+    """Обратная половина: замечание, которое стоит на всякой схеме, не значит
+    ничего, а перед сборкой ещё и прячет настоящие."""
+    set_prompts(project, таблица={"type": "diagram"})
+    mid = материал(project)
+    art = orchestrator.artifact_id(
+        fragmos.generate_xml(project.store().read(mid).text, "python").encode("utf-8"))
+
+    ep, _ = agent_endpoint(
+        turn(("make_flowchart", {"id": mid, "language": "python"})),
+        turn(("set_tag", {"key": "таблица",
+                          "value": {"type": "diagram", "artifact": art}})),
+        done())
+    out = orchestrator.fill_agent(project, endpoint=ep)
+
+    assert out.ok
+    assert [p for p in out.problems if p.module == "fragmos"] == []
+    assert project.artifact_notices(art) == []
+    assert [p for p in orchestrator.check(project) if p.module == "fragmos"] == []
+
+
 def test_расход_ложится_в_журнал_по_ходам(project, agent_endpoint):
     ep, _ = agent_endpoint(turn(("preview", {})), turn(("preview", {})), done())
     out = orchestrator.fill_agent(project, endpoint=ep)
@@ -209,7 +280,7 @@ def test_на_endpoint_без_операторского_канала_значе
 
     assert out.ok
     assert tools_mod.UNVERIFIED_FLAG in project.head_version("цель").flags
-    assert any(p["code"] == "no_operator_channel" for p in out.problems)
+    assert any(p.code == "no_operator_channel" for p in out.problems)
 
 
 def test_переключатель_allow_пускает_без_пометки(project, agent_endpoint,
@@ -221,7 +292,7 @@ def test_переключатель_allow_пускает_без_пометки(p
 
     assert out.ok and out.filled == ["цель"]
     assert project.head_version("цель").flags == []
-    assert not any(p["code"] == "no_operator_channel" for p in out.problems)
+    assert not any(p.code == "no_operator_channel" for p in out.problems)
 
 
 def test_опечатка_в_переключателе_не_проходит_молча(project, agent_endpoint,
@@ -263,7 +334,7 @@ def test_set_tag_не_обходит_валидатор(project, agent_endpoint)
     разбор = json.loads(ответ["content"])
     assert разбор["error"] == "rejected"
     assert any("markdown" in m for m in разбор["problems"])
-    assert any(p["code"] == "type_mismatch" for p in out.problems)
+    assert any(p.code == "type_mismatch" for p in out.problems)
 
 
 def test_set_tag_не_принимает_невыразимое_значение(project, agent_endpoint):
@@ -292,7 +363,7 @@ def test_set_tag_не_затирает_правку_человека(project, ag
     assert project.value("цель")["text"] == "написано студентом"
     разбор = json.loads(ответы(backend, 0)[0]["content"])
     assert разбор["error"] == "unknown_key" and "цель" not in разбор["known"]
-    assert any(p["code"] == "kept" and p["key"] == "цель" for p in out.problems)
+    assert any(p.code == "kept" and p.key == "цель" for p in out.problems)
 
 
 def test_все_теги_за_человеком_прогон_не_начинается(project, agent_endpoint):
@@ -522,6 +593,25 @@ def test_схема_объектов_не_выдумывает_экземпля�
     assert json.loads(два["content"])["objects"] == ["д"]
 
 
+def test_схема_объектов_на_python_видит_соседний_материал(project, agent_endpoint):
+    """Класс во втором материале, экземпляр в первом — объект на схеме есть.
+
+    До 2.0.0a4.2 `py_static.extract` аргумент `files` игнорировал, так что
+    второй материал пропадал молча: схема выходила пустой, а «в коде нет
+    классов» звучало как приговор коду студента, а не как наша недоделка.
+    """
+    вход = положить(project, PY_ВХОД, "программа.py")
+    библиотека = положить(project, PY_БИБЛИОТЕКА, "двигатель.py")
+    ep, backend = agent_endpoint(
+        turn(("make_object_diagram", {"ids": [вход, библиотека],
+                                      "language": "python"})),
+        done())
+    orchestrator.fill_agent(project, endpoint=ep)
+
+    (ответ,) = ответы(backend, 0)
+    assert json.loads(ответ["content"])["objects"] == ["д"]
+
+
 def test_схема_объектов_не_показывает_модели_путей(project, agent_endpoint):
     """Модель видит идентификаторы и имена — и ничего, что можно открыть.
 
@@ -557,7 +647,7 @@ def test_потолок_ходов_обрывает_прогон_но_не_от�
     assert out.outcome == "interrupted" and out.ok is False
     assert out.filled == ["цель"] and project.value("цель") is not None
     # Потолок назван тот, что стоял в этом прогоне, а не умолчание модуля.
-    assert any(p["code"] == "step_limit" and "(2)" in p["message"]
+    assert any(p.code == "step_limit" and "(2)" in p.message
                for p in out.problems)
     assert project.run(out.run.id).outcome == "interrupted"
 
@@ -583,4 +673,4 @@ def test_лимит_останавливает_прогон_посреди_пе�
     assert len(journal_lines(project)) == 1
     assert out.filled == ["цель"] and project.value("цель") is not None
     assert out.outcome == "interrupted"
-    assert any(p["code"] == "limit_stop" for p in out.problems)
+    assert any(p.code == "limit_stop" for p in out.problems)

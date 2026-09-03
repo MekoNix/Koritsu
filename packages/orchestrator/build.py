@@ -58,13 +58,46 @@ def check(project, *, keys=None) -> list:
     валидатора нет и быть не должно. Разница только в охвате: здесь виден весь
     отчёт сразу, поэтому здесь и только здесь честны замечания про
     незаполненные обязательные теги и про `depends_on`, который ещё не заполнен.
+
+    Сюда же — замечания тех, кто построил схемы, стоящие в отчёте
+    (`_diagram_notices`). Их проводит служба, а не `hokoku`: пакеты друг о
+    друге не знают, а вопрос «что не так с отчётом» задаётся один раз и ответ
+    на него должен быть один.
     """
     stored = project.values(keys=keys)
     values, errors = hokoku.values_from_json(
         stored, resolve_artifact=project.resolve_artifact)
-    problems = [{"module": "hokoku", "level": "error", "code": "wire",
-                 "key": e["key"], "message": e["message"]} for e in errors]
-    return problems + hokoku.validate(project.template(), values, project.manifest())
+    problems = [hokoku.Problem(module="hokoku", level="error", code="wire",
+                               key=e["key"], message=e["message"]) for e in errors]
+    return (problems + hokoku.validate(project.template(), values, project.manifest())
+            + _diagram_notices(project, stored))
+
+
+def _diagram_notices(project, stored: dict) -> list:
+    """Замечания генераторов схем, которые стоят в текущих значениях.
+
+    `fragmos` сказал «в схему не вошло: goto case» в момент постройки — то есть
+    ходов за десять до сборки, в другом прогоне и, возможно, в прошлом месяце.
+    Замечание лежит рядом с артефактом (`Project.artifact_notices`), и берётся
+    оно только для схем, которые в отчёт действительно попали: сказать про
+    брошенную схему значит гонять человека чинить то, чего в отчёте нет.
+
+    Одна схема в двух тегах даёт два замечания — по одному на тег, а не одно:
+    показываются они рядом с тегом, и «которого из двух» человек угадывать не
+    должен. Ключ тега приписывается тут же: сам `fragmos` про теги не знает.
+    """
+    out: list = []
+    for key, value in stored.items():
+        if not isinstance(value, dict) or value.get("type") != "diagram":
+            continue
+        art = value.get("artifact")
+        if not isinstance(art, str) or not art:
+            continue                    # схема задана xml'ем: артефакта нет, замечаний тоже
+        for n in project.artifact_notices(art):
+            out.append(hokoku.Problem(module=n.module, level=n.level, code=n.code,
+                                      message=f"схема тега {key!r}: {n.message}",
+                                      file=n.file, line=n.line, key=key))
+    return out
 
 
 def build(project, *, keys=None, outputs=("docx",), on_error: str = "skip",
@@ -77,8 +110,10 @@ def build(project, *, keys=None, outputs=("docx",), on_error: str = "skip",
     полезнее человеку, чем отказ, — он его открывает, видит пометки и правит
     руками. Отказ отдал бы ему пустоту за уже потраченные на модель деньги.
 
-    Режим `workdir` — единственный поддержанный (`hokoku/report.py:77`);
-    `store_artifact` появится вместе с хранилищем и заменит `out/`.
+    Из двух режимов `build_report` берётся `workdir`: у проекта есть каталог
+    (`out/`), а хранилища артефактов с записью — ещё нет. `store_artifact`
+    реализован и ждёт его; переезд стоит одной строки здесь, потому что форма
+    результата у режимов одна с точностью до `file` против `artifact`.
     """
     problems = check(project, keys=keys)
     job = job_of(project, keys=keys, outputs=outputs, on_error=on_error,

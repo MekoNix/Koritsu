@@ -38,6 +38,7 @@ from docx.shared import Cm, Pt, RGBColor
 
 from . import docx_ops as ops
 from .images import EMU_PER_CM
+from .model import Problem
 from .styles import get_style
 
 # ── описание оформления ───────────────────────────────────────────────────────
@@ -329,16 +330,24 @@ def document_bytes(doc) -> bytes:
 
 # ── проверка шаблона ──────────────────────────────────────────────────────────
 
-def _problem(level: str, code: str, message: str, key: str | None = None) -> dict:
-    """Запись той же формы, что у `validate` и `check_manifest`: её показывают
-    в интерфейсе и отдают модели, и разбирать прозу ни тому, ни другому нечем."""
-    out = {"module": "template", "level": level, "code": code, "message": message}
-    if key is not None:
-        out["key"] = key
-    return out
+def _problem(level: str, code: str, message: str, key: str | None = None) -> Problem:
+    """Запись той же формы, что у `validate` и `check_manifest` (`model.Problem`,
+    он же общий `kyotsu.Notice`): её показывают в интерфейсе и отдают модели, и
+    разбирать прозу ни тому, ни другому нечем.
+
+    `module` здесь — `template`, а не `hokoku`, и так было с самого начала:
+    проверка шаблона отвечает на отдельный вопрос («годен ли документ, по
+    которому собирают»), и в интерфейсе её замечания стоят не рядом с
+    замечаниями о значениях. Переименовать — сломать разбор у того, кто их
+    сегодня показывает, ничего не выиграв.
+
+    `key` бывает не тегом: у секции с полями шире листа это «section 2».
+    Пустым он в JSON не попадает — `Notice.to_dict` выбрасывает незаданное.
+    """
+    return Problem(module="template", level=level, code=code, message=message, key=key)
 
 
-def check_template(template) -> list[dict]:
+def check_template(template) -> list[Problem]:
     """Чего не хватает документу, чтобы собранный отчёт выглядел прилично. → [проблема].
 
     Не бросает: список пуст — всё в порядке. `error` значит «соберётся не то»
@@ -352,7 +361,7 @@ def check_template(template) -> list[dict]:
     """
     from .walker import open_document
     doc = open_document(template)
-    out: list[dict] = []
+    out: list[Problem] = []
     if not ops.has_style(doc, "Normal"):
         out.append(_problem("error", "no_normal_style",
                             "в документе нет стиля Normal — основного текста у него нет, "

@@ -28,7 +28,7 @@ import hashlib
 import unicodedata
 from dataclasses import dataclass, field, fields, replace
 
-from .model import HokokuError
+from .model import HokokuError, Problem
 from .tags import extract_tags, norm_key
 from .wire import VALUE_TYPES, WIRE_VERSION, value_schema
 
@@ -150,16 +150,16 @@ def manifest_from_template(template, *, base: Manifest | None = None,
                     system_prompt=base.system_prompt if base else system_prompt)
 
 
-def check_manifest(manifest: Manifest, template) -> list[dict]:
+def check_manifest(manifest: Manifest, template) -> list[Problem]:
     """Манифест против настоящих тегов шаблона → предупреждения.
 
-    Форма записи — общий канал предупреждений трёх пакетов (`{module, level, code,
-    message}` плюс `key`), тот же, что у `build_report`. Ошибок здесь нет: манифест
+    Запись — `model.Problem`, общий канал предупреждений проекта (`kyotsu.Notice`
+    плюс тег), тот же, что у `validate` и `build_report`. Ошибок здесь нет: манифест
     шире шаблона это законное состояние (тег убрали, промпт бережём), а тег без записи
     просто соберётся с умолчаниями.
     """
     tags = {t.key: t for t in extract_tags(template)}
-    out: list[dict] = []
+    out: list[Problem] = []
     for key, tag in tags.items():
         spec = manifest.tags.get(key)
         if spec is None:
@@ -203,8 +203,8 @@ def _same(label: str) -> str:
     return unicodedata.normalize("NFC", label.strip())
 
 
-def _w(level: str, code: str, key: str, message: str) -> dict:
-    return {"module": "hokoku", "level": level, "code": code, "key": key, "message": message}
+def _w(level: str, code: str, key: str, message: str) -> Problem:
+    return Problem(module="hokoku", level=level, code=code, key=key, message=message)
 
 
 def _sha256(template) -> str:

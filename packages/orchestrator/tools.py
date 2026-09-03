@@ -136,7 +136,7 @@ UNVERIFIED_FLAG = ("проверить: у endpoint'а нет операторс
                    "указания службы для модели не весомее текста из файлов проекта")
 
 
-def operator_channel_gate(endpoint_id: str) -> tuple[tuple[str, ...], list[dict]]:
+def operator_channel_gate(endpoint_id: str) -> tuple[tuple[str, ...], list[hokoku.Problem]]:
     """Ворота уровня 3 на endpoint'е без операторского канала. Одна на прогон.
 
     Возвращает `(пометки для каждого значения, замечания прогона)`; при
@@ -171,13 +171,13 @@ def operator_channel_gate(endpoint_id: str) -> tuple[tuple[str, ...], list[dict]
         # Три режима обязаны различаться делом, иначе переключатель ничего не
         # переключает, а объясняет.
         return (), []
-    problem = {"module": "orchestrator", "level": "info", "code": "no_operator_channel",
-               "key": None,
-               "message": (f"у endpoint'а {endpoint_id!r} нет операторского канала "
-                           f"({caps.operator_channel!r}); прогон уровня 3 разрешён "
-                           f"решением владельца 2026-08-31, режим "
-                           f"{WITHOUT_OPERATOR_CHANNEL!r}: каждое значение "
-                           f"помечено «проверить»")}
+    problem = fill_mod._problem(
+        "no_operator_channel", None,
+        f"у endpoint'а {endpoint_id!r} нет операторского канала "
+        f"({caps.operator_channel!r}); прогон уровня 3 разрешён "
+        f"решением владельца 2026-08-31, режим "
+        f"{WITHOUT_OPERATOR_CHANNEL!r}: каждое значение помечено «проверить»",
+        "info")
     return (UNVERIFIED_FLAG,), [problem]
 
 
@@ -419,15 +419,22 @@ class ToolBox:
         схем в код, откуда его убирали. В ответе есть `pages` — модель ставит
         нужный лист полем `page` значения diagram.
 
-        Чего мы сегодня не знаем и потому не обещаем: какие функции `fragmos`
-        молча пропустил, не разобрав (`builder/__init__.py:147-151`). Пока он не
-        отдаёт список пропущенного, `skipped` в ответе врал бы пустотой.
+        Что в схему не вошло, `fragmos` с 2.0.0a4.2 говорит вслух (`warnings=`,
+        `kyotsu.Notice`), и мы это проводим в три места сразу: в ответ модели —
+        ей решать, ставить ли такую схему в отчёт; в `problems` прогона — их
+        видит человек; и рядом с артефактом на диск (`put_artifact(notices=)`) —
+        оттуда их берёт полная проверка перед сборкой (`build.check`), потому
+        что смотреть отчёт человек будет позже и другим глазом. `hokoku` при
+        этом про `fragmos` по-прежнему ничего не знает: замечание доезжает до
+        отчёта через службу, а не через пакет.
         """
         source = self._source(args.get("id"))
         language = _one_of(args.get("language"), _LANGS, "language")
         mode = _one_of(args.get("mode") or "default", _FLOWCHART_MODES, "mode")
+        notices: list = []
         try:
-            xml = fragmos.generate_xml(source.text, language, mode_id=mode)
+            xml = fragmos.generate_xml(source.text, language, mode_id=mode,
+                                       warnings=notices)
         except SyntaxError as exc:
             raise ToolError("parse_error",
                             f"исходник {source.name!r} не разобрался как {language}: {exc}. "
@@ -436,8 +443,11 @@ class ToolBox:
             raise ToolError("parse_error",
                             f"схема по {source.name!r} не построилась: "
                             f"{type(exc).__name__}: {exc}") from None
-        return {"artifact": self.project.put_artifact(xml.encode("utf-8"), name="схема"),
+        self.problems.extend(notices)
+        return {"artifact": self.project.put_artifact(xml.encode("utf-8"), name="схема",
+                                                      notices=notices),
                 "pages": hokoku.wire.count_pages(xml), "language": language,
+                "warnings": [n.to_dict() for n in notices],
                 "note": "страница на функцию; нужный лист ставится полем page"}
 
     def _make_class_diagram(self, args: dict) -> dict:
@@ -538,7 +548,7 @@ class ToolBox:
             raise ToolError("rejected",
                             f"значение тега {key!r} не принято",
                             key=key,
-                            problems=[p["message"] for p in fill.problems])
+                            problems=[p.message for p in fill.problems])
         self.filled.append(key)
         self.problems.extend(fill.problems)
         parsed = fill_mod._parse(self.project, value)
@@ -548,7 +558,7 @@ class ToolBox:
             self._typed[key] = parsed
         return {"ok": True, "key": key, "version": fill.version.n,
                 "flags": list(fill.flags),
-                "problems": [p["message"] for p in fill.problems]}
+                "problems": [p.message for p in fill.problems]}
 
     def _preview(self, args: dict) -> dict:
         """Состояние отчёта цифрами: заполнено, не заполнено, замечания.
@@ -562,8 +572,8 @@ class ToolBox:
         wanted = schema_mod.fillable(self.manifest)
         return {"filled": [k for k in wanted if k in values],
                 "unfilled": [k for k in wanted if k not in values],
-                "problems": [{"key": p.get("key"), "level": p.get("level"),
-                              "message": p.get("message")} for p in problems[:40]],
+                "problems": [{"key": p.key, "level": p.level, "message": p.message}
+                             for p in problems[:40]],
                 "problems_total": len(problems)}
 
     # ── общее ───────────────────────────────────────────────────────────────
