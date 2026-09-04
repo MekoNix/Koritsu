@@ -28,9 +28,12 @@ project — состояние одной работы студента на д�
     <path>/artifacts/<id>          плоский каталог: шаблон, XML схем, картинки
     <path>/artifacts/notices/<id>.json  замечания того, кто артефакт построил
     <path>/values/<slug>/vN.json   {"version": шапка, "value": значение wire}
+    <path>/blocks/vN.json          {"version": шапка, "blocks": [блок, …]} — живой режим
+    <path>/state/<slug>.json       ход стадий сценария: put_state / state
+    <path>/derived.jsonl           журнал производных артефактов (append-only)
     <path>/runs/<id>.json          прогон: уровень, endpoint, метка рамки, шаги
     <path>/journal.jsonl           по записи на вызов модели (форма В.4 слоя llm)
-    <path>/out/                    workdir для build_report
+    <path>/out/                    workdir для build_report и готовый архив
 
 Каталог, а не один JSON: версия пишется отдельным файлом, правки разных тегов не
 спорят за один файл, и `git diff` каталога показывает правку тега, а не
@@ -46,10 +49,12 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import io
 import json
 import os
 import re
 import secrets
+import zipfile
 from dataclasses import asdict, dataclass, field
 
 import hokoku
@@ -113,6 +118,62 @@ class Version:
 
 
 @dataclass
+class BlockVersion:
+    """Шапка одной версии списка блоков — живой режим (без шаблона).
+
+    Версионируется **список целиком**, а не блок по отдельности, и это решение,
+    а не упрощение. Работа в живом режиме — упорядоченный список
+    (`ref/koritsu-hokoku-live-2026-09-03.md`, В.1), и половина правок меняет не
+    значение блока, а сам порядок: убрали, переставили, вставили посередине.
+    Версия отдельного блока на такие правки не отвечает вовсе — «вернуть как
+    было» после перестановки пришлось бы собирать из версий десяти блоков,
+    угадывая, какие из них были одновременны. Список целиком отвечает на это
+    одним номером.
+
+    Плата названа честно: правка одного абзаца пишет весь список заново. Список
+    — десятки блоков по несколько килобайт, то есть цена версии измеряется
+    сотнями килобайт на правку, и это дёшево ровно до тех пор, пока в блоках
+    лежат тексты, а не картинки. Картинок в них и не лежит: `image` и `diagram`
+    хранят идентификатор артефакта, а байты — в `artifacts/`.
+
+    `source` — тот же закрытый список `SOURCES`, что у версий тегов, и второго
+    словаря пометок не заводится: интерфейс разбирает `source` одним разбором,
+    и «model» рядом с «agent» означало бы, что одно и то же названо дважды.
+    Пометка стоит и на версии (кто сделал эту правку), и на самом блоке (кто
+    написал то, что в нём лежит): без второй прогон текста затирал бы правку
+    человека — ровно та беда, ради которой `source` заводился у тегов.
+    """
+
+    n: int
+    at: str
+    source: str
+    note: str = ""
+    run: str | None = None
+    count: int = 0
+
+
+# Поля записи блока на диске. Список закрытый: поле, которого здесь нет, — это
+# опечатка или чужая модель блока, и молча положить его на диск значит потерять
+# его при первом же чтении.
+#
+#   key    — адрес блока, нормализованный `wire.norm_key`; по нему на блок
+#            ссылаются инструменты и `{ref:}`; переименованию не подлежит;
+#   kind   — вид блока словом `hokoku.live.KINDS` (виды значений плюс `heading`);
+#   value  — значение в форме `wire`, всегда; место под текст выражается
+#            черновиком (`hokoku.live.draft`), а не пустотой: пустое значение
+#            движок отчётов считает ошибкой, и «пустая заготовка» не собралась
+#            бы даже для показа человеку;
+#   label  — имя для человека: оглавление и выбор блока щелчком;
+#   source — кто написал значение: `SOURCES`; пусто — берётся у версии.
+#
+# Первые четыре — это ровно `hokoku.live.Block`, разобранный на JSON; пятое
+# принадлежит хранилищу и живому режиму не нужно: «кто написал» — вопрос версий,
+# а не документа. Отсюда и разрез: список правит `hokoku.live`, помнит его —
+# проект, а переводит одно в другое `orchestrator.live`.
+BLOCK_FIELDS = ("key", "kind", "value", "label", "source")
+
+
+@dataclass
 class Run:
     """Прогон: одна граница, внутри которой метка рамки постоянна.
 
@@ -159,6 +220,129 @@ def _slug(key: str) -> str:
     safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in key)[:40]
     safe = safe.strip("._") or "tag"
     return f"{safe}-{hashlib.sha256(key.encode('utf-8')).hexdigest()[:8]}"
+
+
+def _safe_leaf(name, what: str) -> str:
+    """Одно звено имени файла — или отказ. Разделителей не пропускает вовсе.
+
+    Отказ, а не тихая подчистка: подрезав `../`, мы положили бы файл под именем,
+    которого человек не называл, и не сказали бы ему об этом. Проверка стоит
+    здесь, потому что имя приходит из данных сценария, а путь складывается тут.
+    """
+    leaf = str(name or "")
+    if not leaf or leaf in (".", "..") or leaf != leaf.strip():
+        raise OrchestratorError(f"{what}: {name!r} — пустое, служебное или с пробелами по краям")
+    bad = [c for c in leaf if c in "/\\:" or ord(c) < 32]
+    if bad:
+        raise OrchestratorError(
+            f"{what}: {leaf!r} — не имя, а путь (запрещённые знаки: "
+            + ", ".join(repr(c) for c in dict.fromkeys(bad)) + ")")
+    return leaf
+
+
+def _entry_bytes(project, entry, number: int) -> tuple[str, bytes]:
+    """Одна запись описи → (имя в архиве, байты). Источник ровно один из трёх."""
+    if not isinstance(entry, dict):
+        raise OrchestratorError(
+            f"запись {number} описи — объект, а не {type(entry).__name__}")
+    inner = str(entry.get("name") or "")
+    if not inner or inner.startswith("/") or "\\" in inner or ".." in inner.split("/"):
+        raise OrchestratorError(
+            f"запись {number} описи: имя в архиве {inner!r} — пустое или уводит из архива")
+    sources = [k for k in ("artifact", "output", "text") if k in entry]
+    if len(sources) != 1:
+        raise OrchestratorError(
+            f"запись {number} описи ({inner!r}): источник ровно один из "
+            "artifact, output, text, а дано "
+            + (", ".join(sources) if sources else "ни одного"))
+    kind = sources[0]
+    if kind == "artifact":
+        return inner, project.resolve_artifact(entry["artifact"])
+    if kind == "output":
+        with open(project._output_path(entry["output"]), "rb") as f:
+            return inner, f.read()
+    text = entry["text"]
+    if not isinstance(text, str):
+        raise OrchestratorError(
+            f"запись {number} описи ({inner!r}): text — строка, а не {type(text).__name__}")
+    return inner, text.encode("utf-8")
+
+
+def _blocks_json(blocks, *, source: str) -> list:
+    """Список блоков в форму, которая ложится на диск, — или внятный отказ.
+
+    Принимаются и словари, и объекты с теми же полями (модель блока `hokoku`):
+    служба обязана быть полезной обеим сторонам, а различать их по типу значит
+    завести здесь знание о чужом классе. Утиная проверка — по именам полей.
+    """
+    if not isinstance(blocks, (list, tuple)):
+        raise OrchestratorError(
+            f"список блоков — список, а не {type(blocks).__name__}")
+    out: list = []
+    seen: dict = {}
+    for number, item in enumerate(blocks, start=1):
+        block = _block_json(item, number, source)
+        key = block["key"]
+        if key in seen:
+            # Два блока с одним ключом — это потерянный блок: ссылка `{ref:}` и
+            # инструмент агента адресуют ключом, и второй адресат молча исчез бы.
+            raise OrchestratorError(
+                f"блоки {seen[key]} и {number} с одним ключом {key!r}: "
+                "ключ — адрес блока, и двух одинаковых адресов не бывает")
+        seen[key] = number
+        out.append(block)
+    return out
+
+
+def _block_json(item, number: int, source: str) -> dict:
+    """Один блок: известные поля, нормализованный ключ, согласованный вид."""
+    if isinstance(item, dict):
+        raw = dict(item)
+    else:
+        raw = {name: getattr(item, name) for name in BLOCK_FIELDS if hasattr(item, name)}
+        if not raw:
+            raise OrchestratorError(
+                f"блок {number} — {type(item).__name__}: ни одного известного поля "
+                f"({', '.join(BLOCK_FIELDS)})")
+    unknown = [name for name in raw if name not in BLOCK_FIELDS]
+    if unknown:
+        raise OrchestratorError(
+            f"блок {number}: поля {unknown[0]!r} у блока нет"
+            f"{hint(unknown[0], BLOCK_FIELDS)}; известные: {', '.join(BLOCK_FIELDS)}")
+    key = hokoku.wire.norm_key(str(raw.get("key") or ""))
+    if not key:
+        raise OrchestratorError(f"блок {number} без ключа: ключ — адрес блока")
+    kind = str(raw.get("kind") or "")
+    if kind not in hokoku.live.KINDS:
+        raise OrchestratorError(
+            f"блок {key!r}: вида {kind!r} не бывает ({', '.join(hokoku.live.KINDS)})"
+            f"{hint(kind, hokoku.live.KINDS)}")
+    value = raw.get("value")
+    if value is None:
+        raise OrchestratorError(
+            f"блок {key!r} без значения: место под содержимое — это черновик "
+            "(hokoku.live.draft), а не пустота")
+    if not isinstance(value, dict):
+        # Типизированное значение `hokoku` переводим сами: вызывающему не должно
+        # быть важно, в каком виде он держит значение в руках.
+        value = hokoku.value_to_json(value)
+    внутри = str(value.get("type") or "")
+    # Заголовок — не отдельный тип значения, а `markdown` из одной строки
+    # «## Название» (решение живого режима: `render` уже ставит на него стиль
+    # Heading N, и поле TOC его находит). Значит вид блока и тип значения
+    # совпадают у всех, кроме заголовка, — и проверка знает ровно это.
+    ждём = hokoku.live.TEXT_KINDS if kind == "heading" else (kind,)
+    if внутри not in ждём:
+        raise OrchestratorError(
+            f"блок {key!r} объявлен видом {kind!r}, а значение в нём {внутри!r}: "
+            "вид блока и тип значения — одно и то же утверждение")
+    own = str(raw.get("source") or "") or source
+    if own not in SOURCES:
+        raise OrchestratorError(
+            f"блок {key!r}: source — {', '.join(SOURCES)}, а не {own!r}"
+            f"{hint(own, SOURCES)}")
+    return {"key": key, "kind": kind, "value": value,
+            "label": str(raw.get("label") or ""), "source": own}
 
 
 class Project:
@@ -304,6 +488,63 @@ class Project:
     def store(self) -> materials.Store:
         """Хранилище материалов проекта — `materials.Store` как есть, без надстроек."""
         return materials.Store(self._materials_dir())
+
+    def add_material(self, data: bytes, name: str, *, do_ocr: bool = True,
+                     condition: bool = False) -> materials.Material:
+        """Чужой файл в проект: проверка недоверенного DOCX, потом `Store.add`.
+
+        Единственная дверь для файла, пришедшего от человека, и она здесь, а не
+        в `materials`, по одной причине: защита от zip-slip, zip-bomb и XXE
+        живёт в `hokoku.validate_docx`, а `materials` импортировать `hokoku` не
+        имеет права (правило разреза). Через `Project.store().add` тот же файл
+        доедет без проверки — это известный остаточный риск (записка И.2), и
+        закрывается он тем, что чужой файл кладут этим методом.
+
+        Скан читается OCR (`do_ocr=True`): фото методички — обычный вход, и
+        отказывать на нём нельзя. Молча доверять распознанному тоже нельзя —
+        ошибка в формуле даёт безупречно решённую **чужую** задачу, — поэтому
+        решение владельца 2026-08-31 требует показать распознанное человеку до
+        работы. Показывать есть что: текст лежит в `store().read(id)`, а на
+        картинке без текстового слоя он весь и есть распознанный.
+
+        `condition=True` — это условие задачи. Пишется в настройки
+        идентификатором (`condition`), а не отдельной копией файла: копия
+        разошлась бы с материалом, и «то ли это условие, по которому считали»
+        осталось бы без ответа.
+        """
+        if not isinstance(data, (bytes, bytearray)):
+            raise OrchestratorError(
+                f"материал — байты, а не {type(data).__name__}: путей в проекте не хранится")
+        if not str(name or "").strip():
+            raise OrchestratorError("у материала должно быть имя: по нему его узнаёт человек")
+        data = bytes(data)
+        if data[:4] == b"PK\x03\x04" and str(name).lower().endswith((".docx", ".docm")):
+            # Недоверенный ZIP. `validate_docx` бросает своё — переводим в нашу
+            # ошибку: человек кладёт файл через службу и про `hokoku` не знает.
+            try:
+                hokoku.validate_docx(data)
+            except hokoku.DocxValidationError as exc:
+                raise OrchestratorError(f"файл {name!r} не принят: {exc}") from None
+        material = self.store().add(data, name=str(name), do_ocr=do_ocr)
+        if condition:
+            self.set_condition(material.id)
+        return material
+
+    def set_condition(self, material_id: str) -> None:
+        """Назвать материал условием задачи. Материал обязан существовать.
+
+        Отдельно от `add_material`, потому что человек подтверждает распознанное
+        **после** приёма файла: до подтверждения условие есть материал, а не
+        условие, и порядок этот менять нельзя.
+        """
+        self.store().get(str(material_id))                 # нет такого — ошибка materials
+        settings = self.settings()
+        settings["condition"] = str(material_id)
+        self.save_settings(settings)
+
+    def condition(self) -> str | None:
+        """Идентификатор материала-условия или None, если его не называли."""
+        return self.settings().get("condition") or None
 
     def put_artifact(self, data: bytes, *, name: str = "", notices=()) -> str:
         """Байты в хранилище артефактов → идентификатор.
@@ -510,6 +751,91 @@ class Project:
                                     "manifest_version": old.manifest_version,
                                     "stop": old.stop, "usage": old.usage})
 
+    # ── живой список блоков ─────────────────────────────────────────────────
+    # Второй способ работы: шаблона нет вовсе, работа — упорядоченный список
+    # именованных блоков, документ — его сборка (решение 2026-09-03). Механика
+    # версий та же, что у значений тегов: файл версии создаётся и никогда не
+    # заменяется, номер занят — берём следующий, «вернуть» пишется новой
+    # версией. Точка записи одна — `set_blocks`, как `set_value` у тегов.
+
+    def blocks(self) -> list:
+        """Текущий список блоков. Пусто — списка ещё не заводили.
+
+        Отдаётся копия с диска, а не хранимый объект: список правят инструменты
+        агента по одному блоку, и общий изменяемый объект означал бы правку,
+        которая уже видна всем, но ещё не записана.
+        """
+        record = self._read_json(self._blocks_path(self._head(self._blocks_dir()) or 0), None)
+        return list(record["blocks"]) if record else []
+
+    def set_blocks(self, blocks, *, source: str, note: str = "",
+                   run: str | None = None) -> BlockVersion:
+        """Единственная точка записи списка блоков. Новая версия, прежняя остаётся.
+
+        Проверяется здесь только строение записи — ключи есть, они разные, поля
+        известные, значение это объект JSON или `None`. Выразимость значения
+        (`wire.value_from_json`) проверяет тот, кто значение принёс, — ровно как
+        у `set_value`: две проверки в двух местах разошлись бы, и правил о том,
+        что такое годное значение, стало бы два.
+
+        `note` — зачем эта правка: «вставлен раздел», «текст одним проходом».
+        Без него история списка это столбик номеров, по которому нельзя выбрать,
+        куда возвращаться, а выбор возврата — единственное, ради чего живой
+        режим держит список, а не правит документ на месте.
+        """
+        if source not in SOURCES:
+            raise OrchestratorError(
+                f"source — {', '.join(SOURCES)}, а не {source!r}{hint(source, SOURCES)}")
+        prepared = _blocks_json(blocks, source=source)
+        folder = self._blocks_dir()
+        os.makedirs(folder, exist_ok=True)
+        n = (self._head(folder) or 0) + 1
+        for _ in range(_WRITE_ATTEMPTS):
+            version = BlockVersion(n=n, at=_now(), source=source, note=note, run=run,
+                                   count=len(prepared))
+            if self._write_new(self._blocks_path(n),
+                               _json_bytes({"version": asdict(version),
+                                            "blocks": prepared})):
+                return version
+            n = max(n + 1, (self._head(folder) or 0) + 1)
+        raise OrchestratorError(
+            f"не удалось записать список блоков за {_WRITE_ATTEMPTS} попыток: "
+            "номер версии занимают быстрее, чем мы пишем")
+
+    def block_versions(self) -> list[BlockVersion]:
+        """Все версии списка по возрастанию номера. Пусто — списка не заводили."""
+        folder = self._blocks_dir()
+        out = []
+        for n in self._numbers(folder):
+            record = self._read_json(self._blocks_path(n), None)
+            if record:
+                out.append(BlockVersion(**record["version"]))
+        return out
+
+    def block_version(self, n: int) -> tuple[BlockVersion, list]:
+        """Конкретная версия списка: (шапка, блоки). Прошлое читается, а не только текущее."""
+        record = self._read_json(self._blocks_path(int(n)), None)
+        if record is None:
+            known = self._numbers(self._blocks_dir())
+            raise OrchestratorError(
+                f"версии {n} у списка блоков нет"
+                + (f" (есть {', '.join(str(x) for x in known)})" if known else
+                   ": списка ещё не заводили"))
+        return BlockVersion(**record["version"]), list(record["blocks"])
+
+    def rollback_blocks(self, n: int) -> BlockVersion:
+        """Вернуть список версии `n` — новой версией, а не откатом номера.
+
+        То же решение, что у `rollback` для тега, и по той же причине: иначе
+        номер версии молча уменьшается, и двое, глядя на «версию 3», видят
+        разные списки. `source` сохраняется от возвращаемой версии — список
+        по-прежнему написан ею, а не переписан заново.
+        """
+        old, blocks = self.block_version(n)
+        return self.set_blocks(blocks, source=old.source, run=old.run,
+                               note=f"вернули версию {n}"
+                                    + (f" ({old.note})" if old.note else ""))
+
     # ── прогоны ─────────────────────────────────────────────────────────────
     def start_run(self, *, level: int, endpoint: str) -> Run:
         """Начало прогона: запись в `runs/` с пустой пока меткой рамки.
@@ -543,6 +869,91 @@ class Project:
         if d is None:
             raise OrchestratorError(f"прогона {run_id!r} в проекте нет")
         return Run(**d)
+
+    # ── ход работы сценария и журнал производных ────────────────────────────
+    # Обе записи заведены ради одного: сценарий (`kadai`) не должен узнать ни
+    # одного пути. Своё хранилище там означало бы второе место, знающее про
+    # диск, и переезд на SQLite перестал бы быть заменой одного класса.
+
+    def put_state(self, name: str, data: dict) -> None:
+        """Записать состояние сценария под именем. Заменяется целиком.
+
+        Целиком, а не по полям: состояние — снимок хода работы, и слияние двух
+        снимков дало бы стадию, которой не было ни в одном из них. Версий здесь
+        нет намеренно — «вернуть работу на стадию назад» это не откат записи, а
+        решение сценария, и делать вид, что он бесплатен, нельзя.
+
+        Пишется на диск, а не в память процесса: считает работу один процесс, а
+        показывает её человеку другой (действующее решение «всё через очередь»).
+        """
+        if not isinstance(data, dict):
+            raise OrchestratorError(
+                f"состояние — объект JSON, а не {type(data).__name__}")
+        self._write_json(self._state_path(name), data)
+
+    def state(self, name: str) -> dict:
+        """Состояние сценария по имени. Пустой словарь — записи не было.
+
+        Пусто, а не ошибка: «работы ещё не заводили» — обычный ход, и отличать
+        его от беды вызывающий умеет сам (`kadai.status.load` так и делает).
+        """
+        return self._read_json(self._state_path(name), {}) or {}
+
+    def note_derived(self, art: str, *, tool: str, inputs=(), params=None,
+                     run: str | None = None) -> None:
+        """Запись в журнал производных: чем и из чего построен артефакт.
+
+        Без неё по замечанию «схему переделай» неизвестно ни из какого исходника
+        она построена, ни не сменился ли исходник под ней (записка Д.1). Журнал
+        append-only и пишется в момент производства: петля историю не сохраняет,
+        и всё ценное обязано лечь на диск сразу, а не в конце прогона.
+
+        Одному артефакту записей может быть много (тот же XML построили дважды
+        разными параметрами) — все они уцелевают, а `derived_of` отдаёт
+        последнюю: она про то, как артефакт получили в этот раз.
+        """
+        entry = {"art": str(art), "tool": str(tool), "inputs": [str(i) for i in inputs],
+                 "params": dict(params or {}), "run": run, "at": _now()}
+        with open(self._derived_path(), "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+
+    def derived_of(self, art: str) -> dict | None:
+        """Последняя запись о том, как построен артефакт, или None."""
+        art = str(art)
+        found = None
+        for entry in self._read_lines(self._derived_path()):
+            if entry.get("art") == art:
+                found = entry
+        return found
+
+    # ── архив ───────────────────────────────────────────────────────────────
+    def pack(self, entries, *, name: str = "работа.zip") -> str:
+        """Опись → ZIP в `out/`. Возвращает **имя** архива, а не путь.
+
+        Опись — список записей `{"name": имя в архиве, источник}`, где источник
+        ровно один из трёх: `artifact` (идентификатор по содержимому), `output`
+        (готовый файл в каталоге сборки) или `text` (то, что сочинил сценарий).
+        Четвёртого вида нет намеренно: любой другой источник — это путь, а путь
+        сюда приходить не должен, иначе складывать архив начнёт вызывающий.
+
+        Наружу — имя: путь знает только проект, и утечка его в сценарий значит
+        путь на экране у человека и в логах сайта (`kadai.stages._names_only`
+        это же и проверяет с другой стороны).
+        """
+        leaf = _safe_leaf(name, "имя архива")
+        prepared = [_entry_bytes(self, e, number)
+                    for number, e in enumerate(entries or (), start=1)]
+        if not prepared:
+            # Пустой ZIP выглядит как готовый архив и открывается без ошибки:
+            # человек узнает, что работы в нём нет, распаковав его.
+            raise OrchestratorError("опись архива пуста: складывать нечего")
+        path = os.path.join(self.outdir(), leaf)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for inner, data in prepared:
+                zf.writestr(inner, data)
+        self._write_bytes(path, buf.getvalue())
+        return leaf
 
     # ── учёт ────────────────────────────────────────────────────────────────
     def journal(self) -> llm.Journal:
@@ -601,6 +1012,27 @@ class Project:
     def _runs_dir(self) -> str:
         return os.path.join(self.path, "runs")
 
+    def _blocks_dir(self) -> str:
+        return os.path.join(self.path, "blocks")
+
+    def _blocks_path(self, n: int) -> str:
+        return os.path.join(self._blocks_dir(), f"v{int(n)}.json")
+
+    def _state_path(self, name: str) -> str:
+        """Имя записи состояния — из данных сценария, значит через `_slug`."""
+        return os.path.join(self.path, "state", f"{_slug(hokoku.wire.norm_key(str(name)))}.json")
+
+    def _derived_path(self) -> str:
+        return os.path.join(self.path, "derived.jsonl")
+
+    def _output_path(self, name: str) -> str:
+        """Готовый файл в каталоге сборки по имени. Путь вместо имени — отказ."""
+        leaf = _safe_leaf(name, "имя готового файла")
+        path = os.path.join(self.outdir(), leaf)
+        if not os.path.isfile(path):
+            raise OrchestratorError(f"готового файла {leaf!r} в каталоге сборки нет")
+        return path
+
     def _journal_path(self) -> str:
         return os.path.join(self.path, "journal.jsonl")
 
@@ -642,7 +1074,17 @@ class Project:
         return self._read_json(os.path.join(folder, f"v{head}.json"), None)
 
     def _read_journal(self) -> list:
-        path = self._journal_path()
+        return self._read_lines(self._journal_path())
+
+    @staticmethod
+    def _read_lines(path: str) -> list:
+        """Записи из файла по строке на запись. Битая строка пропускается.
+
+        Пропускается, а не роняет: журнал дописывается на каждом вызове модели,
+        и оборванная последняя строка — обычный конец убитого процесса. Ронять
+        на ней означало бы, что после одного такого обрыва проект не открыть
+        вовсе, а расход по остальным строкам посчитан.
+        """
         if not os.path.isfile(path):
             return []
         out = []
@@ -654,8 +1096,6 @@ class Project:
                 try:
                     out.append(json.loads(line))
                 except ValueError:
-                    # Битая строка журнала — не повод не дать работать: расход
-                    # по ней потерян, а всё остальное считается по-прежнему.
                     continue
         return out
 
@@ -723,4 +1163,5 @@ class Project:
         os.replace(tmp, path)
 
 
-__all__ = ["Project", "Version", "Run", "SOURCES", "artifact_id"]
+__all__ = ["Project", "Version", "BlockVersion", "Run", "SOURCES", "BLOCK_FIELDS",
+           "artifact_id"]

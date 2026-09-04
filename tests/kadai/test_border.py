@@ -40,16 +40,29 @@ def код(path: Path) -> str:
         out.append("\n" if tok.type in (tokenize.NL, tokenize.NEWLINE) else tok.string)
     return "\n".join(out)
 
-# Пакеты проекта. Импорт любого из них — это либо второй средний слой
-# (`hokoku`, `materials`), либо сетевой код в сценарии (`llm`), либо нарушение
-# действующего правила импорта (`orchestrator`, поправка Л.9 не принята).
-СОСЕДИ = ("hokoku", "llm", "materials", "fragmos", "uml_generator", "orchestrator", "docx")
+# Пакеты проекта, которых `kadai` не касается вовсе. Импорт любого из них — это
+# либо второй средний слой (`materials`), либо сетевой код в сценарии (`llm`),
+# либо нарушение действующего правила импорта (`orchestrator`, поправка Л.9 не
+# принята), либо знание о языках и об OOXML, которое сценарию не принадлежит.
+СОСЕДИ = ("llm", "materials", "fragmos", "uml_generator", "orchestrator", "docx", "kyotsu")
+
+# `hokoku` — исключение правила разреза 2.0.0a4.3: его можно звать **как чистый
+# инструмент** (байты и значения, без диска и проекта). Разрешение узкое, и
+# держится оно тем, что живёт в одном файле: разойдись оно по восьми, проверять
+# «а это точно чистая функция?» пришлось бы чтением всего пакета.
+ГДЕ_МОЖНО_HOKOKU = "blocks.py"
+
+# Дисковое и проектное у `hokoku`: путь на входе, готовый файл на выходе, чужой
+# ZIP. Всё это знает `orchestrator`, и второго знающего в проекте не заводится.
+ДИСКОВОЕ_У_HOKOKU = ("open_document", "build_report", "docx_to_pdf", "validate_docx",
+                     "manifest_from_template", "build_template")
 
 
 def test_файлы_пакета_на_месте():
     имена = {p.name for p in ФАЙЛЫ}
-    assert имена == {"__init__.py", "errors.py", "seams.py", "profile.py", "plan.py",
-                     "stages.py", "status.py", "archive.py", "rework.py"}
+    assert имена == {"__init__.py", "__main__.py", "errors.py", "seams.py", "blocks.py",
+                     "profile.py", "plan.py", "stages.py", "run.py", "status.py",
+                     "archive.py", "rework.py"}
 
 
 def test_ни_одного_импорта_соседа():
@@ -61,16 +74,42 @@ def test_ни_одного_импорта_соседа():
             assert not found, f"{path.name}: импорт {сосед} — это второй средний слой"
 
 
+def test_hokoku_зовётся_из_одного_файла_и_только_чистым():
+    """Движок отчётов можно звать чистыми функциями и только из `blocks.py`.
+
+    Два утверждения, и оба проверяются, потому что каждое поодиночке ничего не
+    стоит. «Только чистыми» без «из одного файла» пришлось бы проверять чтением
+    всего пакета; «из одного файла» без «только чистыми» разрешило бы туда
+    `build_report` — то есть путь и готовый файл, то есть второе место, которое
+    знает диск.
+    """
+    for path in ФАЙЛЫ:
+        текст = код(path)
+        есть = re.search(r"^\s*(?:import hokoku\b|from hokoku[.\s])", текст, re.MULTILINE)
+        assert not есть or path.name == ГДЕ_МОЖНО_HOKOKU, \
+            f"{path.name}: hokoku зовётся мимо {ГДЕ_МОЖНО_HOKOKU}"
+        for дисковое in ДИСКОВОЕ_У_HOKOKU:
+            assert дисковое not in текст, f"{path.name}: {дисковое} — это диск и пути"
+
+
 def test_путей_в_пакете_нет():
     """`os.path.join` в kadai означает, что рядом с Project завелось второе
     хранилище, и переезд на SQLite перестал быть заменой одного класса.
     Данные профиля читаются через importlib.resources — это ресурс пакета,
-    а не состояние работы."""
+    а не состояние работы.
+
+    `from os import environ` в `__main__.py` — единственная уступка, и она не
+    про пути: так процесс узнаёт, кто соберёт ему двери. Всё остальное из `os`
+    запрещено ровно потому, что почти всё остальное в `os` — это путь.
+    """
     for path in ФАЙЛЫ:
         текст = код(path)
-        assert "os.path.join" not in текст, path.name
+        assert "os.path" not in текст, path.name
         assert not re.search(r"^\s*import os\b", текст, re.MULTILINE), path.name
-        assert "open(" not in текст, path.name
+        for найдено in re.findall(r"^\s*from os import (.+)$", текст, re.MULTILINE):
+            assert найдено.strip() == "environ" and path.name == "__main__.py", \
+                f"{path.name}: from os import {найдено}"
+        assert not re.search(r"\bopen\s*\(", текст), path.name
 
 
 def test_кода_никто_не_исполняет():

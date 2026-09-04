@@ -72,17 +72,17 @@ def test_значение_переживает_круговой_прогон(png
 
 
 def test_diagram_через_артефакт(resolve):
-    d = {"v": 1, "type": "diagram", "artifact": "af_xml", "caption": "Алгоритм"}
+    d = {"v": 2, "type": "diagram", "artifact": "af_xml", "caption": "Алгоритм"}
     assert value_from_json(d, resolve_artifact=resolve) == Diagram(XML, caption="Алгоритм")
 
 
 def test_скаляры_переводятся_в_текст():
     """Голых скаляров в JSON нет: true стало бы словом «да» уже у получателя."""
     assert values_to_json({"n": 42, "готово": True, "провал": False, "s": "текст"}) == {
-        "n": {"v": 1, "type": "text", "text": "42"},
-        "готово": {"v": 1, "type": "text", "text": "да"},
-        "провал": {"v": 1, "type": "text", "text": "нет"},
-        "s": {"v": 1, "type": "text", "text": "текст"}}
+        "n": {"v": WIRE_VERSION, "type": "text", "text": "42"},
+        "готово": {"v": WIRE_VERSION, "type": "text", "text": "да"},
+        "провал": {"v": WIRE_VERSION, "type": "text", "text": "нет"},
+        "s": {"v": WIRE_VERSION, "type": "text", "text": "текст"}}
 
 
 # ── 2. схема не отстала от model.py ───────────────────────────────────────────
@@ -172,7 +172,7 @@ REFUSALS = [
     ({"v": 1, "type": "text"}, 'нет обязательного поля "text"'),
     ({"v": "1", "type": "text", "text": "а"}, 'поле "v"'),
     ({"v": 0, "type": "text", "text": "а"}, 'поле "v"'),
-    ({"v": 2, "type": "text", "text": "а"}, "версии 2, читатель знает до 1"),
+    ({"v": 3, "type": "text", "text": "а"}, "версии 3, читатель знает до 2"),
     ({"v": 1, "type": "image", "artifact": "../секрет.png"}, "не идентификатор артефакта"),
     ({"v": 1, "type": "image", "artifact": "/etc/passwd"}, "не идентификатор артефакта"),
     ({"v": 1, "type": "image", "artifact": "iVBORw0KGgoAAAANSUhEUgAAAMgAAAB4CAIAAAD" * 2},
@@ -268,14 +268,25 @@ def test_набор_не_объект():
 
 # ── 5. версии и миграции ──────────────────────────────────────────────────────
 
-def test_цепочка_миграций_пуста_но_рабочая(monkeypatch):
-    """Миграция — чистая функция словарь → словарь; на каждую пишется тест с
-    зафиксированным старым JSON, который задним числом не правится."""
-    assert wire._MIGRATIONS == {}
-    monkeypatch.setattr(wire, "WIRE_VERSION", 2)
-    monkeypatch.setitem(wire._MIGRATIONS, 1, lambda d: {**d, "lang": "python"})
-    assert wire._upgrade({"v": 1, "type": "code", "text": "x = 1"}) == {
+def test_цепочка_миграций_на_каждую_версию(monkeypatch):
+    """Миграция — чистая функция словарь → словарь, по одной на шаг версии."""
+    assert sorted(wire._MIGRATIONS) == list(range(1, WIRE_VERSION))
+    monkeypatch.setattr(wire, "WIRE_VERSION", WIRE_VERSION + 1)
+    monkeypatch.setitem(wire._MIGRATIONS, WIRE_VERSION, lambda d: {**d, "lang": "python"})
+    assert wire._upgrade({"v": WIRE_VERSION, "type": "code", "text": "x = 1"}) == {
         "type": "code", "text": "x = 1", "lang": "python"}
+
+
+def test_значение_версии_1_читается_и_даёт_код_без_подписи(resolve):
+    """Образец версии 1 лежит файлом и задним числом не правится: миграция 1→2 добавила
+    коду `caption` и `ref`, и старое значение обязано собрать тот же документ, что и
+    собирало, — то есть листинг без номера."""
+    d = json.loads((VALUES_DIR / "v1" / "code.json").read_text(encoding="utf-8"))
+    value = value_from_json(d, resolve_artifact=resolve)
+    assert value == Code("def f(x):\n    return x\n", lang="python", line_numbers=True)
+    assert value.caption is None and value.ref is None
+    # обратно значение уезжает уже второй версией: хранится всегда текущая
+    assert value_to_json(value)["v"] == WIRE_VERSION
 
 
 # ── 6. строгий режим поставщика против необязательных полей ───────────────────

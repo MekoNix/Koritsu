@@ -106,7 +106,8 @@ def render(template, values: dict, output=None, *,
     # значение, для которого в шаблоне нет тега: опечатка в ключе (в том числе у модели)
     # раньше просто исчезала — ни в unfilled (там только объявленные теги), ни в errors
     result.unknown_keys = sorted(set(values) - ctx.used_keys)
-    if st["captions"]["fields"] and (result.figures or result.tables or result.formulas):
+    if st["captions"]["fields"] and (result.figures or result.tables or result.formulas
+                                     or result.listings):
         ops.set_update_fields(doc)
     for t_elem, name in ctx.ref_fields:                    # кэш номеров для REF-полей
         plain = name[len("_Ref_"):] if name.startswith("_Ref_") else name
@@ -402,7 +403,7 @@ def _emit_value(ctx: _Ctx, v, ref, para, ppr, base_rpr, loc: ParaLoc):
         return _emit_markdown(ctx, v.blocks, ref, para, ppr, base_rpr, loc,
                               v.images_dir or ctx.images_dir)
     if isinstance(v, Code):
-        return _emit_code(ctx, v, ref, ppr)
+        return _emit_code(ctx, v, ref, ppr, loc=loc)
     if isinstance(v, Image):
         return _emit_image(ctx, v, ref, para, ppr, loc)
     if isinstance(v, Diagram):
@@ -503,7 +504,7 @@ def _emit_markdown(ctx, blocks, ref, para, ppr, base_rpr, loc, images_dir):
                 _add_spans(ctx, p, b.spans, base_rpr, part)
             ref = p
         elif isinstance(b, md.CodeBlock):
-            ref = _emit_code(ctx, Code(b.text, b.lang), ref, ppr)
+            ref = _emit_code(ctx, Code(b.text, b.lang), ref, ppr)   # caption=False: фрагмент, не листинг
         elif isinstance(b, md.Hr):
             p = ops.new_paragraph_after(ref, None)
             ops.style_hr(p)
@@ -550,8 +551,31 @@ def _emit_formula(ctx: _Ctx, latex: str, numbered: bool, ref_name, ref, ppr):
         raise HokokuError(f"формула не разобрана: {latex!r}: {e}")
 
 
-def _emit_code(ctx: _Ctx, c: Code, ref, ppr):
+def _emit_code(ctx: _Ctx, c: Code, ref, ppr, loc: ParaLoc | None = None):
+    """Листинг, при `caption` — с подписью «Листинг N — …» над кодом.
+
+    Подпись сверху, как у таблицы, а не снизу, как у рисунка: листинг читают сверху
+    вниз, и название, стоящее после сорока строк кода, приходит, когда оно уже не нужно.
+
+    Счётчик тот же по устройству, что у рисунков и таблиц: номер ставится полем SEQ,
+    вокруг номера закладка `_Ref_имя`, а `{ref:имя}` в тексте становится полем REF.
+    Значит вставка листинга в середину сдвигает номера у всех ниже — считает их Word,
+    а не мы, и пересборка документа тут ни при чём.
+    """
     cs = ctx.style["code"]
+    cap = ctx.style["captions"]
+    if c.caption is not None and loc is not None and _numbered(c.caption, loc):
+        ctx.result.listings += 1
+        n = ctx.result.listings
+        name = c.ref or ctx.current_key
+        if name:
+            ctx.result.refs[name] = n
+        ref = ops.add_caption(ctx.doc, ref, cap["listing"], n, c.caption,
+                              align=cap["listing_align"],
+                              seq_name=cap["seq_listing"] if cap["fields"] else None,
+                              bookmark=(f"_Ref_{name}" if name else None), ppr_template=ppr)
+        _register_ref_fields(ctx, ref)                # «см. {ref:рис}» в самой подписи
+        ops.keep_with_next(ref)
     return ops.add_code_lines(
         ctx.doc, ref, c.text, ppr, lang=c.lang, font=cs["font"], size_pt=cs["size_pt"],
         highlight=cs["highlight"] if c.highlight is None else c.highlight,

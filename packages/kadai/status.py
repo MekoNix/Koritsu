@@ -46,6 +46,18 @@ from .stages import Hold, StageState, Work, as_dict, stage_now
 # «какая из них настоящая» решалось бы по времени файла.
 STATE_KEY = "kadai"
 
+# Вторая запись — про задание, а не про ход: профиль этой работы, пожелания
+# дословно, разбор задания и то, что уже произведено. Отдельно от хода стадий
+# потому, что живут они по-разному: ход переписывается после каждой стадии
+# целиком, а задание копится и обязано помнить прежние ответы.
+TASK_KEY = "kadai-задание"
+
+# Сколько прежних записей о задании держим. Записка Д.1: пожелания и требование
+# версий не имеют вовсе, и завести их приходится своей маленькой нумерацией —
+# значениями тегов их не сделать, ключ вне шаблона даёт `unknown_key` при каждой
+# проверке. Хвост ограничен, потому что запись читается целиком.
+TASK_HISTORY = 20
+
 
 def snapshot(work: Work, *, spent: dict | None = None, problems=(), since: int = 0) -> dict:
     """Снимок для API: стадия, ход, расход, замечания, готовые файлы, курсор.
@@ -70,6 +82,14 @@ def snapshot(work: Work, *, spent: dict | None = None, problems=(), since: int =
         "stages": stages,
         "current": work.current,
         "hold": asdict(work.hold) if work.hold else None,
+        # Условие так, как его прочитали. Решение владельца 2026-08-31: скан
+        # распознаётся, и распознанное показывается человеку **до** работы —
+        # ошибка OCR в одной формуле даёт безупречно решённую чужую задачу, и
+        # заметить её может только он. Поэтому текст лежит в снимке, а не «его
+        # можно запросить отдельным вызовом»: то, за чем надо идти вторым
+        # запросом, не показывают.
+        "condition_text": work.condition_text,
+        "condition": {k: v for k, v in work.condition.items() if k != "text"},
         "spent": spent if spent is not None else empty_spent(),
         "problems": list(work.problems) + list(problems),
         "outputs": dict(work.outputs),
@@ -101,6 +121,52 @@ def spent_of(project) -> dict:
 
 # ── хранение через шов ───────────────────────────────────────────────────────
 
+def save_task(project, **fields) -> dict:
+    """Дописать в запись о задании и завести ей номер версии. → новая запись.
+
+    Дописать, а не заменить: профиль кладёт стадия «шаблон», требование —
+    стадия «разбор задания», а собранный отчёт — стадия «сборка», и «последний
+    победил» здесь означал бы, что запись о задании теряет всё, чего не знал
+    последний писавший.
+
+    Версия своя и маленькая — рядом с чужой нумерацией версий блоков. Замен ей
+    нет: пожелания и требование не значение блока и не артефакт, а положить их
+    значением служебного ключа нельзя — ключ вне работы давал бы предупреждение
+    при каждой проверке, а замечания показываются человеку.
+    """
+    было = task(project)
+    новое = {k: v for k, v in было.items() if k not in ("v", "history")}
+    новое.update(fields)
+    история = list(было.get("history") or ())
+    if было:
+        история.append({k: v for k, v in было.items() if k != "history"})
+    запись = {**новое, "v": int(было.get("v") or 0) + 1,
+              "history": история[-TASK_HISTORY:]}
+    method(project, "put_state", "состояние стадий")(TASK_KEY, запись)
+    return запись
+
+
+def task(project) -> dict:
+    """Запись о задании: профиль, пожелания, требование, произведённое. Пусто — не заводили."""
+    return dict(method(project, "state", "состояние стадий")(TASK_KEY) or {})
+
+
+def rollback_task(project, n: int) -> dict:
+    """Вернуть запись о задании версии `n` — новой версией, а не откатом номера.
+
+    То же решение, что у версий блоков и значений тегов, и по той же причине:
+    иначе номер молча уменьшается, и двое, глядя на «версию 3», видят разные
+    записи.
+    """
+    запись = task(project)
+    прежние = {int(h.get("v") or 0): h for h in (запись.get("history") or ())}
+    if int(n) not in прежние:
+        известные = ", ".join(str(k) for k in sorted(прежние)) or "ни одной"
+        raise KadaiError(f"версии {n} у записи о задании нет (есть: {известные})")
+    старое = {k: v for k, v in прежние[int(n)].items() if k not in ("v", "history")}
+    return save_task(project, **старое)
+
+
 def save(project, work: Work) -> None:
     """Ход работы — в проект. Пока шва нет — отказ с подписью, а не запись мимо."""
     method(project, "put_state", "состояние стадий")(STATE_KEY, as_dict(work))
@@ -130,10 +196,12 @@ def load(project, plan: Plan) -> Work:
     hold = raw.get("hold")
     return Work(id=raw["work"], plan=plan,
                 stages=[StageState(**s) for s in raw.get("stages", ())],
+                condition=dict(raw.get("condition") or {}),
                 state=raw.get("state", "running"), current=raw.get("current", ""),
                 hold=Hold(**hold) if hold else None,
                 problems=list(raw.get("problems", ())), outputs=dict(raw.get("outputs", {})),
                 events=list(raw.get("events", ())), started=raw.get("started", ""))
 
 
-__all__ = ["STATE_KEY", "snapshot", "spent_of", "empty_spent", "save", "load"]
+__all__ = ["STATE_KEY", "TASK_KEY", "snapshot", "spent_of", "empty_spent",
+           "save", "load", "save_task", "task", "rollback_task"]

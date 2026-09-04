@@ -35,7 +35,7 @@ from .model import (Blocks, Code, Diagram, Formula, HokokuError, Image, Markdown
                     Table, Text, Toc, Value)
 from .tags import norm_key
 
-WIRE_VERSION = 1
+WIRE_VERSION = 2
 
 # Идентификатор артефакта, а не имя файла: ни «/», ни «\», ни «..», ни «~» — путь
 # в JSON запрещён по построению, а не проверкой у каждого вызывающего.
@@ -249,7 +249,9 @@ _TYPES: dict[str, _Spec] = {s.name: s for s in (
         "text": _TEXT,
         "lang": _Field({"type": "string"}, _string),
         "line_numbers": _Field({"type": ["boolean", "null"]}, _opt_flag),
-        "highlight": _Field({"type": ["boolean", "null"]}, _opt_flag)}),
+        "highlight": _Field({"type": ["boolean", "null"]}, _opt_flag),
+        # подпись листинга без `false`: у кода нет третьего состояния (см. model.Code)
+        "caption": _Field({"type": ["string", "null"]}, _opt_string), "ref": _REF}),
     _spec("image", Image, {
         "artifact": _Field(_ART_SCHEMA, _artifact, attr="source", required=True),
         "caption": _CAPTION, "width_cm": _WIDTH, "align": _ALIGN_ONE, "ref": _REF}),
@@ -307,7 +309,21 @@ _check_model_coverage()
 # Миграции словарь → словарь: ключ — версия «откуда». Чистые, без ввода-вывода и без
 # resolve_artifact; применяются до постройки датакласса, иначе каждая правка model.py
 # требовала бы держать копию старого датакласса.
-_MIGRATIONS: dict[int, object] = {}
+
+
+def _v1_to_v2(d: dict) -> dict:
+    """1 → 2: у `code` появились `caption` и `ref` («Листинг N», ссылки).
+
+    Переписывать нечего, и это законная миграция, а не пустая: оба поля
+    необязательны, а умолчание `caption=False` (без подписи и без номера) — ровно то
+    поведение, которое было у версии 1. Значение версии 1 после неё собирает тот же
+    документ, что и собирало; версия поднята потому, что читатель версии 1, встретив
+    новое поле, обязан отказать, а не проглотить его молча.
+    """
+    return d
+
+
+_MIGRATIONS: dict[int, object] = {1: _v1_to_v2}
 
 
 # ── JSON → значение ───────────────────────────────────────────────────────────

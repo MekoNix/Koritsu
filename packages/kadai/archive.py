@@ -81,6 +81,22 @@ class Entry:
         return {"name": self.name, **self.source}
 
 
+# Расширение файла по языку блока — только для имени внутри архива. Знания о
+# языках здесь нет и заводить его нельзя (решение 2026-09-04): разбирает код
+# tree-sitter за дверью `check_code`, а это таблица имён, по которой человек
+# узнаёт файл в распакованной папке. Незнакомый язык — `.txt`, а не догадка:
+# `.py` на чужом коде обманул бы и редактор, и человека.
+SOURCE_EXT = {"python": "py", "cpp": "cpp", "c": "c", "c_sharp": "cs", "csharp": "cs",
+              "java": "java", "javascript": "js", "typescript": "ts", "go": "go",
+              "rust": "rs", "sql": "sql", "bash": "sh", "shell": "sh"}
+
+
+def source_name(key, language) -> str:
+    """Имя файла исходника в архиве: ключ блока плюс расширение по языку."""
+    ext = SOURCE_EXT.get(str(language or "").strip().lower(), "txt")
+    return f"{safe_leaf(key)}.{ext}"
+
+
 def safe_leaf(name) -> str:
     """Одно звено имени внутри архива или отказ. Разделителей не пропускает вовсе.
 
@@ -125,30 +141,58 @@ def check_names(entries) -> None:
         seen[key] = e.name
 
 
-def plan_archive(*, notice: str, report: str | None = REPORT_DOCX, pdf: str | None = None,
-                 template_artifact: str | None = None, sources=(), diagrams=(),
+def plan_archive(*, notice: str, report: str | None = None,
+                 report_artifact: str | None = None, pdf: str | None = None,
+                 pdf_artifact: str | None = None, template_artifact: str | None = None,
+                 sources=(), source_texts=(), diagrams=(), diagram_texts=(),
                  solution: str = "") -> list[Entry]:
     """Опись архива. `notice` обязателен и обязан содержать строку про незапущенный код.
 
-    `sources` — пары `(имя файла, идентификатор артефакта)`, `diagrams` — пары
-    `(ключ тега, идентификатор артефакта)`: схема называется тем тегом, который
-    на неё ссылается, иначе по архиву не понять, какая схема к какому разделу.
+    Отчёт приходит одним из двух путей, и оба законны. `report` — имя готового
+    файла в каталоге сборки (шаблонный путь: `build_report` пишет DOCX в `out/`).
+    `report_artifact` — идентификатор артефакта (живой режим: документ собран из
+    списка блоков в памяти и положен `put_artifact`). Второго знания о том, где
+    лежат байты, `kadai` не заводит: и то и другое — не путь.
+
+    `sources` — пары `(имя файла, идентификатор артефакта)`, `source_texts` —
+    пары `(имя файла, текст)`: код, сочинённый моделью, живёт блоком работы, а
+    не материалом, и нести его в архив приходится текстом. `diagrams` — пары
+    `(ключ блока, идентификатор)`: схема называется тем блоком, который на неё
+    ссылается, иначе по архиву не понять, какая схема к какому разделу.
+
+    `diagram_texts` — те же пары, но со схемой строкой. Два пути здесь не
+    прихоть: значение блока `diagram` держит схему **либо** идентификатором
+    артефакта, либо XML'ем, и обратно в запись пишется всегда XML (движок
+    отчётов идентификатор схемы наружу не эмитит — `hokoku.wire`). Значит схема,
+    построенная петлёй, доезжает сюда текстом, и знать про это надо здесь:
+    иначе `схемы/` в архиве молча пусты, а человек узнаёт об этом, распаковав.
     """
     if NOT_RUN not in (notice or ""):
         raise KadaiError("в «как-это-собрано.txt» нет строки о том, что код не "
                          "запускался. Без неё архив обещает проверенный код: "
                          "соберите текст через notice_text()")
+    if report and report_artifact:
+        raise KadaiError("отчёт назван и файлом сборки, и артефактом: источник байтов "
+                         "ровно один, иначе в архив уедет неизвестно который")
     entries: list[Entry] = []
-    if report:
+    if report_artifact:
+        entries.append(Entry(REPORT_DOCX, {"artifact": report_artifact}))
+    elif report:
         entries.append(Entry(safe_leaf(report), {"output": report}))
-    if pdf:
+    if pdf_artifact:
+        entries.append(Entry(REPORT_PDF, {"artifact": pdf_artifact}))
+    elif pdf:
         entries.append(Entry(safe_leaf(pdf), {"output": pdf}))
     if template_artifact:
         entries.append(Entry(TEMPLATE, {"artifact": template_artifact}))
     for name, art in sources:
         entries.append(Entry(in_dir(DIR_SOURCES, name), {"artifact": art}))
+    for name, text in source_texts:
+        entries.append(Entry(in_dir(DIR_SOURCES, name), {"text": str(text)}))
     for key, art in diagrams:
         entries.append(Entry(in_dir(DIR_DIAGRAMS, f"{key}.drawio"), {"artifact": art}))
+    for key, xml in diagram_texts:
+        entries.append(Entry(in_dir(DIR_DIAGRAMS, f"{key}.drawio"), {"text": str(xml)}))
     if solution:
         entries.append(Entry(SOLUTION, {"text": solution}))
     entries.append(Entry(NOTICE, {"text": notice}))
@@ -214,13 +258,19 @@ def _quote(text: str) -> str:
     return "\n".join("  | " + line for line in str(text).splitlines())
 
 
-def pack(project, entries) -> str:
-    """Сложить архив. Складывает проект: он единственный знает пути."""
+def pack(project, entries, *, name: str = "") -> str:
+    """Сложить архив. Складывает проект: он единственный знает пути.
+
+    Возвращается **имя** архива, а не путь: путь на экране у человека и в логах
+    сайта — это то, ради чего вся опись собирается идентификаторами.
+    """
     check_names(entries)
-    return method(project, "pack", "архив")([e.as_dict() for e in entries])
+    door = method(project, "pack", "архив")
+    entries = [e.as_dict() for e in entries]
+    return door(entries, name=safe_leaf(name)) if name else door(entries)
 
 
 __all__ = ["Entry", "NOT_RUN", "NOTICE", "SOLUTION", "TEMPLATE", "REPORT_DOCX", "REPORT_PDF",
-           "DIR_SOURCES", "DIR_DIAGRAMS",
+           "DIR_SOURCES", "DIR_DIAGRAMS", "SOURCE_EXT", "source_name",
            "safe_leaf", "in_dir", "check_names", "plan_archive", "notice_text",
            "solution_md", "pack"]

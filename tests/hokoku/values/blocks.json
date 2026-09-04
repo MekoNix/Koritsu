@@ -1,5 +1,5 @@
 {
-  "v": 1,
+  "v": 2,
   "type": "blocks",
   "items": [
     {
@@ -15,7 +15,9 @@
       "text": "int main(){}",
       "lang": "cpp",
       "line_numbers": null,
-      "highlight": null
+      "highlight": null,
+      "caption": "Точка входа",
+      "ref": null
     },
     {
       "type": "image",

@@ -63,11 +63,24 @@ class Markdown:
 @dataclass
 class Code:
     """Листинг: моноширинный, переносы строк сохранены, без разбора разметки.
-    lang — язык для подсветки (pygments); line_numbers — нумерация строк (None → из styles)."""
+    lang — язык для подсветки (pygments); line_numbers — нумерация строк (None → из styles).
+
+    caption — «Листинг {n} — …» над кодом (поле SEQ, закладка для {ref:имя}); None (по
+    умолчанию) — ни подписи, ни номера, `""` — «Листинг N» без названия.
+
+    Третьего состояния, как `caption=False` у Image и Table, здесь нет намеренно. Там оно
+    нужно, чтобы сказать «это логотип, не нумеруй его», то есть отличить рисунок без
+    подписи от рисунка, которому подпись просто не написали. У кода такой развилки не
+    бывает: листинг с номером — самостоятельный кусок, на который ссылаются, а код без
+    номера — фрагмент внутри текста, и это ровно `None`. Умолчание `None` держит прежнее
+    поведение: ```-вставка внутри markdown номера не получает, иначе «Листинг 4» над
+    каждым трёхстрочным примером сбило бы нумерацию настоящих листингов и все ссылки ниже."""
     text: str
     lang: str = ""
     line_numbers: bool | None = None
     highlight: bool | None = None
+    caption: str | None = None
+    ref: str | None = None           # имя для ссылок {ref:имя} (по умолчанию — ключ тега)
 
 
 @dataclass
@@ -164,6 +177,7 @@ class RenderResult:
     figures:  int = 0                                    # сколько рисунков пронумеровано
     tables:   int = 0
     formulas: int = 0
+    listings: int = 0
     refs:     dict = field(default_factory=dict)         # имя → номер (рисунки и таблицы)
     unresolved_refs: list[str] = field(default_factory=list)
     errors:   list[dict] = field(default_factory=list)   # on_error="skip": [{key, message}]

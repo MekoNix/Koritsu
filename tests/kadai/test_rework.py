@@ -18,6 +18,17 @@ from kadai import rework
 from .conftest import FakeProject, FakeSpec
 
 
+def прогнать(doors):
+    """Работа, доведённая до архива: замечание бывает только к сделанному."""
+    session = kadai.run.new(doors.services())
+    return kadai.run.run(session)
+
+
+def тексты(project) -> dict:
+    return {b["key"]: b["value"].get("text", "") for b in project.blocks()
+            if b["kind"] in ("markdown", "text")}
+
+
 def test_каждый_маршрут_называет_где_он_бессилен():
     for kind, route in kadai.ROUTES.items():
         assert route.honest.strip(), f"маршрут {kind} молчит о своих пределах"
@@ -111,3 +122,99 @@ def test_замечание_к_куску_требует_ключа():
         kadai.plan_rework("кусок")
     план = kadai.plan_rework("кусок", key="введение")
     assert план["tags"] == ["введение"] and план["full_text"] is False
+
+
+# ── исполнение замечания на дверях ───────────────────────────────────────────
+
+def test_замечание_к_одному_блоку_пересчитывает_один_блок(doors):
+    """Минимальный пересчёт «этого куска»: блок возвращается в черновик с
+    замечанием человека, и проход текста пишет ровно его. Остальные тексты
+    остаются буква в букву — иначе замечание к абзацу оплатило бы весь отчёт."""
+    session = прогнать(doors)
+    было = тексты(doors.project)
+    ключ = [k for k, v in было.items() if v.startswith("Написано моделью")][0]
+    итог = rework.apply(session, note="суховато, добавь пример", block=ключ)
+
+    assert итог["kind"] == "кусок"
+    assert итог["stages"] == ("тексты", "сборка", "архив")
+    стало = тексты(doors.project)
+    assert {k: v for k, v in стало.items() if k != ключ} == \
+        {k: v for k, v in было.items() if k != ключ}
+    assert doors.texts == [{"overwrite": False}, {"overwrite": False}]
+    assert len(doors.solved) == 1                 # петлю ради абзаца не звали
+    assert session.work.state == "done"
+
+
+def test_замечание_к_блоку_с_таблицей_идёт_петлёй_а_текст_не_трогает(doors):
+    """Правка нетекстового блока локальна: текст ссылается на него через
+    `{ref:}`, а номер ставит сборщик, — значит замена содержимого не делает
+    текст неверным."""
+    session = прогнать(doors)
+    было = тексты(doors.project)
+    ключ = [b["key"] for b in doors.project.blocks() if b["kind"] == "table"][0]
+    итог = rework.apply(session, note="добавь колонку с памятью", block=ключ)
+
+    assert итог["kind"] == "схема"
+    assert "решение" in итог["stages"] and "тексты" not in итог["stages"]
+    assert тексты(doors.project) == было
+    assert ключ in doors.solved[-1]["task"] and "добавь колонку" in doors.solved[-1]["task"]
+
+
+def test_замечание_к_коду_честно_переписывает_весь_текст(doors):
+    """Смена кода меняет вход у всех текстовых блоков сразу. Половина отчёта по
+    старому коду — дефект, а не экономия, и вырождение записано словами."""
+    session = прогнать(doors)
+    ключ = [b["key"] for b in doors.project.blocks() if b["kind"] == "code"][0]
+    итог = rework.apply(session, note="сортировка не та", block=ключ)
+
+    assert итог["kind"] == "код"
+    assert "текст пересчитывается весь" in итог["note"]
+    assert "текст точечно не пересчитывается" in итог["honest"]
+    assert len(doors.texts) == 2                  # второй проход целиком, а не по блоку
+
+
+def test_замечание_к_строению_честно_называет_потерю(doors):
+    """`make_template` выдаёт ключи заново, и перенести правку человека по ключу
+    нельзя: тот же ключ в новом строении означает другой раздел."""
+    session = прогнать(doors)
+    записи = doors.project.blocks()
+    записи[1] = {**записи[1], "source": "manual"}
+    doors.project.set_blocks(записи, source="manual", note="правка человека")
+
+    итог = rework.apply(session, note="добавь раздел про сложность", kind="структура")
+    assert "не переедут" in итог["note"] and "rollback_blocks" in итог["note"]
+    assert "строение_заново" in [p["code"] for p in session.work.problems]
+
+
+def test_замечание_без_блока_и_без_вида_не_угадывается(doors):
+    """Разбирать слова замечания нельзя: «тут всё не то» не содержит ни одного
+    слова любого списка, и угаданный маршрут переписал бы не то."""
+    session = прогнать(doors)
+    with pytest.raises(kadai.KadaiError, match="назовите блок"):
+        rework.apply(session, note="тут всё не то")
+
+
+def test_замечание_к_блоку_которого_нет_подсказывает(doors):
+    session = прогнать(doors)
+    with pytest.raises(kadai.KadaiError, match="похоже на"):
+        rework.apply(session, note="перепиши", block="b-1")
+
+
+def test_блок_человека_не_переписывается_даже_по_прямой_просьбе(doors):
+    """Замечание к своему же абзацу — это правка в Word, а не прогон модели.
+
+    Отказ, а не прогон впустую: дверь свой блок не тронет (и правильно), а
+    работа упёрлась бы в «писать нечего» и встала бы `failed` — по замечанию,
+    которое человек мог выполнить сам за минуту.
+    """
+    session = прогнать(doors)
+    записи = doors.project.blocks()
+    ключ = [b["key"] for b in записи if b["kind"] == "markdown"][1]
+    записи = [{**b, "source": "manual"} if b["key"] == ключ else b for b in записи]
+    было = [b for b in записи if b["key"] == ключ][0]["value"]["text"]
+    doors.project.set_blocks(записи, source="manual", note="правка человека")
+
+    with pytest.raises(kadai.KadaiError, match="написан человеком"):
+        rework.apply(session, note="перепиши покороче", block=ключ)
+    стало = [b for b in doors.project.blocks() if b["key"] == ключ][0]["value"]["text"]
+    assert стало == было and session.work.state == "done"

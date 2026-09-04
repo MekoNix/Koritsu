@@ -33,6 +33,12 @@ orchestrator — единственный, кто знает про все па�
     fill_agent(project, endpoint=…)       уровень 3: агент с инструментами
     build(project)                        значения → validate → build_report
     build_parts(project, keys=…)          раскладка промпта в пять ролей
+    ask(project, вопрос, endpoint=…)      один вопрос модели вне тегов
+    make_template(project, …)             строение работы → заготовки блоков
+    solve(project, задание, endpoint=…)   живой режим: агент собирает блоки
+    write_texts(project, endpoint=…)      весь связный текст одним проходом
+    check_code(text, lang)                разбирается ли сочинённый исходник
+    kadai_services(project, endpoint=…)   двери для сценария kadai
 
 Состав пакета:
 
@@ -45,6 +51,9 @@ orchestrator — единственный, кто знает про все па�
     tools.py     семь инструментов уровня 3 поверх той же механики
     agent.py     уровень 3: петля llm.run_tools, отбор, ворота, исход
     build.py     значения → hokoku.build_report
+    live.py      живой режим: работа списком блоков, свои инструменты, текст
+    doors.py     двери наружу: ask, make_template, check_code, Services для kadai
+    kadai.py     python -m orchestrator.kadai: сценарий с уже собранными дверями
 
 Три уровня — не три службы: у всех один отбор тегов, одна раскладка промпта,
 один валидатор и одна точка записи версии. Инструмент уровня 3 — тонкая
@@ -62,7 +71,8 @@ tree-sitter'ом, ни `exec`, ни подпроцесса, ни поиска в
 единственные ворота `tools.operator_channel_gate`.
 """
 from .errors import OrchestratorError
-from .project import Project, Run, SOURCES, Version, artifact_id
+from .project import BLOCK_FIELDS, BlockVersion, Project, Run, SOURCES, Version, \
+    artifact_id
 from .prompt import RULES, build_parts, prompt_hash, render, seal_mark
 from .schema import any_value_schema, fillable, report_schema, tag_schema
 from .stream import TagStream
@@ -71,14 +81,20 @@ from .tools import ToolBox, ToolError, operator_channel_gate
 from .agent import AgentResult, fill_agent
 from .build import check, job_of
 from .build import build
+from .live import LiveResult, TextsResult, live_tools, solve, write_texts
+from .doors import Answer, ask, check_code, kadai_services, make_template
 
 __all__ = [
-    "Project", "Version", "Run", "SOURCES", "artifact_id",
+    "Project", "Version", "BlockVersion", "Run", "SOURCES", "artifact_id",
+    "BLOCK_FIELDS",
     "fill_tag", "fill_report", "TagFill", "RunResult",
     "fill_agent", "AgentResult", "ToolBox", "ToolError", "operator_channel_gate",
     "build", "check", "job_of",
+    "ask", "Answer", "make_template", "check_code", "solve", "write_texts",
+    "kadai_services",
+    "LiveResult", "TextsResult", "live_tools",
     "build_parts", "seal_mark", "render", "prompt_hash", "RULES",
     "tag_schema", "any_value_schema", "report_schema", "fillable", "TagStream",
     "OrchestratorError",
-    "prompt", "schema", "stream", "fill", "tools", "agent",
+    "prompt", "schema", "stream", "fill", "tools", "agent", "live", "doors",
 ]

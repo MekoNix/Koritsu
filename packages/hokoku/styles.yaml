@@ -3,13 +3,16 @@
 captions:
   figure: "Рисунок {n} — {caption}"     # ГОСТ 7.32: "Рисунок {n} – {caption}" (короткое тире)
   table:  "Таблица {n} — {caption}"
+  listing: "Листинг {n} — {caption}"    # над кодом, как у таблицы: листинг читают сверху вниз
   sheet:  " (лист {k} из {total})"       # суффикс, когда у схемы несколько листов
   fields: true                           # номер — поле SEQ (Word пересчитает при F9/печати)
   figure_align: center
   table_align: left
+  listing_align: left
   seq_figure: "Рисунок"                  # имя счётчика SEQ
   seq_table: "Таблица"
   seq_formula: "Формула"
+  seq_listing: "Листинг"
 
 code:
   font: "Courier New"

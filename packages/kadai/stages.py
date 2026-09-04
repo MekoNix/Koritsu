@@ -20,7 +20,7 @@ stages — семь стадий работы, их состояния и еди
 именно показывают: без этого ожидание неотличимо от зависшей работы, и человек
 нажмёт «отменить» — то есть выбросит оплаченное.
 
-**Счётчик только там, где есть знаменатель.** Теги — «заполнено 9 из 12»,
+**Счётчик только там, где есть знаменатель.** Блоки — «написано 9 из 12»,
 ходы петли — «шаг 4 из 12». У стадий 1–3 знаменателя нет, и полоска с
 выдуманным знаменателем врёт: там называется действие, а не доля.
 
@@ -70,9 +70,9 @@ class StageKind:
 STAGES: tuple = (
     StageKind("приём", 1, "нет", "материалы разобраны, опись готова", "материал"),
     StageKind("разбор задания", 2, "1 вызов", "требование: вид работы, тема, что дано, чего не хватает"),
-    StageKind("шаблон", 3, "1 вызов", "структура, DOCX, манифест"),
-    StageKind("решение", 4, "петля", "исходники, схемы, значения нетекстовых тегов", "шаг"),
-    StageKind("тексты", 5, "поток", "значения текстовых тегов", "тег"),
+    StageKind("шаблон", 3, "1 вызов", "строение работы и скелет: блоки-заголовки и места под содержимое"),
+    StageKind("решение", 4, "петля", "код, схемы, таблицы — нетекстовые блоки", "шаг"),
+    StageKind("тексты", 5, "поток", "связный текст всех блоков одним проходом", "блок"),
     StageKind("сборка", 6, "нет", "DOCX, PDF, список замечаний"),
     StageKind("архив", 7, "нет", "ZIP"),
 )
@@ -133,6 +133,7 @@ class Work:
     id: str
     plan: Plan
     stages: list = field(default_factory=list)
+    condition: dict = field(default_factory=dict)
     state: str = "running"
     current: str = ""
     hold: Hold | None = None
@@ -140,6 +141,16 @@ class Work:
     outputs: dict = field(default_factory=dict)
     events: list = field(default_factory=list)
     started: str = ""
+
+    @property
+    def condition_text(self) -> str:
+        """Текст условия так, как его прочитали. Показывается человеку до решения.
+
+        Держится в работе, а не добывается заново на каждый показ: условие могло
+        быть распознано OCR, и человек обязан увидеть **ровно тот** текст, по
+        которому считали, а не результат второго распознавания.
+        """
+        return str(self.condition.get("text") or "")
 
     @property
     def seq(self) -> int:
@@ -261,6 +272,21 @@ def finish(work: Work, name: str, *, note: str = "", hold: Hold | None = None,
     return work
 
 
+def reopen(work: Work, *, note: str = "") -> Work:
+    """Работа кончилась (или споткнулась), а человек прислал замечание — открываем.
+
+    Отдельно от `resume`: `resume` продолжает то, что стояло на вопросе, а
+    `reopen` возвращает в работу законченное. Разница видна человеку — «ждали
+    вас» и «переделываем по замечанию» это разные строки, — и по ней же считается
+    расход: переделка стоит денег, а ответ на вопрос нет.
+    """
+    if work.state == "running":
+        raise KadaiError("работа и так идёт: открывать нечего")
+    work.state, work.hold, work.current = "running", None, ""
+    _event(work, stage="", state="running", note=note or "замечание человека")
+    return work
+
+
 def resume(work: Work, *, note: str = "") -> Work:
     """Человек ответил — идём дальше. Отказ, если работа и не стояла.
 
@@ -372,7 +398,7 @@ def as_dict(work: Work) -> dict:
     уже заведённых работ, а разошедшиеся копии никто не заметит. Кладётся имя.
     """
     return {"work": work.id, "profile": work.plan.profile.name, "started": work.started,
-            "state": work.state, "stage": stage_now(work),
+            "state": work.state, "stage": stage_now(work), "condition": dict(work.condition),
             "pause_after": sorted(work.plan.pause_after),
             "stages": [asdict(s) for s in work.stages],
             "current": work.current, "hold": asdict(work.hold) if work.hold else None,
@@ -383,5 +409,5 @@ def as_dict(work: Work) -> dict:
 __all__ = ["STAGES", "STAGE_NAMES", "STAGE_STATES", "WORK_STATES", "BY_NAME", "SHOWN",
            "WAITING", "RUNNING", "DONE", "STUMBLED", "SKIPPED",
            "StageKind", "StageState", "Hold", "Work",
-           "new_work", "begin", "step", "finish", "resume", "stumble", "cancel",
+           "new_work", "begin", "step", "finish", "resume", "reopen", "stumble", "cancel",
            "stage_now", "events_since", "as_dict"]

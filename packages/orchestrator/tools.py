@@ -220,6 +220,31 @@ def tools() -> list[llm.Tool]:
     """
     value = schema_mod.any_value_schema()
     return [
+        *material_tools(),
+        llm.Tool(name="set_tag", description=(
+            "Поставить значение тега отчёта. Значение проверяется тем же "
+            "валидатором, что и правка человека: тип обязан совпасть с "
+            "манифестом, артефакт — существовать. Отказ приходит с перечнем "
+            "замечаний — поправь значение и повтори. Ставь значение сразу, как "
+            "оно готово: поставленное сохранено и обрывом не отменяется."),
+            schema=_obj({"key": {"type": "string"}, "value": value},
+                        required=["key", "value"])),
+        llm.Tool(name="preview", schema=_obj({}), description=(
+            "Состояние отчёта: сколько тегов заполнено, какие пусты, какие "
+            "замечания даёт проверка. Файла не отдаёт — документ собирается "
+            "после прогона. Без аргументов.")),
+    ]
+
+
+def material_tools() -> list[llm.Tool]:
+    """Пять инструментов чтения и схем — общие для обоих режимов работы.
+
+    Общие, а не скопированные: живой режим (`live.py`) читает материалы и строит
+    схемы теми же вызовами, и разойдись описания, модель получила бы два разных
+    объяснения одного инструмента в двух режимах. Тегов эти пять не касаются
+    вовсе, поэтому и вынесены: всё, что про теги, живёт в `tools()`.
+    """
+    return [
         llm.Tool(name="list_materials", schema=_obj({}), description=(
             "Опись материалов проекта: идентификатор, имя, вид, чем нумеруется "
             "содержимое и сколько его. Содержимого не отдаёт — его отдаёт "
@@ -269,23 +294,15 @@ def tools() -> list[llm.Tool]:
                 "language": {"enum": list(_LANGS)},
                 "theme": {"enum": [*_THEMES, None]}},
                 required=["ids", "language"])),
-        llm.Tool(name="set_tag", description=(
-            "Поставить значение тега отчёта. Значение проверяется тем же "
-            "валидатором, что и правка человека: тип обязан совпасть с "
-            "манифестом, артефакт — существовать. Отказ приходит с перечнем "
-            "замечаний — поправь значение и повтори. Ставь значение сразу, как "
-            "оно готово: поставленное сохранено и обрывом не отменяется."),
-            schema=_obj({"key": {"type": "string"}, "value": value},
-                        required=["key", "value"])),
-        llm.Tool(name="preview", schema=_obj({}), description=(
-            "Состояние отчёта: сколько тегов заполнено, какие пусты, какие "
-            "замечания даёт проверка. Файла не отдаёт — документ собирается "
-            "после прогона. Без аргументов.")),
     ]
 
 
-TOOL_NAMES = ("list_materials", "read_material", "make_flowchart",
-              "make_class_diagram", "make_object_diagram", "set_tag", "preview")
+# Пять общих на оба режима: чтение материалов и построение схем. Порядок тот же,
+# что в объявлениях, — он же порядок в кэшируемом префиксе запроса.
+MATERIAL_TOOLS = ("list_materials", "read_material", "make_flowchart",
+                  "make_class_diagram", "make_object_diagram")
+
+TOOL_NAMES = MATERIAL_TOOLS + ("set_tag", "preview")
 
 
 class ToolError(Exception):
@@ -313,10 +330,16 @@ class ToolBox:
     минус те, чью текущую версию написал человек. Проверка стоит в инструменте,
     а не только в отборе, потому что тег модель называет сама: без неё «поставь
     цель» прошло бы мимо всех отборов и затёрло бы правку студента.
+
+    `manifest`, `template` и `allowed` необязательны, и это не послабление:
+    живой режим (`live.LiveBox`) наследует отсюда чтение материалов и построение
+    схем, а тегов, манифеста и шаблона у него нет вовсе — работа там список
+    блоков. Пустой `allowed` при этом означает ровно то, что написано: ставить
+    значение тега этому прогону нельзя ни одного.
     """
 
-    def __init__(self, project, run, *, manifest, parts, template, allowed,
-                 extra_flags=()):
+    def __init__(self, project, run, *, parts, manifest=None, template=None,
+                 allowed=(), extra_flags=()):
         self.project = project
         self.run = run
         self.manifest = manifest
@@ -387,6 +410,18 @@ class ToolBox:
         self.run.steps.append(step)
         self.project.save_run(self.run)
 
+    def _derived(self, art: str, tool: str, inputs, params: dict) -> None:
+        """Запись в журнал производных: чем и из каких материалов построена схема.
+
+        Пишется здесь, а не у вызывающего, по той же причине, что и ход прогона:
+        произведено оно тут, и всё ценное ложится на диск в момент производства.
+        Без этой записи замечание «схему переделай» упирается в вопрос, из какого
+        исходника она вышла, — а построить «как-нибудь заново» значит выдать
+        другую схему за исправленную (`kadai.rework`, маршрут «схема»).
+        """
+        self.project.note_derived(art, tool=tool, inputs=list(inputs),
+                                  params=dict(params), run=self.run.id)
+
     # ── чтение материалов ───────────────────────────────────────────────────
     def _list_materials(self, args: dict) -> dict:
         """Опись материалов. Не отказывает никогда: пустой проект — пустой список."""
@@ -444,8 +479,11 @@ class ToolBox:
                             f"схема по {source.name!r} не построилась: "
                             f"{type(exc).__name__}: {exc}") from None
         self.problems.extend(notices)
-        return {"artifact": self.project.put_artifact(xml.encode("utf-8"), name="схема",
-                                                      notices=notices),
+        art = self.project.put_artifact(xml.encode("utf-8"), name="схема",
+                                        notices=notices)
+        self._derived(art, "make_flowchart", [source.id],
+                      {"language": language, "mode": mode})
+        return {"artifact": art,
                 "pages": hokoku.wire.count_pages(xml), "language": language,
                 "warnings": [n.to_dict() for n in notices],
                 "note": "страница на функцию; нужный лист ставится полем page"}
@@ -474,7 +512,10 @@ class ToolBox:
                             "в этих материалах не нашлось ни одного класса: "
                             "диаграмму классов строить не из чего")
         xml = uml_generator.build_xml(classes, theme)
-        return {"artifact": self.project.put_artifact(xml.encode("utf-8"), name="классы"),
+        art = self.project.put_artifact(xml.encode("utf-8"), name="классы")
+        self._derived(art, "make_class_diagram", [s.id for s in sources],
+                      {"language": language, "theme": theme})
+        return {"artifact": art,
                 "classes": [c.name for c in classes], "language": language}
 
     def _make_object_diagram(self, args: dict) -> dict:
@@ -505,7 +546,10 @@ class ToolBox:
                             "пользовательских классов",
                             notes=list(graph.notes))
         xml = objektis.build_xml(graph, theme)
-        return {"artifact": self.project.put_artifact(xml.encode("utf-8"), name="объекты"),
+        art = self.project.put_artifact(xml.encode("utf-8"), name="объекты")
+        self._derived(art, "make_object_diagram", [s.id for s in sources],
+                      {"language": language, "theme": theme})
+        return {"artifact": art,
                 "objects": [i.name for i in graph.instances],
                 "notes": list(graph.notes)}
 
@@ -652,6 +696,7 @@ def _one_of(value, allowed, name: str) -> str:
     return text
 
 
-__all__ = ["tools", "ToolBox", "ToolError", "TOOL_NAMES", "operator_channel_gate",
+__all__ = ["tools", "material_tools", "ToolBox", "ToolError", "TOOL_NAMES",
+           "MATERIAL_TOOLS", "operator_channel_gate",
            "WITHOUT_OPERATOR_CHANNEL", "UNVERIFIED_FLAG", "READ_CHARS", "MAX_STEPS",
            "MAX_SOURCES", "MAX_SOURCE_CHARS"]

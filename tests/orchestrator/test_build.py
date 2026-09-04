@@ -13,6 +13,7 @@ import os
 
 from docx import Document
 
+import hokoku
 import orchestrator
 
 from .conftest import markdown_value, report_json, script
@@ -30,7 +31,10 @@ def test_задание_собирается_из_состояния_проек�
     # выдать не тот документ за тот, и заметят это, только открыв файл.
     assert job["template"]["sha256"] == project.manifest().template_sha256
     assert job["values"]["цель"]["text"] == ЦЕЛЬ["text"]
-    assert job["wire_version"] == 1
+    # Номер контракта значений сверяется с `hokoku`, а не вписан числом: контракт
+    # поднимают в `wire`, и тест, знающий число наизусть, падает на чужой правке,
+    # ничего про службу не проверив.
+    assert job["wire_version"] == hokoku.WIRE_VERSION
     assert job["template"]["manifest_version"] == 1
 
 

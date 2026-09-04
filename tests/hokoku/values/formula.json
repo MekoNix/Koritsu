@@ -1,5 +1,5 @@
 {
-  "v": 1,
+  "v": 2,
   "type": "formula",
   "latex": "\\frac{n(n-1)}{2}",
   "numbered": true,

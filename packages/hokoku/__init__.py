@@ -16,6 +16,16 @@ hokoku (報告 — «отчёт») — отчёты из DOCX-шаблонов �
   apply_style(doc, profile)              → наложить это оформление на наш документ
   outline_from_sample(sample)            → [{level, text, number}] — строение примера, не оформление
 
+Живой режим (live.py) — работа без шаблона: упорядоченный список именованных блоков.
+  Work / Block                           → список и его кусок; операции чистые, прежний список цел
+  live.insert / replace / remove / move / rename → новый список, прежний цел (нужна отмена)
+  assemble(work)                         → байты DOCX: тот же render, второго рисовальщика нет
+  validate_work(work)                    → [Problem] до сборки: дубли ключей, лимиты, {ref:} в никуда
+  live_tools() / call_tool(work, имя, …) → инструменты агента над списком (модель зовёт оркестратор)
+  text_slots / texts_schema / fill_texts → связный текст одним проходом по готовому списку
+Общие слова (insert, replace, remove, move, block, heading, outline, draft) наверх не
+подняты намеренно: `hokoku.insert` не говорит, куда и что, а `hokoku.live.insert` говорит.
+
 Значения — типизированные (model.py): Text, Markdown, Code, Image, Diagram, Table, Formula, Toc, Blocks, PageBreak.
 Замечания — `Problem` (`kyotsu.Notice` плюс тег): одна форма на `validate`, `check_manifest`,
 `check_template` и предупреждения `build_report`; в JSON уезжает `to_dict()`.
@@ -40,6 +50,11 @@ from .report import build_report
 from .validate import validate
 from .template import (A4_GOST, BodyText, PageSetup, STYLE_SPECS, blank_document,
                        check_template, document_bytes, ensure_style, ensure_styles)
+from . import live
+from .live import (Block, KINDS, LiveError, LiveTool, TEXT_KINDS, Work, any_block_value_schema,
+                   assemble, call_tool, list_blocks, live_tools, render_work, text_slots,
+                   texts_schema, fill_texts, unresolved_refs, validate_work, work_template,
+                   work_values)
 from .sample import (HeadingLook, SampleError, StyleProfile, apply_heading_numbering,
                      apply_style, document_from_sample, outline_from_sample,
                      style_from_sample)
@@ -58,4 +73,9 @@ __all__ = [
     "PageSetup", "BodyText", "A4_GOST", "STYLE_SPECS",
     "style_from_sample", "apply_style", "apply_heading_numbering", "document_from_sample",
     "outline_from_sample", "StyleProfile", "HeadingLook", "SampleError",
+    "live", "Work", "Block", "LiveTool", "LiveError", "KINDS", "TEXT_KINDS",
+    "work_values", "work_template", "render_work", "assemble",
+    "validate_work", "unresolved_refs",
+    "live_tools", "call_tool", "list_blocks", "any_block_value_schema",
+    "text_slots", "texts_schema", "fill_texts",
 ]

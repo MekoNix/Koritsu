@@ -20,8 +20,12 @@ from .conftest import FakeProject
 def test_форма_снимка_называет_обещанные_ключи(plan):
     work = kadai.new_work(plan, work_id="w-2026-1")
     snap = kadai.snapshot(work)
+    # `condition_text` рядом с остальными: распознанное условие показывается
+    # человеку до решения (решение владельца 2026-08-31), а то, за чем надо идти
+    # вторым запросом, не показывают.
     assert set(snap) == {"work", "state", "stage", "stages", "current", "hold",
-                         "spent", "problems", "outputs", "since", "events"}
+                         "spent", "problems", "outputs", "since", "events",
+                         "condition_text", "condition"}
     assert snap["work"] == "w-2026-1" and snap["state"] in kadai.stages.WORK_STATES
     assert snap["stage"] == "приём"
 
@@ -72,6 +76,37 @@ def test_без_шва_состояния_отказ_с_адресом(plan):
     бедный = FakeProject(without=["put_state", "state"])
     with pytest.raises(kadai.NotReady, match="put_state"):
         status.save(бедный, kadai.new_work(plan))
+
+
+def test_запись_о_задании_копится_а_не_затирается(project):
+    """Профиль кладёт одна стадия, требование — другая, собранный отчёт —
+    третья. «Последний победил» терял бы всё, чего не знал последний писавший."""
+    status.save_task(project, wishes={"text": "покороче"})
+    status.save_task(project, requirement={"topic": "Сортировка"})
+    status.save_task(project, made={"docx": "a01"})
+    запись = status.task(project)
+    assert запись["wishes"]["text"] == "покороче"
+    assert запись["requirement"]["topic"] == "Сортировка"
+    assert запись["v"] == 3
+
+
+def test_у_задания_своя_маленькая_нумерация_версий(project):
+    """Пожеланиям и требованию версий взять неоткуда: значением служебного ключа
+    их не сделать — ключ вне работы давал бы предупреждение при каждой проверке,
+    а замечания показываются человеку."""
+    status.save_task(project, requirement={"topic": "Сортировка"})
+    status.save_task(project, requirement={"topic": "Поиск"})
+    вернули = status.rollback_task(project, 1)
+    assert вернули["requirement"]["topic"] == "Сортировка"
+    # Возврат — новой версией, а не откатом номера: иначе двое, глядя на
+    # «версию 2», видят разные записи.
+    assert вернули["v"] == 3
+
+
+def test_версии_задания_которой_нет_ошибка_со_списком(project):
+    status.save_task(project, requirement={"topic": "Сортировка"})
+    with pytest.raises(kadai.KadaiError, match="есть"):
+        status.rollback_task(project, 7)
 
 
 def test_потерянная_просьба_об_остановке_не_проходит_молча(profile, project):

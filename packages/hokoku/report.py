@@ -162,7 +162,8 @@ def _build(job, resolve_artifact, store_artifact, workdir, images_dir, t0,
             "unfilled": list(res.unfilled), "unknown_keys": list(res.unknown_keys),
             "errors": errors, "refs": dict(res.refs),
             "unresolved_refs": list(res.unresolved_refs),
-            "counts": {"figures": res.figures, "tables": res.tables, "formulas": res.formulas},
+            "counts": {"figures": res.figures, "tables": res.tables, "formulas": res.formulas,
+                       "listings": res.listings},
             "timings_ms": _timings(timings, t0),
             "warnings": [w.to_dict() for w in _warnings(res, template)]}
 
@@ -305,8 +306,10 @@ def _chars(v) -> int:
     её здесь не было, `max_chars` (и потолок службы, и `limits` манифеста — счёт один
     на всех) недосчитывал знаки, а `Image`/`Diagram` не считались вовсе.
     """
-    if isinstance(v, (Text, Markdown, Code)):
+    if isinstance(v, (Text, Markdown)):
         return len(v.text)
+    if isinstance(v, Code):
+        return len(v.text) + _caption_chars(v)
     if isinstance(v, Formula):
         return len(v.latex)
     if isinstance(v, Table):

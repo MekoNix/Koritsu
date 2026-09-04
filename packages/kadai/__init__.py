@@ -19,68 +19,83 @@ kadai (課題, «задание») — сценарий «условие зад�
     опись архива                  что кладём и под каким именем
     маршрутизация замечаний       что минимально пересчитать
 
-**Ни одного импорта соседа.** Двери приходят аргументом (`seams.Services`,
-`Project` объектом), а не импортом. Причина — не вкус: правило импорта,
-принятое 2026-08-31, слоя над оркестратором не предусматривает вовсе («из него
-не импортирует никто»), а поправка на порядок слоёв — открытая развилка
-владельца. Пока она не закрыта, `import orchestrator` был бы нарушением
-действующего решения, а `import hokoku` — вторым средним слоем, то есть ровно
-тем, чего просили избежать. Проверяется это грепом и тестом
+**Двери приходят аргументом, а не импортом.** `orchestrator`, `llm` и
+`materials` не импортируются вовсе: правило импорта, принятое 2026-08-31, слоя
+над оркестратором не предусматривает («из него не импортирует никто»), а
+поправка на порядок слоёв — открытая развилка владельца. Всё, что делает
+служба — модель, диск, версии, архив, — приходит объектом `seams.Services`.
+
+`hokoku` — единственное исключение, и оно узкое: правило разреза 2.0.0a4.3
+разрешает звать его **как чистый инструмент** (байты и значения, без диска и
+проекта). Живёт это исключение в одном файле, `blocks.py`, чтобы проверялось
+чтением одного модуля. Проверяется грепом и тестом
 (`tests/kadai/test_border.py`): в `packages/kadai/` нет ни `import llm`, ни
-`import hokoku`, ни `import materials`, ни `import docx`, ни `os.path.join`.
+`import materials`, ни `import orchestrator`, ни `import docx`, ни
+`os.path.join`, ни `open(`, ни дисковых функций `hokoku`.
 
 Состав пакета:
 
     errors.py    KadaiError, NotReady («сосед ещё не готов»), «похоже на»
     seams.py     швы: кого ждём, по какому адресу, с какой подписью
-    profile.py   вид работы данными + четыре сита для сочинённой структуры
-    profiles/    сами данные: kursovaya.yaml (в первой версии профиль один)
+    blocks.py    единственное место, где зовётся hokoku — чистыми функциями
+    profile.py   палитра видов раздела + четыре сита для сочинённого строения
+    profiles/    сами данные: kursovaya.yaml — умолчание и образец формы
     plan.py      профиль + пожелания → стадии и множество остановок
     stages.py    семь стадий, их состояния, единственный механизм остановки
+    run.py       те же семь стадий, выполненные дверями: от условия до архива
     status.py    снимок для API (ключ в ключ по записке Е.4) и хранение хода
     archive.py   опись ZIP, безопасные имена, обязательный «как-это-собрано.txt»
-    rework.py    таблица зависимостей замечаний и то, что по ней вычисляется
+    rework.py    маршруты замечаний и минимальный пересчёт по ним
+    __main__.py  python -m kadai: new, run, status, rework, archive
 
 Чего здесь нет намеренно и что ждёт соседей — перечислено в `seams.SEAMS`
-поимённо: разбор условия (Word и OCR в `materials`), сочинение шаблона
-(построение DOCX без шаблона в `hokoku`), безтеговая дверь к модели, журнал
-производных, хранение хода стадий и сборка ZIP в `Project`. Каждый из них
-отказывает `NotReady` с адресом и подписью, а не возвращает правдоподобную
-пустоту: пустота доехала бы до человека под видом результата.
+поимённо. С 2026-09-04 недоведённых швов осталось два, и оба не двери, а
+точность: отделимость распознанного OCR по кускам (человеку показывается весь
+текст условия с пометкой) и отпечаток входа (устарелость блока считается по
+ключам и журналу производных, а не по входу). Остальные сведены и зовутся
+по-настоящему. Дверь, которой не дали, по-прежнему отказывает `NotReady` с
+адресом и подписью, а не возвращает правдоподобную пустоту: пустота доехала бы
+до человека под видом результата.
 
 Чего здесь нет и не будет: исполнения кода (решение 2026-08-27 цело, песочницы
 не будет — код разбирается статически и помечается в архиве как незапускавшийся),
 своего хранилища, своей очереди, HTTP и второго канала предупреждений.
 """
+from . import blocks, run
 from .errors import KadaiError, NotReady, hint, problem
 from .seams import SEAMS, Seam, Services, door, method, not_ready, seam
-from .profile import (Kind, Profile, Section, available, base_template,
-                      check_structure, load, norm_key, parse, sections_of)
+from .profile import (DEFAULT_PROFILE, Kind, Profile, Section, available, base_template,
+                      check_structure, compose, load, norm_key, parse, sections_of,
+                      structure_request, structure_schema)
 from .plan import Plan, Wishes, pauses_of, plan_of
 from .stages import (DONE, RUNNING, SKIPPED, STAGE_NAMES, STAGES, STUMBLED, WAITING,
                      Hold, StageKind, StageState, Work, as_dict, begin, cancel,
-                     events_since, finish, new_work, resume, stage_now, step, stumble)
-from .status import empty_spent, snapshot, spent_of
+                     events_since, finish, new_work, reopen, resume, stage_now, step,
+                     stumble)
+from .status import empty_spent, save_task, snapshot, spent_of, task
 from .archive import (DIR_DIAGRAMS, DIR_SOURCES, Entry, NOTICE, NOT_RUN, check_names,
                       in_dir, notice_text, pack, plan_archive, safe_leaf, solution_md)
-from .rework import (ROUTES, Route, changed_entries, inputs_of, plan_rework, route,
-                     tags_using_artifact, text_tags)
+from .rework import (BLOCK_ROUTE, REPLAY, ROUTES, Route, changed_entries, inputs_of,
+                     plan_rework, route, route_of_block, tags_using_artifact, text_tags)
+from .run import Session
 
 __all__ = [
     "KadaiError", "NotReady", "hint", "problem",
     "Seam", "SEAMS", "Services", "seam", "not_ready", "door", "method",
     "Profile", "Kind", "Section", "available", "load", "parse", "base_template",
-    "check_structure",
+    "check_structure", "compose", "structure_schema", "structure_request", "DEFAULT_PROFILE",
     "sections_of", "norm_key",
     "Plan", "Wishes", "plan_of", "pauses_of",
     "STAGES", "STAGE_NAMES", "StageKind", "StageState", "Hold", "Work",
     "WAITING", "RUNNING", "DONE", "STUMBLED", "SKIPPED",
-    "new_work", "begin", "step", "finish", "resume", "stumble", "cancel",
+    "new_work", "begin", "step", "finish", "resume", "reopen", "stumble", "cancel",
     "stage_now", "events_since", "as_dict",
-    "snapshot", "spent_of", "empty_spent",
+    "snapshot", "spent_of", "empty_spent", "save_task", "task",
     "Entry", "NOT_RUN", "NOTICE", "DIR_SOURCES", "DIR_DIAGRAMS",
     "safe_leaf", "in_dir", "check_names", "plan_archive", "notice_text", "solution_md", "pack",
-    "Route", "ROUTES", "route", "tags_using_artifact", "changed_entries", "text_tags",
-    "inputs_of", "plan_rework",
+    "Route", "ROUTES", "BLOCK_ROUTE", "REPLAY", "route", "route_of_block",
+    "tags_using_artifact", "changed_entries", "text_tags", "inputs_of", "plan_rework",
+    "Session",
     "profile", "plan", "stages", "status", "archive", "rework", "seams", "errors",
+    "blocks", "run",
 ]

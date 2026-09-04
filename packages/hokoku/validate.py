@@ -210,12 +210,16 @@ def _headings(v) -> list[str]:
 
 # ── ссылки {ref:имя} ──────────────────────────────────────────────────────────
 
-def _refs(values: dict, tags: dict) -> list[Problem]:
+def _refs(values: dict, tags: dict, *, what: str = "тега") -> list[Problem]:
     """`{ref:имя}` мимо цели render превращает в «?» прямо в тексте отчёта — беда видна
     только глазами и только на готовом документе.
 
     Имя ссылки — либо ключ тега (так подписи нумеруются по умолчанию), либо `ref=`,
     назначенное самим значением; больше взяться номеру неоткуда.
+
+    `what` — чем зовут адресата в тексте замечания: у шаблонного режима это тег, у
+    живого (`live.validate_work`) — блок. Сито одно на оба входа: разойдясь, второе
+    ловило бы не то же самое, а узналось бы это по «?» в готовом документе.
     """
     known = set(tags)
     for v in values.values():
@@ -225,7 +229,7 @@ def _refs(values: dict, tags: dict) -> list[Problem]:
         for name in dict.fromkeys(REF_TEXT_RE.findall(_ref_text(v))):
             if name not in known:
                 out.append(_p("warning", "unresolved_ref", key,
-                              f"ссылка {{ref:{name}}} в значении тега {key!r} никуда "
+                              f"ссылка {{ref:{name}}} в значении {what} {key!r} никуда "
                               f"не ведёт: в документе останется «?»{_hint(name, known)}",
                               got=name))
     return out
@@ -252,13 +256,16 @@ def _ref_text(v) -> str:
     Заголовок оглавления (`Toc.title`) — тоже: он отдельный абзац перед полем TOC,
     и поле REF в нём законно (`docx_ops.add_toc`).
 
-    Листинга нет намеренно: `{ref:x}` в коде программы — текст программы, render его
-    не трогает.
+    Текста листинга здесь нет намеренно: `{ref:x}` в коде программы — текст программы,
+    render его не трогает. А вот подпись листинга («Листинг 3 — см. {ref:схема}») —
+    такая же подпись, как у рисунка, и ссылку в ней render разбирает.
     """
     if isinstance(v, str):
         return v
     if isinstance(v, (Text, Markdown)):
         return v.text
+    if isinstance(v, Code):
+        return _caption(v)
     if isinstance(v, Table):
         return "\n".join([_caption(v)] + [str(c) for row in v.rows for c in row])
     if isinstance(v, (Image, Diagram)):

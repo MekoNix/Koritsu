@@ -18,7 +18,7 @@ import pytest
 from docx import Document
 
 from hokoku import (Blocks, Code, Diagram, Formula, Image, Markdown, PageBreak, Table, Text, Toc,
-                    build_report)
+                    WIRE_VERSION, build_report)
 from hokoku.pdf import libreoffice_available
 from hokoku.wire import value_from_json, value_to_json
 
@@ -55,7 +55,7 @@ def resolve(store):
 
 @pytest.fixture
 def job():
-    return {"wire_version": 1,
+    return {"wire_version": WIRE_VERSION,
             "template": {"artifact": "tpl_1", "manifest_version": 4},
             "values": {
                 "цель": {"v": 1, "type": "markdown", "text": "Изучить методы сортировки"},
@@ -73,10 +73,10 @@ def run(job, resolve, tmp_path, **kw):
 
 def test_отчёт_собран(job, resolve, tmp_path):
     res = run(job, resolve, tmp_path)
-    assert res["ok"] and res["wire_version"] == 1
+    assert res["ok"] and res["wire_version"] == WIRE_VERSION
     assert res["outputs"]["docx"]["file"] == "otchet.docx"
     assert res["outputs"]["docx"]["bytes"] > 0 and len(res["outputs"]["docx"]["sha256"]) == 64
-    assert res["counts"] == {"figures": 1, "tables": 1, "formulas": 0}
+    assert res["counts"] == {"figures": 1, "tables": 1, "formulas": 0, "listings": 0}
     assert res["refs"] == {"схема": 1, "замеры": 1}
     assert res["unfilled"] == ["задачи"] and res["unknown_keys"] == []
     assert res["errors"] == [] and res["unresolved_refs"] == []

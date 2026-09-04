@@ -124,3 +124,80 @@ def test_заготовки_docx_ещё_нет_и_это_сказано_вслу
     манифест вышел бы пустым, а отчёт собрался бы из одного листа."""
     with pytest.raises(kadai.NotReady, match="заготовки"):
         kadai.base_template(profile)
+
+
+# ── вид работы не фиксирован: строение сочиняется, профиль складывается ──────
+
+def test_схема_вопроса_закрывает_перечень_видов_раздела(profile):
+    """`strict` у поставщика гасит целый класс ответов до того, как за них
+    заплачено: «Приложение А» просто не выразимо. Сито при этом остаётся —
+    строение приходит и от человека, и из файла, где схемы не было."""
+    schema = kadai.structure_schema(profile)
+    виды = schema["properties"]["sections"]["items"]["properties"]["kind"]["enum"]
+    assert "листинг" in виды and "приложение" not in виды
+    assert schema["required"] == ["work_kind", "sections"]
+
+
+def test_вопрос_называет_запреты_вслух(profile):
+    """Сито отвергнет запрещённый вид с внятным текстом, но заплачено за ответ
+    уже будет: одна строка запроса дешевле одного лишнего вызова модели."""
+    текст = kadai.structure_request(profile, wishes="покороче")
+    assert "приложение" in текст and "библиография" in текст
+
+
+def test_профиль_складывается_из_ответа_модели(profile):
+    """Обязательные разделы и потребность в коде приходят из ответа; палитра
+    видов, их типы и запреты — из умолчания."""
+    сочинённый = kadai.compose(profile, {
+        "work_kind": "лабораторная",
+        "expects": {"code": True, "tables": False, "diagrams": False},
+        "required_kinds": ["постановка", "реализация"],
+        "sections": []})
+    assert сочинённый.name == "лабораторная"
+    assert сочинённый.kind("постановка").required and not сочинённый.kind("введение").required
+    assert сочинённый.kind("листинг").type == "code"        # тип назначает профиль
+    assert сочинённый.forbidden == profile.forbidden
+    assert сочинённый.needs == {"code": True, "tables": False, "diagrams": False}
+
+
+def test_работа_без_кода_таблиц_и_схем_теряет_стадию_решения(profile):
+    реферат = kadai.compose(profile, {
+        "work_kind": "реферат",
+        "expects": {"code": False, "tables": False, "diagrams": False},
+        "sections": []})
+    assert "решение" not in реферат.stages
+    assert list(реферат.stages) == [s for s in profile.stages if s != "решение"]
+
+
+def test_нижняя_граница_объёма_не_переносится_на_чужой_вид_работы(profile):
+    """«Не меньше шести разделов» — утверждение про курсовую. Применить его к
+    лабораторной значило бы отвергнуть законное строение словами про профиль,
+    которого у этого вида работы нет."""
+    лаба = kadai.compose(profile, {"work_kind": "лабораторная", "sections": []})
+    assert "sections_min" not in лаба.volume
+    assert лаба.volume["sections_max"] == profile.volume["sections_max"]
+    своя = kadai.compose(profile, {"work_kind": "курсовая", "sections": []})
+    assert своя.volume["sections_min"] == profile.volume["sections_min"]
+
+
+def test_обязательным_нельзя_объявить_вид_которого_нет(profile):
+    with pytest.raises(kadai.KadaiError, match="похоже на"):
+        kadai.compose(profile, {"work_kind": "курсовая", "sections": [],
+                                "required_kinds": ["введени"]})
+
+
+def test_неизвестное_поле_ответа_ошибка_а_не_молчание(profile):
+    with pytest.raises(kadai.KadaiError, match="неизвестное поле"):
+        kadai.compose(profile, {"work_kind": "курсовая", "sections": [],
+                                "разделы": []})
+
+
+def test_сочинённый_профиль_переживает_запись_в_проект(profile):
+    """Считает работу один процесс, показывает другой: профиль обязан
+    записываться и читаться одним и тем же разбором, иначе форма разойдётся."""
+    сочинённый = kadai.compose(profile, {
+        "work_kind": "расчётная работа",
+        "expects": {"code": True, "tables": True, "diagrams": False},
+        "required_kinds": ["результаты"], "sections": []})
+    туда_обратно = kadai.parse(kadai.profile.as_dict(сочинённый), source="запись")
+    assert туда_обратно == сочинённый

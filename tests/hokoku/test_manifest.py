@@ -10,7 +10,7 @@ import io
 import pytest
 from docx import Document
 
-from hokoku import VALUE_TYPES
+from hokoku import VALUE_TYPES, WIRE_VERSION
 from hokoku.manifest import (DEFAULT_TYPE, MANIFEST_TYPES, ManifestError, TagSpec,
                              check_manifest, manifest_from_json, manifest_from_template,
                              manifest_prompt, manifest_schema, manifest_to_json,
@@ -61,7 +61,7 @@ def test_шаблон_опознаётся_по_sha256(template):
     import hashlib
     m = manifest_from_template(template)
     assert m.template_sha256 == hashlib.sha256(template).hexdigest()
-    assert (m.manifest_version, m.wire_version) == (1, 1)
+    assert (m.manifest_version, m.wire_version) == (1, WIRE_VERSION)
 
 
 @pytest.mark.parametrize("label,expected", [
