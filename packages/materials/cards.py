@@ -12,8 +12,8 @@ cards — короткая карточка материала и опись п�
 from __future__ import annotations
 
 from ._text import first_lines
-from .model import (KIND_DOCX, KIND_IMAGE, KIND_PDF, KIND_UNKNOWN, UNIT_PAGE,
-                    UNIT_PARAGRAPH, Card, Material)
+from .model import (KIND_DOCX, KIND_IMAGE, KIND_PDF, KIND_UNKNOWN, KIND_WORDS,
+                    LANG_WORDS, UNIT_LINE, UNIT_WORDS, Card, Material)
 
 # Больше этого карточка не бывает: 20 материалов × 8 строк — это ещё промпт,
 # а не простыня.
@@ -41,18 +41,13 @@ def _plural(n: int, forms: tuple[str, str, str]) -> str:
     return forms[2]
 
 
-# Формы числительного на каждую единицу разбора. Без своей строки для абзацев
-# карточка word-документа сказала бы «12 строк» про двенадцать абзацев.
-_UNIT_FORMS = {
-    UNIT_PAGE: ("страница", "страницы", "страниц"),
-    UNIT_PARAGRAPH: ("абзац", "абзаца", "абзацев"),
-}
-
-
 def _amount(m: Material) -> str:
+    """«12 страниц» — числом и словом. Слово берётся по коду единицы
+    (`UNIT_WORDS`): без своей строки для абзацев карточка word-документа
+    сказала бы «12 строк» про двенадцать абзацев."""
     if not m.unit or not m.count:
         return ""
-    forms = _UNIT_FORMS.get(m.unit, ("строка", "строки", "строк"))
+    forms = UNIT_WORDS.get(m.unit, UNIT_WORDS[UNIT_LINE])
     return f"{m.count} {_plural(m.count, forms)}"
 
 
@@ -65,14 +60,16 @@ def preview_of(units: list[str]) -> list[str]:
 def card(material: Material) -> Card:
     """Карточка одного материала — коротко, без модели, не длиннее CARD_MAX_LINES."""
     m = material
-    head = [m.kind, human_size(m.size)]
+    # Вид — словом, а не кодом: карточку читает человек, а `kind` в ней уже
+    # есть у того, кто читает карточку службы (`api`) или ответ list_materials.
+    head = [KIND_WORDS.get(m.kind, m.kind), human_size(m.size)]
     amount = _amount(m)
     if amount:
         head.append(amount)
     if m.kind == KIND_IMAGE and m.extra.get("width"):
         head.append(f"{m.extra['width']}×{m.extra['height']} пикселей")
     if m.lang:
-        head.append(m.lang)
+        head.append(LANG_WORDS.get(m.lang, m.lang))
     lines = [f"[{m.id}] {m.name} — " + ", ".join(head)]
 
     if m.origin and m.origin.get("parent_name"):

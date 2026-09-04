@@ -143,7 +143,7 @@ class FakeProject:
     def add_material(self, data: bytes, name: str, *, do_ocr: bool = True,
                      condition: bool = False):
         mid = f"m{len(self._store.list()) + 1:02d}"
-        kind = "изображение" if str(name).lower().endswith((".png", ".jpg")) else "текст"
+        kind = "image" if str(name).lower().endswith((".png", ".jpg")) else "текст"
         material = self._store.add(mid, name, data.decode("utf-8", "replace"), kind=kind)
         if condition:
             self._condition = mid
@@ -250,27 +250,31 @@ class FakeResult:
     outcome: str = "done"
 
 
-ТРЕБОВАНИЕ = {"kind": "курсовая", "topic": "Сортировка массива",
+ТРЕБОВАНИЕ = {"kind": "отчёт с программой", "topic": "Сортировка массива",
               "to_do": ["написать программу", "нарисовать схему"],
               "given": ["язык Python"], "missing": ["объём выборки"]}
 
+# Строение, которое подделка модели отдаёт на стадии «шаблон». Вид раздела
+# (`kind`) — свободное слово модели, тип (`type`) — из перечня движка: пара, а не
+# одно поле, потому что тип, угаданный по имени раздела, даёт схему, про которую
+# написано прозой.
 СТРОЕНИЕ = {
-    "work_kind": "курсовая",
+    "work_kind": "отчёт с программой",
     "expects": {"code": True, "tables": True, "diagrams": False},
     "required_kinds": ["введение", "реализация", "заключение"],
     "sections": [
         {"key": "введение", "title": "Введение", "kind": "введение",
-         "prompt": "зачем эта работа"},
+         "type": "markdown", "prompt": "зачем эта работа"},
         {"key": "постановка", "title": "Постановка задачи", "kind": "постановка",
-         "prompt": "что дано и что требуется"},
+         "type": "markdown", "prompt": "что дано и что требуется"},
         {"key": "реализация", "title": "Реализация", "kind": "реализация",
-         "prompt": "как устроено решение"},
+         "type": "markdown", "prompt": "как устроено решение"},
         {"key": "листинг", "title": "Листинг", "kind": "листинг",
-         "prompt": "код сортировки"},
-        {"key": "таблица", "title": "Замеры", "kind": "таблица",
-         "prompt": "время на разных размерах"},
+         "type": "code", "prompt": "код сортировки"},
+        {"key": "таблица", "title": "Замеры", "kind": "замеры",
+         "type": "table", "prompt": "время на разных размерах"},
         {"key": "заключение", "title": "Заключение", "kind": "заключение",
-         "prompt": "что вышло"},
+         "type": "markdown", "prompt": "что вышло"},
     ],
 }
 
@@ -384,9 +388,39 @@ class FakeDoors:
         return self.pdf
 
 
+# Ответ модели о строении работы — то единственное, из чего складывается
+# профиль этой работы (решение владельца 2026-09-04). Взят нарочно не учебный:
+# работой бывает что угодно, и ни одно сито не вправе этого замечать.
+ОТВЕТ = {
+    "work_kind": "учёт продажи носков",
+    "expects": {"code": True, "tables": True, "diagrams": True},
+    "required_kinds": ["остатки", "выводы"],
+    "sections": [
+        {"key": "зачем", "title": "Зачем это считалось", "kind": "предисловие",
+         "type": "markdown", "prompt": "откуда взялась задача"},
+        {"key": "остатки", "title": "Остатки по складам", "kind": "остатки",
+         "type": "table", "prompt": "сколько пар где лежит"},
+        {"key": "выгрузка", "title": "Скрипт выгрузки", "kind": "выгрузка",
+         "type": "code", "prompt": "чем считали"},
+        {"key": "схема_учёта", "title": "Схема учёта", "kind": "схема",
+         "type": "diagram", "prompt": "как движется товар"},
+        {"key": "выводы", "title": "Выводы", "kind": "выводы",
+         "type": "markdown", "prompt": "что с этим делать"},
+    ],
+}
+
+
 @pytest.fixture
-def profile():
-    return kadai.load("kursovaya")
+def ответ():
+    """Свежая копия ответа модели: тесты его правят, и общий словарь тёк бы между ними."""
+    import copy
+    return copy.deepcopy(ОТВЕТ)
+
+
+@pytest.fixture
+def profile(ответ):
+    """Строение этой работы — целиком из ответа модели, без файла и без умолчания."""
+    return kadai.compose(ответ, stages=kadai.STAGE_NAMES)
 
 
 @pytest.fixture
@@ -395,19 +429,9 @@ def plan(profile):
 
 
 @pytest.fixture
-def structure():
-    """Годная структура курсовой: все обязательные виды, код и схема на месте."""
-    return {"sections": [
-        {"key": "титул", "title": "Титульный лист", "kind": "титульник"},
-        {"key": "оглавление", "title": "Содержание", "kind": "оглавление"},
-        {"key": "введение", "title": "Введение", "kind": "введение"},
-        {"key": "постановка", "title": "Постановка задачи", "kind": "постановка"},
-        {"key": "реализация", "title": "Реализация", "kind": "реализация"},
-        {"key": "листинг_сортировки", "title": "Листинг", "kind": "листинг"},
-        {"key": "схема_алгоритма", "title": "Схема алгоритма", "kind": "схема"},
-        {"key": "результаты", "title": "Результаты", "kind": "результаты"},
-        {"key": "заключение", "title": "Заключение", "kind": "заключение"},
-    ]}
+def structure(ответ):
+    """Та же структура отдельно: сита смотрят на неё, а не на ответ целиком."""
+    return {"sections": [dict(s) for s in ответ["sections"]]}
 
 
 @pytest.fixture

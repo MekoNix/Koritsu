@@ -65,7 +65,7 @@ def test_ход_работы_кладётся_в_проект_и_поднима�
 
 def test_запись_с_чужим_профилем_не_принимается(plan, project):
     status.save(project, kadai.new_work(plan))
-    другой = kadai.plan_of(kadai.parse({"name": "реферат", "stages": ["приём"], "kinds": {}}))
+    другой = kadai.plan_of(kadai.parse({"name": "записка", "stages": ["приём"], "kinds": {}}))
     with pytest.raises(kadai.KadaiError, match="профил"):
         status.load(project, другой)
 

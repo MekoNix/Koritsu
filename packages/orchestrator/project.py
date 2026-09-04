@@ -374,7 +374,7 @@ class Project:
 
     # ── создание ────────────────────────────────────────────────────────────
     @classmethod
-    def create(cls, path: str, *, template: bytes, name: str = "",
+    def create(cls, path: str, *, template: bytes | None = None, name: str = "",
                endpoint: str = "", cap_units: float | None = None) -> "Project":
         """Новый проект: каталог, шаблон артефактом, заготовка манифеста по тегам.
 
@@ -384,6 +384,19 @@ class Project:
         руках. Проект без манифеста был бы состоянием, из которого не выйти,
         не прочитав DOCX второй раз.
 
+        `template=None` — «проект без шаблона»: документ строит
+        `hokoku.blank_document()`, то есть пустой DOCX со стилями, полями и
+        нумерацией. Знание о том, как выглядит документ с нуля, лежит здесь, а
+        не у службы: `api` про `hokoku` не знает и знать не должен
+        (правило разреза), а без этой ветки ему пришлось бы либо требовать файл
+        на каждом создании, либо нарушить границу (решение главной сессии
+        2026-09-03).
+
+        В `project.json` при этом пишется `template_source`: `"blank"` —
+        документ построен нами, `"given"` — принесён человеком. Различать их
+        надо: пустой документ можно молча заменить первым же принесённым
+        шаблоном, а чужой — нельзя, там решения человека.
+
         Поверх существующего проекта — отказ. Раньше вызов проходил и строил
         манифест **без `base`**: промпты, `limits`, `depends_on`, поправленные
         типы и снятые пометки `guessed` исчезали разом, а значения оставались и
@@ -391,7 +404,10 @@ class Project:
         разные намерения, и второе делает `update_template`, который решения
         человека переносит.
         """
-        if not isinstance(template, (bytes, bytearray)):
+        свой = template is None
+        if свой:
+            template = hokoku.document_bytes(hokoku.blank_document())
+        elif not isinstance(template, (bytes, bytearray)):
             raise OrchestratorError("template — байты DOCX: путей в проекте не хранится")
         os.makedirs(path, exist_ok=True)
         project = cls(path)
@@ -402,6 +418,7 @@ class Project:
         art = project.put_artifact(bytes(template), name="шаблон")
         project._write_json(project._settings_path(), {
             "name": name, "endpoint": endpoint, "template": art,
+            "template_source": "blank" if свой else "given",
             "cap_units": cap_units, "created": _now()})
         project.save_manifest(hokoku.manifest_from_template(bytes(template)))
         return project
@@ -424,6 +441,9 @@ class Project:
             raise OrchestratorError("template — байты DOCX: путей в проекте не хранится")
         settings = self.settings()
         settings["template"] = self.put_artifact(bytes(template), name="шаблон")
+        # Пустой документ, построенный нами при создании, перестал быть нашим:
+        # дальше это шаблон человека, и молча заменять его больше нельзя.
+        settings["template_source"] = "given"
         self.save_settings(settings)
         m = hokoku.manifest_from_template(bytes(template), base=self.manifest())
         self.save_manifest(m)
@@ -572,6 +592,29 @@ class Project:
             self._write_json(os.path.join(folder, f"{art}.json"),
                              [n.to_dict() for n in notices])
         return art
+
+    def artifacts(self) -> list[str]:
+        """Идентификаторы всего, что лежит в хранилище артефактов. По порядку.
+
+        Нужно выгрузке файлов пользователя (`api/export`, решение владельца §7:
+        «архив материалов и артефактов»): собрать её без описи хранилища
+        невозможно, а складывать путь к `artifacts/` снаружи значило бы завести
+        второе знание о раскладке проекта — то самое, которое разойдётся с этим
+        при первом переименовании.
+
+        Материалов здесь нет: они лежат в своём хранилище и перечисляются
+        `store().list()`. `resolve_artifact` ищет и там, и тут, но это его дело —
+        отдать байты по идентификатору, а не наше — смешать две описи в одну.
+
+        Замечания (`artifacts/notices/`) не считаются: это каталог, а не
+        артефакт, и его имя формы идентификатора не имеет.
+        """
+        folder = self._artifacts_dir()
+        if not os.path.isdir(folder):
+            return []
+        return sorted(name for name in os.listdir(folder)
+                      if len(name) == ARTIFACT_ID_LEN
+                      and os.path.isfile(os.path.join(folder, name)))
 
     def artifact_notices(self, art_id: str) -> list:
         """Замечания, с которыми артефакт был построен. Пусто — их не было.

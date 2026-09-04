@@ -5,7 +5,7 @@
 тоже. Поэтому `../`, абсолютный путь, `C:`, управляющий символ и пустое имя
 обязаны быть невозможны, а не маловероятны: распаковщик у человека чужой.
 Второе, что здесь стережётся, — строка про незапущенный код: без неё
-компилируемый исходник читается как проверенный, и узнает правду студент на
+компилируемый исходник читается как проверенный, и узнает правду человек на
 защите, а не от нас.
 """
 from __future__ import annotations
@@ -53,7 +53,7 @@ def test_описи_без_честного_файла_не_бывает():
 
 
 def test_строка_про_незапущенный_код_есть_всегда():
-    текст = kadai.notice_text(work_id="w-1", profile="курсовая")
+    текст = kadai.notice_text(work_id="w-1", profile="учёт продажи носков")
     assert kadai.NOT_RUN in текст
     entries = kadai.plan_archive(notice=текст)
     записка = [e for e in entries if e.name == kadai.NOTICE][0]
@@ -61,7 +61,7 @@ def test_строка_про_незапущенный_код_есть_всегд
 
 
 def test_состав_архива_и_источники_без_путей():
-    текст = kadai.notice_text(work_id="w-1", profile="курсовая", wishes="покороче",
+    текст = kadai.notice_text(work_id="w-1", profile="учёт продажи носков", wishes="покороче",
                               requirement="отсортировать массив",
                               spent={"units": 100.0, "cap": None, "share": None,
                                      "estimated_share": 0.0},
@@ -90,7 +90,7 @@ def test_схема_едет_в_архив_и_текстом_тоже():
     один путь из двух — папка `схемы/` в архиве молча оставалась бы пустой, и
     узнавал бы об этом человек, распаковав его.
     """
-    текст = kadai.notice_text(work_id="w-1", profile="курсовая")
+    текст = kadai.notice_text(work_id="w-1", profile="учёт продажи носков")
     entries = kadai.plan_archive(notice=текст, report_artifact="a1",
                                  diagrams=[("b-05", "c1")],
                                  diagram_texts=[("b-10", "<mxfile><diagram/></mxfile>")])
@@ -105,7 +105,7 @@ def test_схема_едет_в_архив_и_текстом_тоже():
 
 
 def test_записка_рассказывает_как_собрано():
-    текст = kadai.notice_text(work_id="w-1", profile="курсовая", wishes="покороче",
+    текст = kadai.notice_text(work_id="w-1", profile="учёт продажи носков", wishes="покороче",
                               stages=[{"name": "приём", "state": "сделано", "note": "18 файлов"}],
                               spent={"units": 41200.0, "cap": 200000.0, "share": 0.21,
                                      "estimated_share": 0.04},
@@ -116,7 +116,7 @@ def test_записка_рассказывает_как_собрано():
 
 def test_складывает_архив_проект_а_не_kadai():
     project = FakeProject()
-    текст = kadai.notice_text(work_id="w-1", profile="курсовая")
+    текст = kadai.notice_text(work_id="w-1", profile="учёт продажи носков")
     имя = kadai.pack(project, kadai.plan_archive(notice=текст,
                                                  report=archive.REPORT_DOCX))
     assert имя == "работа.zip"
@@ -127,7 +127,7 @@ def test_отчёт_живого_режима_едет_артефактом_а_�
     """В живом режиме документ собран в памяти и положен `put_artifact`: файла в
     каталоге сборки нет вовсе, и опись обязана называть идентификатор. Назвать
     его именем файла значило бы попросить проект прочитать то, чего нет."""
-    текст = kadai.notice_text(work_id="w-1", profile="курсовая")
+    текст = kadai.notice_text(work_id="w-1", profile="учёт продажи носков")
     entries = kadai.plan_archive(notice=текст, report_artifact="d0cx",
                                  pdf_artifact="pdf1",
                                  source_texts=[("sort.py", "def sort(a): ...")])
@@ -141,7 +141,7 @@ def test_отчёт_живого_режима_едет_артефактом_а_�
 def test_отчёт_нельзя_назвать_дважды():
     """Файл сборки и артефакт вместе — это два ответа на вопрос «откуда байты»,
     и молча выбрать один значило бы положить в архив неизвестно который."""
-    текст = kadai.notice_text(work_id="w-1", profile="курсовая")
+    текст = kadai.notice_text(work_id="w-1", profile="учёт продажи носков")
     with pytest.raises(kadai.KadaiError, match="ровно один"):
         kadai.plan_archive(notice=текст, report=archive.REPORT_DOCX,
                            report_artifact="d0cx")
@@ -155,7 +155,7 @@ def test_имя_исходника_по_языку_а_незнакомый_яз�
 
 def test_без_шва_архива_отказ_с_подписью():
     project = FakeProject(without=["pack"])
-    текст = kadai.notice_text(work_id="w-1", profile="курсовая")
+    текст = kadai.notice_text(work_id="w-1", profile="учёт продажи носков")
     with pytest.raises(kadai.NotReady, match="pack"):
         kadai.pack(project, kadai.plan_archive(notice=текст,
                                                report=archive.REPORT_DOCX))

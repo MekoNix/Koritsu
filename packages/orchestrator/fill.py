@@ -159,9 +159,17 @@ def fill_tag(project, key: str, *, endpoint: str, run=None, chunks=(),
 # ── уровень 2 ────────────────────────────────────────────────────────────────
 
 def fill_report(project, *, endpoint: str, keys=None, chunks=(), effort=None,
-                cancel=None, max_tokens=None, on_tag=None,
+                cancel=None, max_tokens=None, on_tag=None, on_text=None,
                 overwrite: bool = False) -> RunResult:
     """Весь отчёт одним потоковым вызовом; готовые теги сохраняются по ходу.
+
+    `on_text(кусок)` зовётся на каждый кусок текста потока, до разбора. Тот
+    самый кадр, ради которого уровень 2 сделан потоковым: служба отдаёт его
+    человеку по мере генерации (§11), а склейку в ~100 мс делает она же —
+    здесь куски идут как пришли, и решать за читателя, сколько их копить, слой
+    прогона не должен. Обрыв внутри `on_text` не ловится намеренно: если
+    приёмник кадров сломан, прогон надо останавливать, а не платить дальше в
+    пустоту.
 
     `on_tag(TagFill)` зовётся сразу после сохранения каждого тега. Он нужен с
     самого начала, хотя сегодня печатает строку в stderr: это будущий кадр SSE.
@@ -216,6 +224,8 @@ def fill_report(project, *, endpoint: str, keys=None, chunks=(), effort=None,
     try:
         for chunk in stream:
             if chunk.kind == "text":
+                if on_text is not None:
+                    on_text(chunk.text)
                 for key, value_json in tags.feed(chunk.text):
                     fill = _tag_of_stream(project, manifest, key, value_json, run,
                                           typed=typed, seen=seen, allowed=allowed,

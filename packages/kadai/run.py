@@ -20,13 +20,14 @@ run — семь стадий, выполненных дверями: от ус�
 **Связный текст — одним проходом** (решение владельца 2026-09-04). Стадия 4
 собирает скелет и то, чего текстом не написать; стадия 5 пишет весь текст
 разом. Абзацы, написанные по одному в петле, связны поодиночке и
-рассогласованы вместе, а увидят это при чтении целиком — то есть на кафедре.
+рассогласованы вместе, а увидит это тот, кто прочтёт работу целиком.
 
-**Вид работы не фиксирован.** Профиль-умолчание (`kursovaya.yaml`) даёт палитру
-видов раздела, запреты и границы объёма; чем работа окажется на самом деле,
-решает стадия 3 по условию и пожеланиям (`profile.compose`). Оттуда же берётся
-ответ на вопрос, нужна ли работе стадия «решение» вовсе: реферату она не нужна,
-и пройти вхолостую она не должна.
+**Вид работы не фиксирован, и умолчания у него нет** (решение владельца
+2026-09-04). До стадии 3 работа идёт по пустому строению, где есть только все
+семь стадий; чем она окажется — решает сама стадия 3 по условию и пожеланиям
+(`profile.compose`). Оттуда же берётся ответ на вопрос, нужна ли работе стадия
+«решение» вовсе: там, где производить нечего, она обязана отсутствовать, а не
+пройти вхолостую.
 
 **Всё ценное сохраняется в момент производства.** Петля историю не переживает,
 поэтому список блоков пишется версией на каждую правку (это делает
@@ -44,10 +45,27 @@ from dataclasses import dataclass, field
 from . import archive as archive_mod, blocks as blocks_mod, profile as profile_mod, status
 from .errors import KadaiError, NotReady, problem
 from .plan import Plan, Wishes, plan_of
-from .profile import DEFAULT_PROFILE, check_structure, compose, sections_of
+from .profile import check_structure, compose, sections_of
 from .seams import Services, door, method
 from .stages import (DONE, Hold, SKIPPED, STAGE_NAMES, WAITING, Work, begin, finish,
                      new_work, resume, step, stumble)
+
+# Строение, с которым работа заводится: имени вида работы нет, стадии — все.
+# Пустое, а не образец: образец был бы утверждением о том, чем работа окажется,
+# а знает это одно условие (решение владельца 2026-09-04).
+BLANK = profile_mod.Profile(name="", stages=tuple(STAGE_NAMES))
+
+# Сколько ходов позволено петле решения (решение владельца 2026-09-04). Своё
+# число, а не унаследованное от слоя: сценарий платит за прогон и обязан назвать
+# потолок сам — умолчание среднего слоя тихо сменилось бы вместе с ним, а
+# знаменатель полоски хода на стадии «решение» берётся отсюда же. Совпадать с
+# `orchestrator.live.MAX_STEPS` оно не обязано: там потолок службы, здесь —
+# сценария, и разойтись им позволено (служба свой применит как верхнюю границу).
+MAX_STEPS = 50
+
+# Умолчания, которые сценарий проставляет себе сам, если вызывающий не назвал
+# своих. Словарём, а не веткой на каждое: второй потолок добавится строкой.
+LIMITS = {"max_steps": MAX_STEPS}
 
 # Схема ответа стадии «разбор задания». Записка Е.1: вид работы, тема, что надо
 # сделать, что дано, чего не хватает. Ключи латиницей, значения по-русски: ключи
@@ -103,7 +121,7 @@ class Session:
     plan: Plan
     work: Work
     wishes: Wishes = field(default_factory=Wishes)
-    limits: dict = field(default_factory=dict)
+    limits: dict = field(default_factory=lambda: dict(LIMITS))
     task: str = ""      # задание петле, если стадию переигрывают по замечанию
 
     @property
@@ -119,20 +137,19 @@ class Session:
 # ── заведение и открытие работы ──────────────────────────────────────────────
 
 def new(services: Services, *, wishes: Wishes | None = None, pause_after=(),
-        default: str = DEFAULT_PROFILE, limits: dict | None = None,
-        work_id: str | None = None) -> Session:
-    """Завести работу. Профиль здесь — умолчание, а не приговор.
+        limits: dict | None = None, work_id: str | None = None) -> Session:
+    """Завести работу. Строения ещё нет, и выдумывать его нечем.
 
-    Настоящий вид работы станет известен на стадии «шаблон», когда модель
-    прочтёт условие; до тех пор работа идёт по умолчанию, и все семь стадий
-    видны. Заводить работу после разбора условия нельзя: разбор — сам стадия, и
-    показать его ход было бы негде.
+    Чем работа окажется, станет известно на стадии «шаблон», когда модель
+    прочтёт условие; до тех пор она идёт по пустому строению (`BLANK`), и все
+    семь стадий видны. Заводить работу после разбора условия нельзя: разбор —
+    сам стадия, и показать его ход было бы негде.
     """
     wishes = wishes or Wishes()
-    plan = plan_of(profile_mod.load(default), wishes=wishes, pause_after=pause_after)
+    plan = plan_of(BLANK, wishes=wishes, pause_after=pause_after)
     work = new_work(plan, work_id=work_id)
     session = Session(services=services, plan=plan, work=work, wishes=wishes,
-                      limits=dict(limits or {}))
+                      limits={**LIMITS, **dict(limits or {})})
     status.save_task(session.project, profile=profile_mod.as_dict(plan.profile),
                      wishes={"text": wishes.text, "show_task": wishes.show_task,
                              "show_structure": wishes.show_structure},
@@ -144,21 +161,21 @@ def new(services: Services, *, wishes: Wishes | None = None, pause_after=(),
 def load(services: Services, *, limits: dict | None = None) -> Session:
     """Открыть заведённую работу из проекта: профиль, пожелания, ход стадий.
 
-    Профиль читается из записи о задании, а не из папки профилей: он сочинён под
-    это условие, и подставить вместо него умолчание значило бы объявить
-    пропущенной стадию, которая шла, — или наоборот.
+    Строение читается из записи о задании: оно сочинено под это условие, и
+    подставить вместо него пустое значило бы объявить пропущенной стадию,
+    которая шла, — или наоборот.
     """
     задание = status.task(services.project)
     if not задание:
         raise KadaiError("в проекте нет работы kadai: заведите её (new)")
     wishes = _wishes_of(задание)
     profile = (profile_mod.parse(задание["profile"], source="запись о задании")
-               if задание.get("profile") else profile_mod.load(DEFAULT_PROFILE))
+               if задание.get("profile") else BLANK)
     raw = method(services.project, "state", "состояние стадий")(status.STATE_KEY)
     plan = plan_of(profile, wishes=wishes, pause_after=raw.get("pause_after") or ())
     work = status.load(services.project, plan)
     return Session(services=services, plan=plan, work=work, wishes=wishes,
-                   limits=dict(limits or {}))
+                   limits={**LIMITS, **dict(limits or {})})
 
 
 def _wishes_of(задание: dict) -> Wishes:
@@ -269,7 +286,7 @@ def _ocr(material) -> bool:
     страницу. Ошибиться этот признак может только в сторону лишнего показа
     человеку — и это правильная сторона.
     """
-    if str(getattr(material, "kind", "")) == "изображение":
+    if str(getattr(material, "kind", "")) == "image":  # код вида из materials (английские коды с 2.0.0a5)
         return True
     заметки = " ".join(str(n) for n in (getattr(material, "notes", ()) or ()))
     return "скан" in заметки.lower() or "распозна" in заметки.lower()
@@ -310,8 +327,8 @@ def stage_structure(session: Session) -> None:
     Четыре сита записки В.4 — все дешёвые и без модели, порядок обратный по цене
     ошибки:
 
-    1. строение против профиля: закрытый список видов раздела, обязательные на
-       месте, объём в границах (`profile.check_structure`);
+    1. строение против самого себя: тип раздела из перечня движка, объявленное
+       обязательным на месте, разделов не больше потолка (`profile.check_structure`);
     2. уникальность ключей после NFC — внутри того же сита: два ключа,
        различающиеся только нормализацией, стали бы одним блоком, и второй
        раздел исчез бы молча;
@@ -323,19 +340,19 @@ def stage_structure(session: Session) -> None:
        `validate_work`: место под текст здесь черновик, а не пустота, и
        «соберётся ли» проверяется на настоящем списке.
 
-    Вид работы решается здесь же: `compose` строит профиль этой работы по
-    сочинённому ответу, и от него зависит, нужна ли работе стадия «решение».
+    Чем окажется работа, решается здесь же и только здесь: `compose` строит её
+    строение из ответа модели целиком, и от него зависит, нужна ли работе стадия
+    «решение». Ни файла-образца, ни умолчания у этого решения нет.
     """
     work = session.work
     begin(work, "шаблон", current="сочиняю строение работы")
-    умолчание = profile_mod.load(DEFAULT_PROFILE)
     answer = _ask(session, "шаблон",
-                  profile_mod.structure_request(умолчание, wishes=session.wishes.text),
-                  schema=profile_mod.structure_schema(умолчание), data=_data(session))
+                  profile_mod.structure_request(wishes=session.wishes.text),
+                  schema=profile_mod.structure_schema(), data=_data(session))
     строение = dict(answer.value or {})
 
     try:
-        profile = compose(умолчание, строение)
+        profile = compose(строение, stages=STAGE_NAMES)
     except KadaiError as exc:
         _stumble(session, "шаблон", problem("строение_не_годится", str(exc)))
     беды = check_structure(profile, строение)
@@ -368,7 +385,7 @@ def stage_structure(session: Session) -> None:
 
 
 def _adopt(session: Session, profile) -> None:
-    """Принять сочинённый профиль: план на него, лишние стадии — пропущенными.
+    """Принять сочинённое строение: план на него, лишние стадии — пропущенными.
 
     Пропущенными, а не «пройденными мгновенно»: работа, которой не нужна стадия
     «решение», не должна показывать её сделанной — полоска хода, показавшая
@@ -381,7 +398,7 @@ def _adopt(session: Session, profile) -> None:
     session.work.plan = session.plan
     for st in session.work.stages:
         if st.state == WAITING and not session.plan.needs(st.name):
-            st.state, st.note = SKIPPED, f'работе вида "{profile.name}" не нужна'
+            st.state, st.note = SKIPPED, f'работе «{profile.name}» не нужна'
         elif st.state == SKIPPED and session.plan.needs(st.name):
             st.state, st.note = WAITING, ""
 
@@ -396,6 +413,12 @@ def stage_solve(session: Session) -> None:
     производства), и выбрасывать сделанное из-за упёршегося в потолок ходов
     прогона значило бы платить дважды. Беды прогона едут в замечания работы —
     человек увидит их в статусе и в архиве.
+
+    Потолок ходов сценарий называет свой (`MAX_STEPS`, 50) и передаёт его дверью:
+    он же знаменатель полоски хода, и без него счётчик остался бы без числа, а
+    прогон шёл бы по умолчанию того слоя, который завтра его сменит. Снять
+    потолок вызывающий по-прежнему может (`limits={"max_steps": None}`) — тогда
+    решает служба, и полоска честно называет действие, а не долю.
     """
     work = session.work
     begin(work, "решение",
@@ -481,7 +504,7 @@ def stage_build(session: Session) -> None:
     Дверь `check_code` есть с 2026-09-04 (`orchestrator.doors`), и зовётся она на
     каждый блок с кодом. Подменять её «ну и ладно» нельзя было и тогда, когда её
     не было: код без проверки, объявленный проверенным, — это то самое молчание,
-    которое студент прочтёт как обещание. Поэтому при коде в работе и без двери
+    которое человек прочтёт как обещание. Поэтому при коде в работе и без двери
     стадия по-прежнему честно отказывает `NotReady` с адресом того, кого ждём.
     """
     work = session.work
@@ -615,7 +638,7 @@ def _solution(список) -> list:
     """`решение.md`: заголовки и текст под ними — производная от блоков работы.
 
     Производная, а не отдельный авторский путь: иначе появляется второй источник
-    правды, студент правит `решение.md`, отчёт остаётся прежним, и объяснить
+    правды, человек правит `решение.md`, отчёт остаётся прежним, и объяснить
     расхождение нечем.
     """
     out, заголовок = [], ""
@@ -676,8 +699,8 @@ def _data(session: Session) -> list:
     """Чужой текст для промпта: условие, пожелания, разбор задания.
 
     Всё это едет кусками роли `files` в рамке со случайной меткой прогона —
-    то есть **данными**, а не указаниями. Разница не косметическая: в файле
-    студента бывает написано «забудь предыдущие указания», и текст, приехавший
+    то есть **данными**, а не указаниями. Разница не косметическая: в чужом
+    файле бывает написано «забудь предыдущие указания», и текст, приехавший
     вопросом, был бы для модели указанием.
     """
     out = [("условие задачи", session.work.condition_text),
@@ -717,7 +740,7 @@ def _resolver(session: Session):
     return method(session.project, "resolve_artifact", "артефакты")
 
 
-__all__ = ["Session", "REQUIREMENT_SCHEMA", "REQUIREMENT_REQUEST", "SOLVE_TASK",
+__all__ = ["Session", "BLANK", "REQUIREMENT_SCHEMA", "REQUIREMENT_REQUEST", "SOLVE_TASK",
            "STAGE_FUNS", "new", "load", "run", "snapshot",
            "stage_receive", "stage_task", "stage_structure", "stage_solve",
            "stage_texts", "stage_build", "stage_archive"]

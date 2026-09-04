@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import pathlib
 
 import pytest
@@ -224,3 +225,33 @@ def test_прогон_записывается_с_меткой(project):
     project.finish_run(run, "done")
     прочитан = project.run(run.id)
     assert (прочитан.mark, прочитан.outcome, прочитан.level) == ("abcdef123456", "done", 2)
+
+
+def test_проект_без_шаблона_строит_документ_сам(tmp_path):
+    """`template=None` — «проект без шаблона»: документ с нуля, а не отказ.
+
+    Нужно это службе (`api`): человек, у которого методички под рукой нет,
+    всё равно заводит проект. Знание о том, как выглядит документ с нуля, лежит
+    здесь, а не в службе, — она про `hokoku` не знает и знать не должна (решение
+    главной сессии 2026-09-03).
+    """
+    p = orchestrator.Project.create(str(tmp_path / "пусто"), name="без шаблона")
+
+    # Тегов в построенном документе нет, значит и манифест пуст: заполнять
+    # нечего, пока человек не принёс свой шаблон.
+    assert list(p.manifest().tags) == []
+    # Происхождение записано: пустой документ можно молча заменить принесённым,
+    # чужой — нельзя, там решения человека.
+    assert p.settings()["template_source"] == "blank"
+    assert p.resolve_artifact(p.template_artifact()) == p.template()
+
+    # И это настоящий DOCX: он собирается и открывается.
+    итог = orchestrator.build(p)
+    assert итог["ok"] is True
+    путь = os.path.join(итог["workdir"], итог["report"]["outputs"]["docx"]["file"])
+    assert os.path.isfile(путь)
+
+    # А принесённый потом шаблон снимает пометку «наш».
+    p.update_template(template_bytes())
+    assert p.settings()["template_source"] == "given"
+    assert list(p.manifest().tags) == ["цель", "введение", "таблица"]

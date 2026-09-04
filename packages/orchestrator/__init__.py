@@ -43,6 +43,7 @@ orchestrator — единственный, кто знает про все па�
 Состав пакета:
 
     errors.py    свой тип ошибки и подсказка «похоже на»
+    diagrams.py  единственная дверь к fragmos и uml_generator
     project.py   состояние на диске; единственное место, знающее про пути
     prompt.py    манифест + опись материалов + соседи → [llm.Part]
     schema.py    какие теги просить и по какой схеме
@@ -71,6 +72,8 @@ tree-sitter'ом, ни `exec`, ни подпроцесса, ни поиска в
 единственные ворота `tools.operator_channel_gate`.
 """
 from .errors import OrchestratorError
+from . import diagrams
+from .diagrams import DiagramError, DiagramResult
 from .project import BLOCK_FIELDS, BlockVersion, Project, Run, SOURCES, Version, \
     artifact_id
 from .prompt import RULES, build_parts, prompt_hash, render, seal_mark
@@ -96,5 +99,6 @@ __all__ = [
     "build_parts", "seal_mark", "render", "prompt_hash", "RULES",
     "tag_schema", "any_value_schema", "report_schema", "fillable", "TagStream",
     "OrchestratorError",
+    "diagrams", "DiagramResult", "DiagramError",
     "prompt", "schema", "stream", "fill", "tools", "agent", "live", "doors",
 ]

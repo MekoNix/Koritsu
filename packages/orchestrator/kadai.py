@@ -62,6 +62,83 @@ def services(path: str, *, endpoint: str = "", create: bool = False):
         project, endpoint=endpoint or str(project.settings().get("endpoint") or ""))
 
 
+# ── тот же сценарий, но из кода, а не из командной строки ────────────────────
+#
+# Три функции ниже нужны службе (`api/runs/handlers/kadai_*.py`) и ровно затем,
+# чтобы служба **не импортировала `kadai`**. Направление импорта закреплено
+# решением 2026-08-31: соседей знает только оркестратор. Не будь этих трёх
+# обёрток, очередь заданий импортировала бы сценарий напрямую, и стрелка
+# зависимостей развернулась бы на первом же обработчике.
+#
+# Разбора аргументов здесь нет и не будет: он один и живёт в `kadai.__main__`.
+# Здесь только то, чего у командной строки нет вовсе, — покадровый доклад о
+# стадиях (`on_stage`), без которого служба не смогла бы показать ход работы в
+# потоке событий.
+
+def stage_names() -> tuple:
+    """Имена стадий по порядку. Служба рисует по ним полоску и считает шаги."""
+    from kadai.stages import STAGE_NAMES
+
+    return tuple(STAGE_NAMES)
+
+
+def work(project, *, endpoint: str, wishes: dict | None = None,
+         until: str | None = None, on_stage=None, stop=None) -> dict:
+    """Завести или продолжить работу `kadai` и пройти стадии. → снимок.
+
+    Работа заводится один раз на проект: есть запись о задании — продолжаем
+    (`run.load`), нет — заводим (`run.new`). Решать это по флагу от вызывающего
+    нельзя: «завести поверх заведённой» стёрло бы ход уже сделанных стадий, а
+    узнал бы об этом человек по счёту за повторное решение задачи.
+
+    Стадии проходятся **по одной**, а не одним `run(session)`, и это не
+    дробление ради дробления: `run` внутри не докладывает никому, а показать
+    ход работы человеку надо в тот момент, когда стадия кончилась, а не когда
+    кончились все. Форма шага та же, что у CLI (`run(session, until=имя)`), и
+    второго механизма остановки здесь не заводится — `until` из пожеланий
+    по-прежнему решает `plan.pause_after`.
+
+    `on_stage(имя, снимок)` зовётся после каждой стадии; `stop()` — «пора
+    остановиться» (отмена задания): спрашивается между стадиями, где остановка
+    ничего не стоит — сделанное сохранено, следующее не начато.
+    """
+    from kadai import run as run_mod, status as status_mod
+    from kadai.plan import Wishes
+
+    services = doors_mod.kadai_services(project, endpoint=endpoint)
+    сессия = (run_mod.load(services) if status_mod.task(project)
+              else run_mod.new(services, wishes=Wishes(**dict(wishes or {}))))
+
+    имена = stage_names()
+    предел = имена.index(until) if until in имена else len(имена) - 1
+    for имя in имена[:предел + 1]:
+        if stop is not None and stop():
+            break
+        run_mod.run(сессия, until=имя)
+        if on_stage is not None:
+            on_stage(имя, run_mod.snapshot(сессия))
+        if сессия.work.state != "running":
+            break
+    return run_mod.snapshot(сессия)
+
+
+def rework(project, *, endpoint: str, note: str, block: str | None = None,
+           kind: str | None = None) -> dict:
+    """Замечание человека → минимальный пересчёт → снимок.
+
+    Что именно переигрывается, решает `kadai.rework.apply` (маршруты замечаний
+    и их честная цена записаны там). Здесь — только сборка дверей и снимок
+    после: служба должна отдать человеку то же, что показала бы командная
+    строка, и вторым описанием «что случилось» этого не добиться.
+    """
+    from kadai import rework as rework_mod, run as run_mod
+
+    services = doors_mod.kadai_services(project, endpoint=endpoint)
+    сессия = run_mod.load(services)
+    итог = rework_mod.apply(сессия, note=note, block=block, kind=kind)
+    return {"rework": итог, "snapshot": run_mod.snapshot(сессия)}
+
+
 def main(argv=None) -> int:
     """Точка входа. Разбор аргументов и коды возврата — сценария, не наши."""
     from kadai.__main__ import main as scenario
@@ -73,4 +150,4 @@ if __name__ == "__main__":                      # pragma: no cover
     raise SystemExit(main())
 
 
-__all__ = ["blank_template", "services", "main"]
+__all__ = ["blank_template", "services", "stage_names", "work", "rework", "main"]

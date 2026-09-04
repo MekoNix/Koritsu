@@ -67,6 +67,14 @@ PREVIEW_CHARS = 120
 # а не написанным текстом. Нужна затем, что пустое значение `render` считает ошибкой
 # (`_empty_value`), и оставить дырку в списке буквально пустой нельзя — она не соберётся
 # даже для показа человеку.
+#
+# **Пометка — строка в самом значении, и отдельного поля у блока не будет** (решение
+# владельца 2026-09-04). Флаг «это ещё не написано» пришлось бы носить через запись на
+# диске, `wire`, сборку и проход текста, и в первом же месте, где его забыли переложить,
+# черновик уехал бы в готовый документ молчаливым абзацем. Строка едет вместе со
+# значением сама и видна человеку, открывшему промежуточный DOCX: он читает «черновик:»,
+# а не пустую страницу. Кто написал блок — вопрос другой и решается пометкой источника
+# (`source` в записи проекта), от которой зависит, можно ли его переписывать.
 DRAFT_MARK = "черновик:"
 
 _HEADING_RE = re.compile(r"\A(#{1,6})[ \t]+(\S.*)\Z")
@@ -392,7 +400,7 @@ def work_template(work: Work, *, profile=None, page=None, body=None,
     шаблон, и `render` с `build_report` работают с ним, ничего не зная о происхождении.
     Наружу (человеку, модели, в архив) он не показывается — это шов, а не документ.
 
-    `profile` — оформление, снятое с кафедрального образца (`sample.style_from_sample`);
+    `profile` — оформление, снятое с образца человека (`sample.style_from_sample`);
     подписи из него едут отдельно, `render(style=profile.style_overrides())`, и об этом
     заботится `render_work`.
     """
@@ -457,7 +465,7 @@ def _document(work: Work, *, profile, page, body, page_numbers):
 
 def _style(style: dict | None, profile) -> dict:
     """Перегрузки оформления: явные поверх снятых с образца. Забыть образец нельзя —
-    подписи выйдут нашими, а не кафедральными, и половина работы пропадёт незаметно."""
+    подписи выйдут нашими, а не из образца, и половина работы пропадёт незаметно."""
     if profile is None:
         return dict(style or {})
     out = {k: dict(v) for k, v in profile.style_overrides().items()}
@@ -488,7 +496,10 @@ def validate_work(work: Work, *, limits: dict | None = None) -> list[Problem]:
         сборки: «модель ничего не вернула» выглядит ровно как «блок написан»;
       `limit_exceeded` — потолки службы (`report.HARD_LIMITS`), счёт знаков и строк тот же;
       `unresolved_ref` — `{ref:}` мимо цели `render` превратит в «?» прямо в тексте
-        отчёта, и видно это только глазами и только на готовом документе.
+        отчёта, и видно это только глазами и только на готовом документе; в живом
+        списке это **ошибка**, а не предупреждение (решение владельца 2026-09-04):
+        цель здесь видна точно (`ref_targets` знает, кто получит номер), а «?» в
+        готовом документе хуже отказа собрать его.
     """
     limits = HARD_LIMITS if limits is None else {**HARD_LIMITS, **limits}
     out: list[Problem] = []
@@ -511,7 +522,7 @@ def validate_work(work: Work, *, limits: dict | None = None) -> list[Problem]:
         out.append(_p("error", "limit_exceeded", None,
                       f"блоков {len(work.blocks)}, потолок {limits['max_values']} (max_values)",
                       expected=limits["max_values"], got=len(work.blocks)))
-    out += _refs(work_values(work), ref_targets(work), what="блока")
+    out += _refs(work_values(work), ref_targets(work), what="блока", level="error")
     return out
 
 
@@ -573,8 +584,11 @@ def unresolved_refs(work: Work) -> list[str]:
 
     Отдельно от `validate_work` затем, что после `remove` и `rename` это единственный
     вопрос, который интересно задать, — и задавать его вызывающий будет каждый ход.
+    Уровень тот же, что у `validate_work`, — `error` (решение владельца 2026-09-04):
+    два ответа на вопрос «насколько это беда» разошлись бы молча.
     """
-    return [str(p.got) for p in _refs(work_values(work), ref_targets(work), what="блока")
+    return [str(p.got) for p in _refs(work_values(work), ref_targets(work),
+                                      what="блока", level="error")
             if p.code == "unresolved_ref"]
 
 

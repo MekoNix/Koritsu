@@ -176,6 +176,12 @@ def test_цепочка_инструментов_доводит_схему_до_
     # модель к файловой системе, которой у неё нет.
     опись = json.loads(ответы(backend, 0)[0]["content"])
     assert [m["id"] for m in опись["materials"]] == [mid]
+    # Значения полей описи — коды по-английски (решение владельца 2026-09-04);
+    # русскими остаются только якорь и текст, которые уезжают в отчёт.
+    assert опись["materials"][0]["kind"] == "text"
+    assert опись["materials"][0]["unit"] == "line"
+    кусок = json.loads(ответы(backend, 1)[-1]["content"])
+    assert кусок["unit"] == "line" and кусок["anchor"].startswith("«")
     # Значение доехало до проекта той же дорогой, что у уровней 1 и 2.
     assert project.value("таблица") == {"type": "diagram", "artifact": art}
     версия = project.head_version("таблица")

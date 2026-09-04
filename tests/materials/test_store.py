@@ -3,6 +3,8 @@ import pytest
 
 from materials import KIND_TEXT, KIND_UNKNOWN, MaterialsError, Store, material_id
 
+from .conftest import build_pdf
+
 
 def write(tmp_path, name, text):
     p = tmp_path / name
@@ -13,8 +15,10 @@ def write(tmp_path, name, text):
 def test_add_text_and_read_chunk(store, tmp_path):
     path = write(tmp_path, "конспект.md", "\n".join(f"строка {i}" for i in range(1, 21)))
     m = store.add(path)
-    assert m.kind == KIND_TEXT and m.unit == "строка" and m.count == 20
-    assert m.lang == "кириллица"
+    # Значения полей — коды по-английски, подписи для человека остаются в
+    # карточке и якоре: их проверяют строки ниже.
+    assert m.kind == KIND_TEXT and m.unit == "line" and m.count == 20
+    assert m.lang == "cyrillic"
     chunk = store.read(m.id, 3, 5)
     assert chunk.text == "строка 3\nстрока 4\nстрока 5"
     assert chunk.anchor == "«конспект.md», строки 3–5"
@@ -96,3 +100,91 @@ def test_store_survives_reopen(store, tmp_path):
 def test_list_keeps_order_of_adding(store, tmp_path):
     ids = [store.add(write(tmp_path, f"f{i}.txt", f"файл {i}\n")).id for i in range(5)]
     assert [m.id for m in store.list()] == ids
+
+
+def test_remove_убирает_и_исходник_и_разбор(store, tmp_path):
+    """Удаление: байты уходят с диска, а не только из описи.
+
+    Нужно службе (`api`): человек удалил файл, и квота обязана перестать
+    его считать. Полуудаление — «из списка пропал, место занимает» — это ровно
+    та беда, которую человек обнаруживает через месяц.
+    """
+    import os
+
+    m = store.add(write(tmp_path, "лишнее.txt", "раз\nдва\n"))
+    папка = os.path.join(store.root, m.id)
+    assert os.path.isdir(папка)
+
+    store.remove(m.id)
+
+    assert not os.path.exists(папка)
+    assert store.list() == []
+    with pytest.raises(MaterialsError):
+        store.get(m.id)
+
+
+def test_remove_несуществующего(store):
+    """Удаление того, чего нет, — опечатка вызывающего, а не «уже удалено»."""
+    with pytest.raises(MaterialsError):
+        store.remove("0123456789abcdef")
+
+
+def test_remove_уносит_детей(store, pdf):
+    """Картинки, вынутые со страниц PDF, уходят вместе с родителем.
+
+    Решение владельца 2026-09-04: оставленные дети — «сироты», которых человек в
+    описи не видит, а квота считает.
+    """
+    родитель = store.add(pdf, name="методичка.pdf", do_ocr=False)
+    assert родитель.children, "у этого PDF должна быть картинка на странице"
+
+    убрано = store.remove(родитель.id)
+
+    assert set(убрано) == {родитель.id, *родитель.children}
+    assert store.list() == []
+
+
+def test_remove_бережёт_названных_детей(store, pdf):
+    """`keep` — ссылки, про которые знает вызывающий, а не хранилище.
+
+    Про значения тегов проекта знает служба (`api`), и она же называет тех, кого
+    трогать нельзя: завести это знание здесь значило бы связать хранилище файлов
+    с оркестратором.
+    """
+    родитель = store.add(pdf, name="методичка.pdf", do_ocr=False)
+    ребёнок = родитель.children[0]
+
+    убрано = store.remove(родитель.id, keep=[ребёнок])
+
+    assert убрано == [родитель.id]
+    assert [m.id for m in store.list()] == [ребёнок]
+    assert store.blob(ребёнок)[:4] == b"\x89PNG"      # байты на месте
+
+
+def test_remove_не_трогает_ребёнка_чужого_родителя(store, png):
+    """Одна и та же картинка в двух методичках — ОДИН материал (идентификатор
+    считается по содержимому). Удаление первой методички не смеет вынимать
+    картинку из второй."""
+    картинка = png()
+    первая = store.add(build_pdf(["Pervaya"], images=[(1, картинка)]),
+                       name="первая.pdf", do_ocr=False)
+    вторая = store.add(build_pdf(["Vtoraya"], images=[(1, картинка)]),
+                       name="вторая.pdf", do_ocr=False)
+    общий = первая.children[0]
+    assert вторая.children == [общий], "картинка одна и та же — материал один"
+
+    убрано = store.remove(первая.id)
+
+    assert убрано == [первая.id]
+    assert {m.id for m in store.list()} == {вторая.id, общий}
+
+
+def test_remove_с_children_false_оставляет_детей(store, pdf):
+    """Уборка производных выключается: вызывающему бывает нужно убрать ровно то,
+    что он назвал, — и решать это ему, а не умолчанию."""
+    родитель = store.add(pdf, name="методичка.pdf", do_ocr=False)
+
+    убрано = store.remove(родитель.id, children=False)
+
+    assert убрано == [родитель.id]
+    assert {m.id for m in store.list()} == set(родитель.children)

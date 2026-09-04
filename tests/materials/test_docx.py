@@ -15,7 +15,7 @@ from .conftest import build_docx, fraction_omml, repack
 def test_paragraphs_are_the_unit(store, docx_file):
     """Единица — блок документа: абзац или таблица, на своём месте по порядку."""
     m = store.add(docx_file, name="методичка.docx")
-    assert m.kind == KIND_DOCX and m.unit == "абзац"
+    assert m.kind == KIND_DOCX and m.unit == "paragraph"
     assert m.extra["title"] == "Методичка по химии"
     assert "Vvedenie" in store.read(m.id, 1, 1).text
     assert store.read(m.id, 1, 1).anchor == "«методичка.docx», абзац 1"

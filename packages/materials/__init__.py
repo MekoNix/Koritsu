@@ -20,6 +20,12 @@ materials — хранилище материалов пользователя �
   * Токены дороги. В промпт по умолчанию уходят только карточки; полный текст
     модель запрашивает сама, кусками, и каждый кусок приходит с якорем.
 
+Значения полей — коды по-английски (`kind`: text/pdf/docx/image/unknown,
+`unit`: line/page/paragraph, `lang`: cyrillic/latin/mixed): они уходят в данные — в карточку службы, в ответ
+инструмента модели, в `meta.json` на томе. Подписи для человека лежат рядом с
+кодами (`KIND_WORDS`, `UNIT_WORDS`), и по ним пишутся карточка и якорь: якорь
+уезжает в отчёт студента, и «page 4» там был бы опиской, а не переводом.
+
 OCR — системный tesseract подпроцессом, если он установлен. Если нет — материал
 сохраняется, разбор не падает, в карточке честно написано «текст не распознан».
 Тяжёлых зависимостей (torch, paddle) в пакете нет и не будет.
@@ -29,8 +35,9 @@ from .context import (CHARS_PER_TOKEN_DEFAULT, Context, Request, build_context,
                       estimate_tokens)
 from .model import (Card, Chunk, Derived, Material, MaterialsError, Parsed, anchor,
                     KIND_DOCX, KIND_IMAGE, KIND_PDF, KIND_TEXT, KIND_UNKNOWN,
-                    UNIT_LINE, UNIT_PAGE, UNIT_PARAGRAPH)
-from ._parse import parse
+                    KIND_WORDS, LANG_CYRILLIC, LANG_LATIN, LANG_MIXED, LANG_WORDS,
+                    UNIT_LINE, UNIT_MANY, UNIT_PAGE, UNIT_PARAGRAPH, UNIT_WORDS)
+from ._parse import parse, supported
 from .store import Store, material_id
 from . import ocr
 
@@ -39,7 +46,9 @@ __all__ = [
     "Material", "Card", "Chunk", "Parsed", "Derived", "MaterialsError", "anchor",
     "KIND_TEXT", "KIND_PDF", "KIND_DOCX", "KIND_IMAGE", "KIND_UNKNOWN",
     "UNIT_LINE", "UNIT_PAGE", "UNIT_PARAGRAPH",
-    "parse", "card", "inventory", "human_size",
+    "LANG_CYRILLIC", "LANG_LATIN", "LANG_MIXED",
+    "KIND_WORDS", "LANG_WORDS", "UNIT_WORDS", "UNIT_MANY",
+    "parse", "supported", "card", "inventory", "human_size",
     "build_context", "estimate_tokens", "Context", "Request", "ocr",
     "CHARS_PER_TOKEN_DEFAULT",
 ]

@@ -15,9 +15,9 @@ from kadai import stages
 
 
 def test_ненужная_стадия_помечена_пропущенной_а_не_сделанной(profile):
-    реферат = kadai.parse({"name": "реферат", "stages": ["приём", "тексты", "сборка", "архив"],
+    записка = kadai.parse({"name": "записка", "stages": ["приём", "тексты", "сборка", "архив"],
                            "kinds": {}})
-    work = kadai.new_work(kadai.plan_of(реферат))
+    work = kadai.new_work(kadai.plan_of(записка))
     решение = work.stage("решение")
     assert решение.state == stages.SKIPPED
     # Все семь стадий видны всегда: список из одних нужных отвечал бы на вопрос
@@ -26,8 +26,8 @@ def test_ненужная_стадия_помечена_пропущенной_�
 
 
 def test_пропущенную_стадию_нельзя_начать(profile):
-    реферат = kadai.parse({"name": "реферат", "stages": ["приём", "сборка"], "kinds": {}})
-    work = kadai.new_work(kadai.plan_of(реферат))
+    записка = kadai.parse({"name": "записка", "stages": ["приём", "сборка"], "kinds": {}})
+    work = kadai.new_work(kadai.plan_of(записка))
     with pytest.raises(kadai.KadaiError, match="пропущена"):
         kadai.begin(work, "решение")
 

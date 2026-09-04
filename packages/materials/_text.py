@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import re
 
-from .model import KIND_TEXT, UNIT_LINE, Parsed
+from .model import (KIND_TEXT, LANG_CYRILLIC, LANG_LATIN, LANG_MIXED, UNIT_LINE,
+                    Parsed)
 
 # Кодировки по очереди: UTF-8 — норма, cp1251 — старые русские выгрузки из Windows.
 _ENCODINGS = ("utf-8", "cp1251")
@@ -46,8 +47,10 @@ def looks_like_text(data: bytes, probe: int = 4096) -> bool:
 
 def detect_lang(text: str, probe: int = 4000) -> str:
     """
-    Язык текста грубо: кириллица, латиница или смешанный. Настоящий определитель
-    языка тут не нужен — это подсказка модели, а не классификация.
+    Язык текста грубо: `cyrillic`, `latin` или `mixed` — код, а не подпись
+    (значение уезжает в карточку службы, подписи лежат в `model.LANG_WORDS`).
+    Настоящий определитель языка тут не нужен — это подсказка модели, а не
+    классификация.
     """
     head = text[:probe]
     cyr = len(_CYRILLIC.findall(head))
@@ -55,10 +58,10 @@ def detect_lang(text: str, probe: int = 4000) -> str:
     if cyr == 0 and lat == 0:
         return ""
     if cyr > lat * 3:
-        return "кириллица"
+        return LANG_CYRILLIC
     if lat > cyr * 3:
-        return "латиница"
-    return "смешанный"
+        return LANG_LATIN
+    return LANG_MIXED
 
 
 def first_lines(units: list[str], count: int = 3, width: int = 90) -> list[str]:

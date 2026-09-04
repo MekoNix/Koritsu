@@ -34,7 +34,7 @@ live — живой режим со стороны службы: хранени�
 Связный текст петлёй **не пишется** (решение владельца 2026-09-04): скелет и
 нетекстовое собирает `solve`, весь текст пишется одним проходом `write_texts` по
 готовому списку, видя соседей. Абзацы, написанные по одному, разойдутся между
-собой, и увидят это при чтении целиком — то есть на кафедре.
+собой, и увидит это тот, кто прочтёт работу целиком.
 """
 from __future__ import annotations
 
@@ -49,10 +49,12 @@ from . import agent as agent_mod, fill as fill_mod, prompt as prompt_mod, \
 from .errors import OrchestratorError
 from .tools import ToolError
 
-# Сколько блоков разрешено в одной работе. Упереться в потолок можно только
-# петлёй, которая вставляет и вставляет: без него такой прогон пишет версию
-# списка на каждом ходу, и каждая следующая длиннее предыдущей.
-MAX_BLOCKS = 500
+# Сколько ходов живого режима позволено одному прогону (решение владельца
+# 2026-09-04). Своё умолчание, а не унаследованное от `llm.Limits` (12): там оно
+# про один вопрос с инструментами, а здесь агент собирает работу целиком —
+# заголовки, код, таблицы, схемы, — и дюжины ходов на это не хватает. Потолок
+# нужен всё равно: петля, которая вставляет и вставляет, иначе платит вечно.
+MAX_STEPS = 50
 
 # Инструмент, которого нет у шаблонного пути: модель кладёт **свой** исходник в
 # материалы работы. Заведён он ровно ради связки «пишет код и рисует по нему
@@ -260,9 +262,14 @@ class LiveBox(tools_mod.ToolBox):
                             exc.payload.get("message", str(exc)),
                             **{k: v for k, v in exc.payload.items()
                                if k not in ("error", "message")}) from None
-        if len(work) > MAX_BLOCKS:
+        потолок = hokoku.report.HARD_LIMITS["max_values"]
+        if len(work) > потолок:
+            # Потолок блоков один на службу и на движок отчётов (решение
+            # владельца 2026-09-04): свой, вдвое меньший, означал бы, что список
+            # из 700 блоков петлёй не собрать, а руками — можно, и объяснить эту
+            # разницу человеку было бы нечем.
             raise ToolError("too_many",
-                            f"в работе было бы {len(work)} блоков, потолок {MAX_BLOCKS}")
+                            f"в работе было бы {len(work)} блоков, потолок {потолок}")
         if list(work.keys()) != list(self.work.keys()) or work.blocks != self.work.blocks:
             self._write(work, _note_of(name, answer))
             answer = {**answer, "version": self.version.n}
@@ -365,6 +372,10 @@ def solve(project, task: str, *, endpoint: str, tools=None, chunks=(), data=(),
     Связный текст здесь не пишется (решение владельца 2026-09-04) — это отдельный
     проход `write_texts` по готовому списку. Здесь собирается скелет и то, чего
     текстом не написать: заголовки, схемы, код, таблицы.
+
+    `max_steps=None` — потолок ходов живого режима `MAX_STEPS` (50, решение
+    владельца 2026-09-04), а не умолчание среднего слоя: собрать работу целиком
+    за дюжину ходов нельзя, и прогон обрывался бы на середине штатно.
     """
     extra_flags, gate_problems = tools_mod.operator_channel_gate(endpoint)
 
@@ -382,7 +393,7 @@ def solve(project, task: str, *, endpoint: str, tools=None, chunks=(), data=(),
                   note=note or ("проверить: нет операторского канала"
                                 if extra_flags else ""))
     limits = llm.Limits(
-        max_steps=int(max_steps or tools_mod.MAX_STEPS), max_units=max_units,
+        max_steps=int(max_steps or MAX_STEPS), max_units=max_units,
         **({} if max_tokens is None else {"max_tokens_per_call": max_tokens}))
     result = llm.run_tools(endpoint, list(tools if tools is not None else live_tools()),
                            parts, box, limits=limits, cancel=cancel,
@@ -537,4 +548,4 @@ def write_texts(project, *, endpoint: str, chunks=(), data=(), max_tokens=None,
 
 __all__ = ["LiveBox", "LiveResult", "TextsResult", "solve", "write_texts",
            "live_tools", "source_tool", "as_tools", "work_of", "records_of",
-           "LIVE_TOOL_NAMES", "MAX_BLOCKS", "PUT_SOURCE", "SOURCE_EXT"]
+           "LIVE_TOOL_NAMES", "MAX_STEPS", "PUT_SOURCE", "SOURCE_EXT"]

@@ -76,9 +76,9 @@ class Plan:
     wishes: Wishes = field(default_factory=Wishes)
 
     def needs(self, stage: str) -> bool:
-        """Нужна ли стадия этой работе. У реферата не будет «решения» — и это
-        должно быть видно как «стадии нет», а не как мгновенно прошедшая стадия:
-        полоска хода, показавшая работу, которой не было, врёт."""
+        """Нужна ли стадия этой работе. У работы, где производить нечего, не будет
+        «решения» — и это должно быть видно как «стадии нет», а не как мгновенно
+        прошедшая стадия: полоска хода, показавшая работу, которой не было, врёт."""
         return stage in self.stages
 
     def stops_after(self, stage: str) -> bool:
@@ -96,7 +96,7 @@ def plan_of(profile: Profile, *, wishes: Wishes | None = None, pause_after=()) -
     pauses = set(pauses_of(wishes)) | {str(s) for s in pause_after}
     unknown = sorted(p for p in pauses if p not in profile.stages)
     if unknown:
-        raise KadaiError("остановиться после стадии, которой у этого вида работы нет: "
+        raise KadaiError("остановиться после стадии, которой у этой работы нет: "
                          + ", ".join(f'"{u}"{hint(u, profile.stages)}' for u in unknown))
     return Plan(profile=profile, stages=tuple(profile.stages),
                 pause_after=frozenset(pauses), wishes=wishes)

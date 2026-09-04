@@ -101,8 +101,19 @@ def _diagram_notices(project, stored: dict) -> list:
 
 
 def build(project, *, keys=None, outputs=("docx",), on_error: str = "skip",
-          name: str | None = None, style: dict | None = None) -> dict:
+          name: str | None = None, style: dict | None = None,
+          store: bool = False) -> dict:
     """Прогон целиком: значения → проверка → `build_report` → файлы в `out/`.
+
+    `store=True` — тот самый переезд, которого этот код ждал: собранное едет не
+    в `out/`, а в хранилище артефактов проекта (`Project.put_artifact`), и в
+    результате вместо `outputs.docx.file` стоит `outputs.docx.artifact`. Так
+    работает служба: файл в каталоге `out/` живёт на томе безымянно, а
+    артефакт адресуется идентификатором, по которому его скачивают, ставят в
+    значение тега и кладут в архив. Форма результата у режимов одна с точностью
+    до этого ключа, поэтому показывающему результат человеку режим знать
+    незачем — и `workdir` остаётся умолчанием для лаборатории и командной
+    строки.
 
     `problems` отдаются рядом с результатом, а не вместо него, и сборка на них
     не останавливается. Причина та же, по которой `build_report` считает `ok`
@@ -118,6 +129,16 @@ def build(project, *, keys=None, outputs=("docx",), on_error: str = "skip",
     problems = check(project, keys=keys)
     job = job_of(project, keys=keys, outputs=outputs, on_error=on_error,
                  name=name, style=style)
+    if store:
+        # Имя и вид приходят от `build_report` и здесь не нужны: артефакт
+        # адресуется содержимым, а не именем (`Project.put_artifact`). Имя всё
+        # же передаём — оно читается в отладке и ни на что не влияет.
+        report = hokoku.build_report(
+            job, resolve_artifact=project.resolve_artifact,
+            store_artifact=lambda имя, данные, вид: project.put_artifact(
+                данные, name=имя))
+        return {"ok": bool(report.get("ok")), "problems": problems,
+                "report": report, "workdir": None}
     report = hokoku.build_report(job, resolve_artifact=project.resolve_artifact,
                                  workdir=project.outdir())
     return {"ok": bool(report.get("ok")), "problems": problems, "report": report,

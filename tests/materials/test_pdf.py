@@ -6,7 +6,7 @@ from .conftest import build_pdf
 
 def test_pages_are_numbered(store, pdf):
     m = store.add(pdf, name="методичка.pdf")
-    assert m.kind == KIND_PDF and m.unit == "страница" and m.count == 3
+    assert m.kind == KIND_PDF and m.unit == "page" and m.count == 3
     assert m.extra["title"] == "Методичка по химии"
     assert "Hod raboty" in store.read(m.id, 2, 2).text
     assert store.read(m.id, 2, 2).anchor == "«методичка.pdf», страница 2"

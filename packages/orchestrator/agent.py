@@ -33,6 +33,12 @@ import llm
 from . import fill as fill_mod, prompt as prompt_mod, schema as schema_mod, tools as tools_mod
 from .errors import OrchestratorError
 
+# Имя куска с задачей человека. Наша строка перед рамкой — единственное
+# утверждение о чужом тексте, которое сам текст подделать не может, и потому
+# оно должно быть постоянным: имя, написанное по месту, однажды напишется
+# иначе, и модель увидит два разных куска там, где кусок один.
+ИМЯ_ЗАДАЧИ = "задача от человека"
+
 
 @dataclass
 class AgentResult:
@@ -63,7 +69,7 @@ class AgentResult:
 
 def fill_agent(project, *, endpoint: str, keys=None, chunks=(), max_steps=None,
                max_units=None, max_tokens=None, effort=None, cancel=None,
-               overwrite: bool = False) -> AgentResult:
+               overwrite: bool = False, task: str = "") -> AgentResult:
     """Прогон агента: модель работает инструментами и ставит значения сама.
 
     Порядок действий не переставляется: отбор тегов → ворота операторского
@@ -82,6 +88,17 @@ def fill_agent(project, *, endpoint: str, keys=None, chunks=(), max_steps=None,
     поставленные значения остаются поставленными. Ронять здесь нечего: они уже
     на диске, а история петли всё равно не сохраняется, и повторный прогон
     начнётся с чистого листа — но с уже готовыми значениями в проекте.
+
+    `task` — что человек просит сделать, его словами (решение владельца §12:
+    «задача для агента — из запроса»). Едет **недоверенным куском в рамке**, той
+    же дверью, что условие задачи и пожелания (`prompt.data_parts`), а не
+    строкой запроса рядом с нашими указаниями: писал его человек, и указанием
+    для модели он быть не может. Пустой — куска нет вовсе: «задача» без задачи
+    стоила бы токенов и сказала бы модели, что задача была и она пуста.
+
+    Потолок длины ставит тот, кто принимает текст снаружи (служба — 15 000
+    знаков, `api/runs/handlers/agent.py`): здесь чужого потолка нет, потому что
+    сюда зовут и из лаборатории, где текст пишет тот же, кто запускает.
     """
     manifest = project.manifest()
     wanted = schema_mod.fillable(manifest, keys=keys)
@@ -107,6 +124,10 @@ def fill_agent(project, *, endpoint: str, keys=None, chunks=(), max_steps=None,
     run = project.start_run(level=3, endpoint=endpoint)
     parts = prompt_mod.build_parts(project, keys=wanted, level=3, manifest=manifest,
                                    chunks=chunks)
+    # Задача человека — до печати рамки: метка выпускается по всему
+    # недоверенному тексту сразу (`prompt.seal_mark`), и кусок, добавленный
+    # после `_seal`, уехал бы к модели вне рамки.
+    parts.extend(prompt_mod.data_parts([(ИМЯ_ЗАДАЧИ, task)]))
     fill_mod._seal(project, run, parts)
 
     box = tools_mod.ToolBox(project, run, manifest=manifest, parts=parts,
@@ -180,4 +201,4 @@ def _outcome(result, filled) -> str:
     return "done"
 
 
-__all__ = ["AgentResult", "fill_agent"]
+__all__ = ["AgentResult", "fill_agent", "ИМЯ_ЗАДАЧИ"]

@@ -17,7 +17,7 @@ def test_tesseract_is_used_when_present(store, png, fake_tesseract):
     """Появился tesseract — текст с картинки попадает в материал и в карточку."""
     assert ocr.available() is True and "rus" in ocr.languages()
     m = store.add(png(300, 200, "white"), name="прибор.png")
-    assert m.count == 2 and m.lang == "кириллица"
+    assert m.count == 2 and m.lang == "cyrillic"
     assert store.read(m.id, 1, 1).text == fake_tesseract.splitlines()[0]
     assert store.read(m.id, 1, 1).anchor == "«прибор.png», строка 1"
     assert ocr.NOT_INSTALLED not in m.notes

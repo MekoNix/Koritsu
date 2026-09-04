@@ -30,10 +30,12 @@ from llm.backends.openai_compat import OpenAICompatBackend
 
 from .conftest import journal_lines, script, template_bytes
 
+# Ответ модели о строении: у раздела пара полей — как он называется в этой
+# работе (`kind`, свободное слово) и чем заполняется (`type`, перечень движка).
 СТРОЕНИЕ = {"sections": [
-    {"title": "Введение", "type": "markdown", "required": True,
+    {"title": "Введение", "kind": "введение", "type": "markdown", "required": True,
      "prompt": "зачем работа и что в ней сделано"},
-    {"title": "Листинг программы", "type": "code", "required": True},
+    {"title": "Листинг программы", "kind": "листинг", "type": "code", "required": True},
 ]}
 
 
@@ -126,6 +128,14 @@ def test_строение_превращается_в_заготовки_бло�
     # Умолчания сценария уехали предложением, а не законом.
     запрос = [p for p in backend.requests[0].parts if p.role == "request"][0]
     assert "предложение, а не закон" in запрос.text and "Введение; Заключение" in запрос.text
+    # Схема просит пару: вид раздела словами модели и тип из перечня движка.
+    # Вид перечислить нельзя — его называет условие, а вида работы служба не знает;
+    # тип перечислен, и перечень берётся у движка, а не переписывается здесь.
+    раздел = backend.requests[0].schema["properties"]["sections"]["items"]
+    assert раздел["required"] == ["title", "kind", "type"]
+    assert "enum" not in раздел["properties"]["kind"]
+    assert раздел["properties"]["type"]["enum"] == [
+        k for k in hokoku.live.KINDS if k not in ("heading", "page_break", "text")]
 
 
 def test_готовое_строение_модели_не_стоит(project, endpoint):

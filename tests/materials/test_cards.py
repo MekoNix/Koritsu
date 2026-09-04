@@ -51,6 +51,30 @@ def test_inventory_is_cheap(store, tmp_path):
     assert len(inv.splitlines()) <= 20 * (CARD_MAX_LINES + 1) + 1
 
 
+def test_field_values_are_codes_but_the_card_is_russian(store, pdf, tmp_path):
+    """Разрез, ради которого заведены KIND_WORDS/UNIT_WORDS.
+
+    В полях — коды (их читает клиент службы, генератор клиента и модель), в
+    карточке и якоре — русские слова: карточку читает человек, а якорь модель
+    вставляет в отчёт, и «page 2» уехало бы туда как есть.
+    """
+    p = tmp_path / "конспект.md"
+    p.write_text("строка раз\nстрока два\n", encoding="utf-8")
+    store.add(str(p))
+    m = store.add(pdf, name="методичка.pdf")
+
+    assert (m.kind, m.unit) == ("pdf", "page")
+    for материал in store.list():
+        assert материал.kind.isascii() and материал.unit.isascii(), материал.name
+        assert материал.lang.isascii(), материал.name
+
+    карточка = store.card(m.id)
+    assert карточка.lines[0].startswith(f"[{m.id}] методичка.pdf — pdf, ")
+    assert "3 страницы" in карточка.lines[0]
+    assert store.read(m.id, 2, 2).anchor == "«методичка.pdf», страница 2"
+    assert store.read(m.id, 1, 3).anchor == "«методичка.pdf», страницы 1–3"
+
+
 def test_pdf_card_tells_what_was_extracted(store, pdf):
     m = store.add(pdf, name="методичка.pdf")
     text = store.card(m.id).text

@@ -37,6 +37,19 @@ from .errors import KadaiError
 # тип значения у `hokoku` — одно утверждение.
 TOOL_KINDS = ("code", "diagram", "image", "table", "formula")
 TEXT_KINDS = _live.TEXT_KINDS
+
+# Чем бывает заполнен раздел: типы значений движка, кроме служебных. `heading`
+# ставит скелет, а не раздел; `page_break` — не содержимое; `text` покрыт
+# `markdown`. Своего списка типов в пакете не заводится: разойдясь с движком, он
+# соврал бы молча — раздел, объявленный схемой, стал бы обычным текстом.
+SECTION_TYPES = tuple(k for k in _live.KINDS
+                      if k not in ("heading", "page_break", "text"))
+
+# Пометка черновика — **строкой** в самом значении (решение владельца
+# 2026-09-04), отдельного поля «это ещё не написано» нет и не будет; почему
+# именно так, написано у движка (`hokoku.live.DRAFT_MARK`), и второго объяснения
+# здесь не заводится. Сценарию она нужна затем, что по ней он отличает
+# написанное от места под текст (`is_draft`, `_solution`).
 DRAFT_MARK = _live.DRAFT_MARK
 
 
@@ -182,6 +195,6 @@ def errors_of(problems) -> list:
     return [p for p in (problem_dict(x) for x in problems or ()) if p["level"] == "error"]
 
 
-__all__ = ["TOOL_KINDS", "TEXT_KINDS", "DRAFT_MARK", "work_of", "records_of", "validate", "to_pdf",
+__all__ = ["TOOL_KINDS", "TEXT_KINDS", "SECTION_TYPES", "DRAFT_MARK", "work_of", "records_of", "validate", "to_pdf",
            "assemble", "template_bytes", "slots", "outline", "listing", "draft_json",
            "is_text", "is_draft", "text_of", "problem_dict", "errors_of"]

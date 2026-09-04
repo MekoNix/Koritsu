@@ -1,0 +1,131 @@
+# Koritsu, боевой выкат: один образ, четыре контейнера (решение владельца §1, §11).
+#
+#   migrate  один прогон миграций до всего остального, потом выходит
+#   api      HTTP, лёгкий; в покое около 100 МБ
+#   worker   очередь: прогоны модели, LibreOffice, разбор файлов; 300–500 МБ
+#   caddy    TLS, статика сайта, единственный, кто смотрит наружу
+#   anubis   проверка работой перед сайтом; только здесь, dev его не поднимает
+#
+# Порт наружу торчит **только** у Caddy. `api` и `worker` разговаривают по
+# внутренней сети compose и общему тому — так же, как будут разговаривать с
+# вторым сервером, когда он появится (§1: «воркер общается с API только через
+# очередь и том»).
+#
+# Запуск:  docker compose up -d --build
+# Остановка: docker compose down          (том остаётся, `down -v` его сносит)
+# Секреты: файл `.env` рядом с этим, на хосте, вне репозитория (§7). Образец —
+# `.env.example`.
+
+services:
+
+  # ── миграции ────────────────────────────────────────────────────────────
+  # Отдельным контейнером и до всех остальных. Довод — в `api/__main__.py`:
+  # `create_app` мигрирует и сам, но три процесса, поднявшиеся разом и
+  # мигрирующие каждый сам, — это три `ALTER TABLE` на одной SQLite и
+  # «database is locked» у двоих из троих.
+  migrate:
+    build: .
+    image: koritsu:local
+    command: ["migrate"]
+    env_file: [.env]
+    volumes:
+      - koritsu-data:/data
+    restart: "no"
+
+  # ── служба ──────────────────────────────────────────────────────────────
+  api:
+    image: koritsu:local
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["serve", "--host", "0.0.0.0"]
+    env_file: [.env]
+    volumes:
+      - koritsu-data:/data
+    # Порт не публикуется: снаружи в него ходит только Caddy, по внутренней
+    # сети. `ports:` здесь означал бы сайт, доступный мимо TLS и мимо Anubis.
+    expose: ["8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    restart: unless-stopped
+
+  # ── воркер ──────────────────────────────────────────────────────────────
+  # Потолки памяти и CPU стоят **здесь**, а не у службы, и это половина довода
+  # владельца за два контейнера: «зависший LibreOffice не роняет сайт». Числа —
+  # с запасом над горячим LibreOffice (300–500 МБ, §1) и над `KORITSU_JOB_MEMORY_MB`
+  # одного задания: воркер держит два слота (§11), и оба могут работать разом.
+  worker:
+    image: koritsu:local
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["worker"]
+    env_file: [.env]
+    volumes:
+      - koritsu-data:/data
+    mem_limit: 3g
+    cpus: 1.5
+    # SIGTERM для воркера — «доделай начатое и не бери новых» (`jobs/worker.py`).
+    # Времени на это даёт `stop_grace_period`; меньше `KORITSU_JOB_TIMEOUT_S`
+    # оно быть может (задание вернётся через сердцебиение), но не должно быть
+    # меньше обычной сборки PDF — иначе каждый выкат теряет по отчёту.
+    stop_grace_period: 120s
+    restart: unless-stopped
+
+  # ── прокси ──────────────────────────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Сайт: Vite собирает `web/dist` снаружи, Caddy отдаёт его статикой
+      # (§11: «отдельного контейнера нет»). Каталога может ещё не быть — тогда
+      # Caddy отдаст 404 на всё, кроме `/api/`, и это честнее пустой страницы.
+      - ./web/dist:/srv/web:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+  # ── проверка работой ────────────────────────────────────────────────────
+  # Anubis (TecharoHQ) — самостоятельный прокси-фильтр: выдаёт браузеру задачу
+  # на хеш, боту в массе это дорого, человеку незаметно (§8, «на тест —
+  # Anubis»). Нашего кода не требует и стоит между Caddy и `api`.
+  #
+  # ВНИМАНИЕ: имена переменных ниже — по памяти. `BIND`, `TARGET` и `DIFFICULTY`
+  # у Anubis есть точно; всё остальное (политика файлом, ключ подписи cookie,
+  # домен cookie, метрики) — **проверить по docs** перед первым боевым
+  # выкатом: https://anubis.techaro.lol/docs/admin/installation
+  # Проверять там же и умолчание сложности: 4 — то, что помнится, а не то, что
+  # прочитано.
+  anubis:
+    image: ghcr.io/techarohq/anubis:latest
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      BIND: ":8923"
+      # Куда пропускать прошедших проверку: статику отдаёт Caddy, поэтому
+      # целью Anubis служит он же, своим внутренним портом (см. `Caddyfile`).
+      TARGET: "http://caddy:8080"
+      DIFFICULTY: "4"
+      SERVE_ROBOTS_TXT: "true"        # проверить по docs
+    expose: ["8923"]
+    restart: unless-stopped
+
+volumes:
+  # Единственное состояние службы (§2: «контейнер без состояния, всё живое —
+  # только в /data»). Резервная копия — restic по cron на хосте, отсюда же.
+  koritsu-data:
+  # Сертификаты Let's Encrypt: без своего тома Caddy выписывает их заново на
+  # каждый `up`, а у центра сертификации на это есть недельный лимит.
+  caddy-data:
+  caddy-config:

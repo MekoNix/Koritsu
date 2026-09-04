@@ -14,3 +14,18 @@
 
 Тесты: `.venv/bin/python -m pytest`. Лаборатории (образцы, галерея PNG, песочница) —
 `~/koritsu2-extras/labs/{fragmos,uml,hokoku}`.
+
+
+## Выкат
+
+Один образ, из него два контейнера — `api` (HTTP) и `worker` (очередь), плюс `caddy`
+(TLS и статика сайта) и `anubis` (проверка работой перед сайтом, только в бою).
+Состояние — только том `/data`; секреты — `.env` на хосте, вне репозитория.
+
+    cp .env.example .env && $EDITOR .env     # заполнить KORITSU_SECRET
+    docker compose up -d --build             # бой
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d   # dev
+
+Домен-заглушка — `koritsu.example` (в `Caddyfile` и `KORITSU_BASE_URL`). Сайт —
+React на Vite, живёт в `web/` и отдаётся статикой из `web/dist`; собирается снаружи
+образа. Настройки службы перечислены в `.env.example`, все до одной.

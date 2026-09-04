@@ -18,8 +18,11 @@ tools — инструменты агента (уровень 3) поверх т
   него путь, и `../` обязан умереть на входе, а не внутри.
 * **Мутирует только `set_tag`.** Остальные читают и производят артефакты.
 * **Пользовательский код не выполняется.** `make_flowchart` и диаграммы — это
-  `fragmos.generate_xml` и `uml_generator`, они разбирают исходник tree-sitter'ом.
-  Ни `exec`, ни подпроцесса, ни поиска в сети здесь нет и не будет.
+  `diagrams.flowchart` и два соседа, то есть разбор исходника tree-sitter'ом.
+  Ни `exec`, ни подпроцесса, ни поиска в сети здесь нет и не будет. Звать
+  `fragmos` и `uml_generator` напрямую отсюда с 2.0.0a5.1 нельзя: у них один
+  фасад на весь проект (`orchestrator.diagrams`), потому что вторым вызывающим
+  стала HTTP-служба, а разрез не пускает её к строителям схем.
 * **Список инструментов постоянен на весь прогон.** Недоступность приходит
   ответом `is_error`, а не исчезнувшим инструментом: объявления стоят в
   кэшируемом префиксе, и меняющийся набор означал бы промах мимо кэша на каждом
@@ -66,11 +69,8 @@ import json
 import hokoku
 import llm
 import materials
-import fragmos
-import uml_generator
-from uml_generator import objektis
 
-from . import build as build_mod, fill as fill_mod, schema as schema_mod
+from . import build as build_mod, diagrams, fill as fill_mod, schema as schema_mod
 from .errors import OrchestratorError, hint
 
 # Сколько знаков содержимого отдаётся за один `read_material`. Потолок нужен не ради
@@ -95,7 +95,12 @@ MAX_SOURCES = 8
 MAX_STEPS = llm.Limits().max_steps
 
 _LANGS = ("python", "csharp", "cpp")
-_FLOWCHART_MODES = ("default", "loopLimit", "plain")
+# Имена режимов, которые видит модель, — те же, что служба показывает
+# человеку (§12: наружу только `gost_19_701_90`). Псевдоним `loopLimit`
+# сюда не попадает: перечисленное в схеме инструмента модель понимает
+# как единственно возможное, и два имени одного режима означали бы
+# выбор там, где выбирать нечего.
+_FLOWCHART_MODES = ("default", "gost_19_701_90", "plain")
 _THEMES = ("dark", "light")
 
 # ── операторский канал: то самое одно место ──────────────────────────────────
@@ -247,9 +252,11 @@ def material_tools() -> list[llm.Tool]:
     return [
         llm.Tool(name="list_materials", schema=_obj({}), description=(
             "Опись материалов проекта: идентификатор, имя, вид, чем нумеруется "
-            "содержимое и сколько его. Содержимого не отдаёт — его отдаёт "
-            "read_material по идентификатору. Без аргументов; пустой список "
-            "означает, что материалов нет.")),
+            "содержимое и сколько его. Значения полей — коды: kind — "
+            "text, pdf, docx, image, unknown; unit — line, page, paragraph "
+            "(чем нумеруются start/end у read_material). Содержимого не "
+            "отдаёт — его отдаёт read_material по идентификатору. Без "
+            "аргументов; пустой список означает, что материалов нет.")),
         llm.Tool(name="read_material", description=(
             "Кусок содержимого материала по его идентификатору из list_materials. "
             "Границы включительно, "
@@ -446,7 +453,7 @@ class ToolBox:
 
     # ── схемы ───────────────────────────────────────────────────────────────
     def _make_flowchart(self, args: dict) -> dict:
-        """Блок-схема алгоритма: `fragmos.generate_xml` → артефакт.
+        """Блок-схема алгоритма: `diagrams.flowchart` → артефакт.
 
         Аргумента `only` («одна схема одного алгоритма») здесь нет, и это не
         забывчивость: `fragmos` отдаёт схемы всех функций сразу, по странице на
@@ -466,60 +473,61 @@ class ToolBox:
         source = self._source(args.get("id"))
         language = _one_of(args.get("language"), _LANGS, "language")
         mode = _one_of(args.get("mode") or "default", _FLOWCHART_MODES, "mode")
-        notices: list = []
         try:
-            xml = fragmos.generate_xml(source.text, language, mode_id=mode,
-                                       warnings=notices)
-        except SyntaxError as exc:
-            raise ToolError("parse_error",
-                            f"исходник {source.name!r} не разобрался как {language}: {exc}. "
-                            "Проверь язык и материал") from None
-        except Exception as exc:                    # noqa: BLE001 — fragmos бросает своё
+            готово = diagrams.flowchart(source.text, language, mode=mode)
+        except diagrams.DiagramError as беда:
+            # `SyntaxError` от «всего остального» отличается намеренно: первое
+            # чинится сменой языка или материала, второе — нет, и говорить их
+            # одними словами значило бы звать модель чинить наугад.
+            if isinstance(беда.cause, SyntaxError):
+                raise ToolError(
+                    "parse_error",
+                    f"исходник {source.name!r} не разобрался как {language}: "
+                    f"{беда.message}. Проверь язык и материал") from None
             raise ToolError("parse_error",
                             f"схема по {source.name!r} не построилась: "
-                            f"{type(exc).__name__}: {exc}") from None
+                            f"{беда.message}") from None
+        notices = list(готово.notices)
         self.problems.extend(notices)
-        art = self.project.put_artifact(xml.encode("utf-8"), name="схема",
+        art = self.project.put_artifact(готово.xml.encode("utf-8"), name="схема",
                                         notices=notices)
         self._derived(art, "make_flowchart", [source.id],
                       {"language": language, "mode": mode})
         return {"artifact": art,
-                "pages": hokoku.wire.count_pages(xml), "language": language,
+                "pages": hokoku.wire.count_pages(готово.xml), "language": language,
                 "warnings": [n.to_dict() for n in notices],
                 "note": "страница на функцию; нужный лист ставится полем page"}
 
     def _make_class_diagram(self, args: dict) -> dict:
-        """Диаграмма классов: `extract_py/cs/cpp` → `build_xml` → артефакт."""
+        """Диаграмма классов: `diagrams.class_diagram` → артефакт.
+
+        Пустая диаграмма — отказ, а не лист «нет классов», вставленный в отчёт
+        схемой: модель либо возьмёт другой материал, либо не будет ставить схему
+        вовсе. Решает это фасад (`no_classes`), здесь — только перевод отказа на
+        язык модели.
+        """
         sources = self._sources(args.get("ids"))
         language = _one_of(args.get("language"), _LANGS, "language")
         theme = _one_of(args.get("theme") or "dark", _THEMES, "theme")
-        extract = {"python": uml_generator.extract_py,
-                   "csharp": uml_generator.extract_cs,
-                   "cpp": uml_generator.extract_cpp}[language]
-        classes: list = []
-        for source in sources:
-            try:
-                classes.extend(extract(source.text))
-            except Exception as exc:                # noqa: BLE001 — чужой разбор
-                raise ToolError("parse_error",
-                                f"{source.name!r} не разобрался как {language}: "
-                                f"{type(exc).__name__}: {exc}") from None
-        if not classes:
-            # Пустая диаграмма — это лист «нет классов», вставленный в отчёт как
-            # схема. Отказ здесь полезнее: модель либо возьмёт другой материал,
-            # либо не будет ставить схему вовсе.
-            raise ToolError("no_classes",
-                            "в этих материалах не нашлось ни одного класса: "
-                            "диаграмму классов строить не из чего")
-        xml = uml_generator.build_xml(classes, theme)
-        art = self.project.put_artifact(xml.encode("utf-8"), name="классы")
+        try:
+            готово = diagrams.class_diagram([(s.name, s.text) for s in sources],
+                                            language, theme=theme)
+        except diagrams.DiagramError as беда:
+            if беда.code == diagrams.NO_CLASSES:
+                raise ToolError("no_classes",
+                                "в этих материалах не нашлось ни одного класса: "
+                                "диаграмму классов строить не из чего") from None
+            raise ToolError("parse_error",
+                            f"{беда.where!r} не разобрался как {language}: "
+                            f"{type(беда.cause).__name__}: {беда.cause}") from None
+        art = self.project.put_artifact(готово.xml.encode("utf-8"), name="классы")
         self._derived(art, "make_class_diagram", [s.id for s in sources],
                       {"language": language, "theme": theme})
         return {"artifact": art,
-                "classes": [c.name for c in classes], "language": language}
+                "classes": list(готово.items), "language": language}
 
     def _make_object_diagram(self, args: dict) -> dict:
-        """Диаграмма объектов: `objektis.extract_objects` → `build_xml` → артефакт.
+        """Диаграмма объектов: `diagrams.object_diagram` → артефакт.
 
         `notes` отдаются модели дословно: там честно написано, чего статическая
         трассировка не поняла. Пересказать их короче значило бы решить за
@@ -538,20 +546,23 @@ class ToolBox:
         sources = self._sources(args.get("ids"))
         language = _one_of(args.get("language"), _LANGS, "language")
         theme = _one_of(args.get("theme") or "dark", _THEMES, "theme")
-        files = [{"filename": s.name, "code": s.text} for s in sources[1:]]
-        graph = objektis.extract_objects(sources[0].text, language, files=files)
-        if graph.is_empty():
-            raise ToolError("no_objects",
-                            "трассировка не нашла ни одного экземпляра "
-                            "пользовательских классов",
-                            notes=list(graph.notes))
-        xml = objektis.build_xml(graph, theme)
-        art = self.project.put_artifact(xml.encode("utf-8"), name="объекты")
+        try:
+            готово = diagrams.object_diagram([(s.name, s.text) for s in sources],
+                                             language, theme=theme)
+        except diagrams.DiagramError as беда:
+            if беда.code == diagrams.NO_OBJECTS:
+                raise ToolError("no_objects",
+                                "трассировка не нашла ни одного экземпляра "
+                                "пользовательских классов",
+                                notes=[n.message for n in беда.notices]) from None
+            raise ToolError("parse_error",
+                            f"схема объектов не построилась: {беда.message}") from None
+        art = self.project.put_artifact(готово.xml.encode("utf-8"), name="объекты")
         self._derived(art, "make_object_diagram", [s.id for s in sources],
                       {"language": language, "theme": theme})
         return {"artifact": art,
-                "objects": [i.name for i in graph.instances],
-                "notes": list(graph.notes)}
+                "objects": list(готово.items),
+                "notes": [n.message for n in готово.notices]}
 
     # ── значения ────────────────────────────────────────────────────────────
     def _set_tag(self, args: dict) -> dict:
@@ -647,8 +658,12 @@ class ToolBox:
         """Материал как исходник: текстовый, не пустой, не длиннее потолка."""
         material = self._material(mid)
         if material.kind != materials.KIND_TEXT:
+            # Вид словом, а не кодом: сообщение читает модель, а следом за ней
+            # человек в журнале прогона, и «image» посреди русской фразы там
+            # объясняет меньше, чем «изображение».
+            вид = materials.KIND_WORDS.get(material.kind, material.kind)
             raise ToolError("not_source",
-                            f"материал {material.name!r} — {material.kind}, "
+                            f"материал {material.name!r} — {вид}, "
                             "а схема строится по исходнику (текстовый материал)")
         text = self.project.store().read(material.id).text
         if not text.strip():

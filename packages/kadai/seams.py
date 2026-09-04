@@ -91,7 +91,7 @@ SEAMS: dict[str, Seam] = {
                 "вместо тегов). Сведено 2026-09-04",
         signature="make_template(structure, *, task='', default=(), data=()) -> "
                   "list записей блоков; разделы приходят как kadai.profile.Section "
-                  "(key, title, type, required, prompt)",
+                  "(key, title, kind, type, required, prompt)",
         awaits="шаблона как документа больше нет вовсе: работа — список блоков, и "
                "make_template кладёт по два блока на раздел (заголовок и место под "
                "содержимое). `before=` появился 2026-09-04: повторная сборка "

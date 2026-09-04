@@ -39,13 +39,25 @@ def _css_theme() -> dict:
     return out
 
 
+def list_themes() -> list[str]:
+    """Имена палитр: то, из чего выбирают. Пара к `fragmos.modes.list_modes()`.
+
+    Заведена, когда палитру понадобилось показать списком (выбор темы схемы в
+    интерфейсе): без неё перечень собирался бы у вызывающего из `_load()`, то
+    есть из внутренностей этого модуля. `css` в yaml не лежит — она собирается
+    из светлой темы и таблицы ролей, — но выбирается наравне с остальными, и
+    перечень обязан её называть.
+    """
+    return [*_load()["themes"], CSS_THEME]
+
+
 def get_theme(name: str = "dark") -> dict:
     themes = _load()["themes"]
     if name == CSS_THEME:
         return _css_theme()
     if name not in themes:
         raise ValueError(
-            f"Unknown theme: {name!r}. Available: {', '.join([*themes, CSS_THEME])}")
+            f"Unknown theme: {name!r}. Available: {', '.join(list_themes())}")
     return themes[name]
 
 
