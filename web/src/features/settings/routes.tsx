@@ -1,7 +1,7 @@
 /**
  * Маршруты области «Настройки».
  *
- * Раздел — часть адреса (`/settings/keys`), а не состояние страницы: на
+ * Раздел — часть адреса (`/settings/agent`), а не состояние страницы: на
  * настройки дают ссылку («вот здесь заводится ключ»), и кнопка «назад» в
  * браузере обязана возвращать на прошлый раздел, а не выкидывать из настроек.
  *
@@ -9,10 +9,9 @@
  */
 import { Navigate, type RouteObject } from 'react-router-dom'
 
-import { AgentSection } from './AgentSection'
+import { AgentConfigSection } from './AgentConfigSection'
 import { AppearanceSection } from './AppearanceSection'
 import { HotkeysSection } from './HotkeysSection'
-import { ModelKeysSection } from './ModelKeysSection'
 import { ProfileSection } from './ProfileSection'
 import { SecuritySection } from './SecuritySection'
 import { SettingsPage } from './SettingsPage'
@@ -28,11 +27,14 @@ export const settingsRoutes: RouteObject[] = [
       { index: true, element: <Navigate to="profile" replace /> },
       { path: 'profile', element: <ProfileSection /> },
       { path: 'appearance', element: <AppearanceSection /> },
-      { path: 'keys', element: <ModelKeysSection /> },
       { path: 'tokens', element: <TokensSection /> },
       { path: 'templates', element: <TemplatesSection /> },
       { path: 'hotkeys', element: <HotkeysSection /> },
-      { path: 'agent', element: <AgentSection /> },
+      { path: 'agent', element: <AgentConfigSection /> },
+      // Ключи моделей переехали в «Конфигурацию агентов». Адрес остаётся
+      // рабочим: на разделы настроек дают ссылки, и упавшая ссылка хуже
+      // лишней строки маршрута.
+      { path: 'keys', element: <Navigate to="/settings/agent" replace /> },
       { path: 'usage', element: <UsageSection /> },
       { path: 'security', element: <SecuritySection /> },
       // Неизвестный раздел — не «страница не найдена», а первый раздел:

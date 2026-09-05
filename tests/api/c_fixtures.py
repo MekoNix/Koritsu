@@ -70,6 +70,33 @@ def войти(app, user: User) -> None:
     app.dependency_overrides[current_user] = lambda: user
 
 
+def позвать(app, клиент, workspace_id: str, кого: User, role: str = "editor"):
+    """Позвать человека в пространство и принять приглашение от его имени.
+
+    Приглашение двухшаговое: `POST …/members` заводит участие в состоянии
+    `pending`, и участником человек становится, только ответив «принять».
+    Тестам, которым нужен не сам обмен приглашениями, а участник в
+    пространстве, это два лишних шага и переключение вошедшего туда-обратно —
+    вот они и собраны здесь.
+
+    Возвращает ответ на приглашение (тесты проверяют по нему `201` и тело), а
+    вошедшим оставляет того же, кто был до вызова.
+    """
+    ответ = клиент.post(f"/api/workspaces/{workspace_id}/members",
+                        json={"email": кого.email, "role": role})
+    if ответ.status_code == 201:
+        был = app.dependency_overrides.get(current_user)
+        войти(app, кого)
+        принято = клиент.post(
+            f"/api/workspaces/{workspace_id}/members/{кого.id}/accept")
+        assert принято.status_code == 200, принято.text
+        if был is None:
+            app.dependency_overrides.pop(current_user, None)
+        else:
+            app.dependency_overrides[current_user] = был
+    return ответ
+
+
 @pytest.fixture
 def хозяин(app, клиент):
     """Первый пользователь, уже вошедший. У него есть личное пространство."""
@@ -141,5 +168,6 @@ def личное_id(клиент) -> str:
     return ответ.json()["id"]
 
 
-__all__ = ["клиент", "хозяин", "сосед", "завести", "войти", "docx_байты",
+__all__ = ["клиент", "хозяин", "сосед", "завести", "войти", "позвать",
+           "docx_байты",
            "создать_проект", "личное_id", "ПАРОЛЬ", "войти_по_настоящему"]

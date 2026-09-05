@@ -1,18 +1,25 @@
 """
 routes — блок-схемы: `/api/flowcharts` и `/api/projects/{id}/flowcharts`.
 
-    POST /api/projects/{id}/flowcharts  201  схема в проект (роль editor)
-    GET  /api/flowcharts/modes          200  режимы отрисовки с описаниями
-    POST /api/flowcharts/preview        200  схема без проекта и без записи
+    POST /api/projects/{id}/flowcharts           201  построить и сохранить
+    PUT  /api/projects/{id}/flowcharts/{run_id}  200  перестроить сохранённую
+    GET  /api/projects/{id}/flowcharts           200  список схем работы
+    GET  /api/projects/{id}/flowcharts/{run_id}  200  схема с кодом и XML
+    GET  /api/flowcharts/modes                   200  режимы отрисовки
+    POST /api/flowcharts/preview                 200  схема без проекта
 
-Два маршрута построения, а не один, — потому что у них разная цена и разные
-права. Тот, что в проекте, кладёт XML артефактом: у схемы появляется
-идентификатор, её можно поставить в тег отчёта, скачать и переделать. Тот, что
-без проекта, — для левой половины экрана «Блок-схемы» (макет владельца: слева
-код и параметры, справа схема): человек правит код и видит картинку, и заводить
-артефакт на каждое нажатие клавиши значило бы засыпать том мусором, который
-никто не назвал. Поэтому `preview` не пишет на том **ничего** и не требует роли
-— только входа.
+**Построение в проект — оно же сохранение.** Отдельной кнопки «сохранить в
+проект» нет: построенная схема уже результат работы, и человек, ушедший с
+экрана, ждёт найти её назавтра в своей работе. Поэтому маршрут кладёт XML
+артефактом, пишет запись в журнал запусков и запоминает, чем схема построена
+(код, язык, режим) — вместе, одним запросом. Подробности — `api/modules/saved.py`.
+
+Перестройка (`PUT`) новой записи не заводит: пока подбирается код, кнопку
+нажимают пять раз подряд, и пять «Схема 1…5» в журнале — это не история, а шум.
+
+**Предпросмотр без проекта остаётся**, но он не про экран работы: там схема
+сохраняется, а этот маршрут не пишет на том **ничего** и не требует роли — он
+для схемы, построенной вне работы (внешним ключом, чужим инструментом).
 
 Исходник — либо текстом (`source`), либо идентификатором материала
 (`material_id`), ровно одно из двух. Оба сразу — отказ: прислав оба, человек не
@@ -28,8 +35,11 @@ from pydantic import BaseModel, Field
 
 import orchestrator
 
-from ...materials.deps import CurrentUser, РедакторПроекта
+from ...db import SessionDep
+from ...materials.deps import (CurrentUser, РедакторПроекта, Проект,
+                               ЧитательПроекта)
 from .. import diagrams as общее
+from .. import saved
 
 router = APIRouter(tags=["flowcharts"])
 
@@ -42,6 +52,10 @@ router = APIRouter(tags=["flowcharts"])
 # Имя артефакта. Наружу не уезжает и в путь не превращается: `put_artifact`
 # адресует содержимым, а имя принимает только для читаемости вызова.
 ИМЯ_АРТЕФАКТА = "схема"
+
+# Имя модуля в реестре и в журнале запусков. Строкой здесь, а не в `saved`:
+# `saved` общий на два модуля и не обязан знать, какой из них его позвал.
+МОДУЛЬ = "flowcharts"
 
 _ЯЗЫК = Field(default=ЯЗЫК_ПО_УМОЛЧАНИЮ,
               description="Source language: py, cs or cpp")
@@ -125,23 +139,98 @@ def предпросмотр(тело: FlowchartPreviewIn, request: Request,
 
 @router.post("/projects/{project_id}/flowcharts", status_code=201,
              operation_id="flowcharts_create",
+             response_model=saved.DiagramBuiltOut,
              summary="Build a flowchart and keep it in the project",
              description=(
                  "Builds a flowchart from source code or from a text material "
-                 "of the project and stores the drawio XML as a project "
-                 "artifact. The answer carries the artifact id: download it "
-                 "with GET /api/projects/{project_id}/artifacts/{artifact_id} "
-                 "or put it into a diagram tag value. Editor role. "
-                 "400 invalid_source, 400 unknown_lang, 400 unknown_mode, "
-                 "403 forbidden, 404 not_found, 413 source_too_large, "
-                 "422 diagram_failed."))
-def построить(тело: FlowchartIn, request: Request,
-              проект: РедакторПроекта) -> dict:
-    """Схема по коду или по материалу → артефакт проекта.
+                 "of the project, stores the drawio XML as a project artifact "
+                 "and writes the diagram down in the run journal of the "
+                 "project. There is no separate save step: what was built is "
+                 "kept, together with the code and the settings it was built "
+                 "with. The answer carries the XML, the artifact id and the "
+                 "run_id of the journal entry: delete that entry to delete "
+                 "the diagram. Editor role. 400 invalid_source, "
+                 "400 unknown_lang, 400 unknown_mode, 403 forbidden, "
+                 "404 not_found, 413 source_too_large, 422 diagram_failed."))
+def построить(тело: FlowchartIn, request: Request, проект: РедакторПроекта,
+              s: SessionDep, user: CurrentUser) -> dict:
+    """Схема по коду или по материалу → артефакт проекта и запись журнала.
 
     Роль `editor`, а не `viewer`: артефакт занимает место на томе владельца
     проекта, и класть его в чужой проект тому, кому дали только смотреть,
     незачем.
+    """
+    схема, исходники, язык, режим = _построить(request, тело, проект)
+    артефакт = общее.положить_артефакт(проект, схема, name=ИМЯ_АРТЕФАКТА)
+    запись, строка = saved.сохранить(
+        s, проект, user, module=МОДУЛЬ, kind=общее.FLOWCHART,
+        artifact=артефакт, исходники=исходники, lang=язык, mode=режим)
+    return saved.полная(проект, запись, строка, xml=схема.xml,
+                        sources=saved.словарями(исходники),
+                        notices=схема.notices, items=схема.items)
+
+
+@router.put("/projects/{project_id}/flowcharts/{run_id}",
+            operation_id="flowcharts_rebuild",
+            response_model=saved.DiagramBuiltOut,
+            summary="Rebuild a flowchart that is already in the project",
+            description=(
+                "Builds the flowchart again, from new code or with a new mode, "
+                "and replaces what the journal entry points at. The "
+                "entry itself stays: its name and its number do not change, "
+                "because this is the same diagram drawn again, not a second "
+                "one. Editor role. 400 invalid_id, 400 invalid_source, "
+                "400 unknown_lang, 400 unknown_mode, 403 forbidden, "
+                "404 not_found, 413 source_too_large, 422 diagram_failed."))
+def перестроить(run_id: str, тело: FlowchartIn, request: Request,
+                проект: РедакторПроекта, s: SessionDep) -> dict:
+    """Та же схема заново: новый XML и новый код при прежнем номере."""
+    запись, строка = saved.найти(s, проект, run_id, МОДУЛЬ)
+    схема, исходники, язык, режим = _построить(request, тело, проект)
+    артефакт = общее.положить_артефакт(проект, схема, name=ИМЯ_АРТЕФАКТА)
+    saved.перестроить(s, проект, запись, строка, kind=общее.FLOWCHART,
+                      artifact=артефакт, исходники=исходники, lang=язык,
+                      mode=режим)
+    return saved.полная(проект, запись, строка, xml=схема.xml,
+                        sources=saved.словарями(исходники),
+                        notices=схема.notices, items=схема.items)
+
+
+@router.get("/projects/{project_id}/flowcharts", operation_id="flowcharts_list",
+            response_model=list[saved.DiagramOut],
+            summary="Flowcharts kept in this project",
+            description=(
+                "Every flowchart built in this project, newest first: what it "
+                "is called, when it was built, what it was built with and "
+                "which artifact holds its XML. UML diagrams are not in this "
+                "list: they have their own. Viewer role. 400 invalid_id, "
+                "404 not_found."))
+def список(проект: ЧитательПроекта, s: SessionDep) -> list[dict]:
+    """Список блок-схем работы. Диаграмм UML здесь нет — у них свой список."""
+    return saved.список(s, проект, МОДУЛЬ)
+
+
+@router.get("/projects/{project_id}/flowcharts/{run_id}",
+            operation_id="flowcharts_one", response_model=saved.DiagramFullOut,
+            summary="One kept flowchart, with its code and its XML",
+            description=(
+                "The diagram as it was built: the drawio XML, the source code "
+                "and the settings. This is what opens the diagram back up for "
+                "editing. Viewer role. 400 invalid_id, 404 not_found."))
+def одна(run_id: str, проект: ЧитательПроекта, s: SessionDep) -> dict:
+    """Сохранённая схема целиком: XML с тома, код и параметры из базы."""
+    запись, строка = saved.найти(s, проект, run_id, МОДУЛЬ)
+    артефакт = запись.artifact_id or ""
+    return saved.полная(проект, запись, строка,
+                        xml=saved.xml_артефакта(проект, артефакт),
+                        notices=saved.замечания(проект, артефакт))
+
+
+def _построить(request: Request, тело: FlowchartIn, проект: Проект):
+    """Проверки, потолок и подпроцесс. → `(схема, исходники, язык, режим)`.
+
+    Два маршрута постройки, одна последовательность шагов: порядок проверок —
+    он же порядок отказов, и повторять его дважды значило бы дважды его менять.
     """
     settings = request.app.state.settings
     имя, текст = общее.один_исходник(проект, тело.source, тело.material_id)
@@ -150,9 +239,7 @@ def построить(тело: FlowchartIn, request: Request,
     режим = общее.проверить_режим(тело.mode)
     схема = общее.построить(request, settings, общее.FLOWCHART,
                             {"source": текст, "lang": язык, "mode": режим})
-    артефакт = общее.положить_артефакт(проект, схема, name=ИМЯ_АРТЕФАКТА)
-    return {"artifact": артефакт, "notices": схема.notices,
-            "mode": режим, "lang": язык}
+    return схема, [(имя, текст)], язык, режим
 
 
 __all__ = ["router", "FlowchartIn", "FlowchartPreviewIn"]

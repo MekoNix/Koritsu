@@ -83,3 +83,26 @@ export function fileExt(name: string): string {
     .toUpperCase()
     .slice(0, 5)
 }
+
+/**
+ * Имя запуска для показа: своё, а если его не дали — собранное из модуля,
+ * номера и имени работы («Схема 2 — Курсовая»).
+ *
+ * Собирается здесь, а не в службе: имя по умолчанию русское, а наружу служба
+ * говорит по-английски, и вторая таблица переводов в ней разошлась бы с этой.
+ * Служба хранит то, что человек написал сам, и номер (`n`), который она же и
+ * считает, — двум браузерам, открывшим работу разом, иначе досталась бы одна
+ * и та же «Схема 2».
+ */
+export function runTitle(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  run: { module: string; name: string; n: number },
+  projectName: string,
+): string {
+  if (run.name) return run.name
+  return t('projects.runs.autoName', {
+    unit: t(`projects.runs.unit.${run.module}`),
+    n: run.n,
+    project: projectName,
+  })
+}

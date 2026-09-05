@@ -393,7 +393,8 @@ def ask_parts(project, question: str, *, chunks=(), data=(), extra=()) -> list[P
     return parts
 
 
-def request_part(manifest: hokoku.Manifest, *, keys, level: int) -> Part:
+def request_part(manifest: hokoku.Manifest, *, keys, level: int,
+                 prompt: str = "") -> Part:
     """Что именно нужно сейчас. Хвост запроса, после последнего брейкпойнта.
 
     Здесь и только здесь стоит имя тега: положи его выше — и кэшируемый префикс
@@ -405,12 +406,22 @@ def request_part(manifest: hokoku.Manifest, *, keys, level: int) -> Part:
     («Ответь ОДНИМ объектом JSON») значило бы велеть модели ровно то, чего
     петля не разбирает: она читает вызовы инструментов, а написанный мимо них
     объект пропадёт целиком вместе с деньгами за него.
+
+    `prompt` — общая подсказка на весь прогон: одно указание сразу всем тегам
+    («писать в прошедшем времени», «работа по учебной практике»). Стоит она
+    здесь, в хвосте после последнего брейкпойнта, а не в `manifest_part`,
+    именно потому, что меняется от прогона к прогону: подмешай её в стабильный
+    кусок — и кэшируемый префикс промахнётся на каждом запуске. Задание
+    отдельного тега она не отменяет, а дополняет: частное подробнее общего, и
+    поэтому стоит после него.
     """
     keys = [hokoku.wire.norm_key(str(k)) for k in keys]
+    общее = f"Общее указание на весь прогон: {prompt.strip()}\n" if prompt.strip() else ""
     if level == 3:
         listed = ", ".join(f"[{k}]" for k in keys)
         return Part(role="request", stable=False, text=(
             f"Заполни теги: {listed}.\n"
+            + общее +
             "Работай инструментами. Материалы проекта читаются по идентификатору "
             "(list_materials, read_material), схемы строятся из исходников "
             "(make_flowchart, make_class_diagram, make_object_diagram), значение "
@@ -425,6 +436,8 @@ def request_part(manifest: hokoku.Manifest, *, keys, level: int) -> Part:
         key = keys[0]
         spec = manifest.tags.get(key)
         lines = [f"Заполни тег [{key}]."]
+        if общее:
+            lines.append(общее.rstrip())
         if spec is not None:
             lines.append(f"Тип значения — {spec.type}."
                          + (" Тег стоит внутри строки: без заголовков и списков."
@@ -437,6 +450,7 @@ def request_part(manifest: hokoku.Manifest, *, keys, level: int) -> Part:
     listed = ", ".join(f"[{k}]" for k in keys)
     return Part(role="request", stable=False, text=(
         f"Заполни теги: {listed}.\n"
+        + общее +
         "Ответь ОДНИМ объектом JSON: ключ тега → значение этого тега. "
         "Ключи — ровно перечисленные, в том же порядке; лишних ключей не добавляй.\n"
         "Пиши теги по порядку и не возвращайся к уже написанным: значения "
@@ -444,7 +458,7 @@ def request_part(manifest: hokoku.Manifest, *, keys, level: int) -> Part:
 
 
 def build_parts(project, *, keys, level: int = 1, manifest: hokoku.Manifest | None = None,
-                chunks=()) -> list[Part]:
+                chunks=(), prompt: str = "") -> list[Part]:
     """Полная раскладка запроса: пять ролей в постоянном порядке.
 
     Цена ошибки в порядке — не корректность, а деньги: у endpoint'а с
@@ -458,7 +472,7 @@ def build_parts(project, *, keys, level: int = 1, manifest: hokoku.Manifest | No
     neighbors = neighbors_part(project, keys=keys, manifest=manifest)
     if neighbors is not None:
         parts.append(neighbors)
-    parts.append(request_part(manifest, keys=keys, level=level))
+    parts.append(request_part(manifest, keys=keys, level=level, prompt=prompt))
     return parts
 
 

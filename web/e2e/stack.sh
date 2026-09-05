@@ -31,6 +31,7 @@
 #   FAKE_DELAY_MS     задержка между кусками потока у подделки (умолч. 30)
 #   FAKE_CHUNK        знаков в куске потока (умолч. 48)
 #   KORITSU_REGISTRATIONS_PER_IP_PER_DAY  на стенде 1000, боевое — 5
+#   KORITSU_ADMIN_DOMAIN  имя, на котором живёт админка (умолч. 127.0.0.1)
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -85,6 +86,12 @@ export KORITSU_WORKER_POLL_S="${KORITSU_WORKER_POLL_S:-0.2}"
 # только на стенде; вернуть боевое число — строкой в окружении:
 #   KORITSU_REGISTRATIONS_PER_IP_PER_DAY=5 web/e2e/stack.sh start
 export KORITSU_REGISTRATIONS_PER_IP_PER_DAY="${KORITSU_REGISTRATIONS_PER_IP_PER_DAY:-1000}"
+# Имя, на котором живёт админка: на всяком другом `/api/admin/*` отвечает 404.
+# Стенд поднимает его нарочно, а не оставляет пустым, — так проверяется то же
+# разделение, что и в бою. Значение — тот адрес, по которому стенд и смотрят
+# (`127.0.0.1`); открыв тот же сайт как `localhost`, получаешь ровно то, что
+# получит чужой снаружи: админки нет. Пустая строка выключает разделение.
+export KORITSU_ADMIN_DOMAIN="${KORITSU_ADMIN_DOMAIN-$host}"
 export FAKE_DELAY_MS="${FAKE_DELAY_MS:-30}"
 export FAKE_CHUNK="${FAKE_CHUNK:-48}"
 
@@ -164,6 +171,7 @@ export KORITSU_PROVIDER_KEY_DEEPSEEK="$KORITSU_PROVIDER_KEY_DEEPSEEK"
 export KORITSU_LLM_BASE_URL_DEEPSEEK="$KORITSU_LLM_BASE_URL_DEEPSEEK"
 export KORITSU_WORKER_POLL_S="$KORITSU_WORKER_POLL_S"
 export KORITSU_REGISTRATIONS_PER_IP_PER_DAY="$KORITSU_REGISTRATIONS_PER_IP_PER_DAY"
+export KORITSU_ADMIN_DOMAIN="$KORITSU_ADMIN_DOMAIN"
 export API_PORT="$API_PORT"
 export FAKE_PORT="$FAKE_PORT"
 EOS

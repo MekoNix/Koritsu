@@ -261,3 +261,38 @@ def test_чужое_уведомление_это_404_а_не_403(app, клие�
     ответ = клиент.post(f"/api/notifications/{nid}/read")
     assert ответ.status_code == 404
     assert ответ.json()["error"]["code"] == "not_found"
+
+
+def test_уведомление_удаляется(app, клиент, хозяин):
+    """Колокольчик — не архив: прочитанную строку человек вправе убрать.
+
+    За строкой не уходит ничего, кроме неё самой: задание остаётся в очереди со
+    своей карточкой и своими файлами.
+    """
+    задание = поставить(клиент)
+    прогнать(app)
+    nid = клиент.get("/api/notifications").json()["notifications"][0]["id"]
+
+    ответ = клиент.delete(f"/api/notifications/{nid}")
+    assert ответ.status_code == 200, ответ.text
+    assert ответ.json() == {"deleted": nid, "unread_count": 0}
+    assert клиент.get("/api/notifications").json()["notifications"] == []
+    assert клиент.get(f"/api/jobs/{задание}").status_code == 200, (
+        "удаление строки колокольчика унесло с собой задание")
+
+    ещё = клиент.delete(f"/api/notifications/{nid}")
+    assert ещё.status_code == 404 and ещё.json()["error"]["code"] == "not_found"
+
+
+def test_чужое_уведомление_не_удалить(app, клиент, хозяин, сосед):
+    """Тот же 404, что и на пометку чужого: существование строки не выдаётся."""
+    поставить(клиент)
+    прогнать(app)
+    nid = клиент.get("/api/notifications").json()["notifications"][0]["id"]
+
+    войти(app, сосед)
+    ответ = клиент.delete(f"/api/notifications/{nid}")
+    assert ответ.status_code == 404
+    assert ответ.json()["error"]["code"] == "not_found"
+    войти(app, хозяин)
+    assert клиент.get("/api/notifications").json()["unread_count"] == 1

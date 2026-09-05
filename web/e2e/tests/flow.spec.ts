@@ -186,15 +186,27 @@ test('путь человека: от регистрации до выхода',
   const файл = await скачивание
   expect(файл.suggestedFilename()).toMatch(/\.drawio\.xml$/)
 
-  await page.getByRole('button', { name: t('diagrams.work.save') }).click()
-  await expect(page.getByText(new RegExp(t('diagrams.work.saved')))).toBeVisible({
+  // Кнопки «сохранить в проект» нет: построенная схема уже в работе, под своим
+  // именем из журнала запусков.
+  const имяСхемы = t('projects.runs.autoName', {
+    unit: t('projects.runs.unit.flowcharts'),
+    n: 1,
+    project: ПРОЕКТ,
+  })
+  await expect(page.getByText(t('diagrams.work.savedAs', { name: имяСхемы }))).toBeVisible({
     timeout: 60_000,
   })
 
   // ── 9. настройки: ключ модели, ключ для скриптов, тема ────────────────────
-  await page.goto('/settings/keys')
+  // Ключи поставщиков живут в «Конфигурации агентов»: пресет и ключ, которым за
+  // него платят, выбираются вместе. Прежний адрес `/settings/keys` на неё
+  // перенаправляет, но проверка ходит по нынешнему.
+  await page.goto('/settings/agent')
   await page.getByLabel(t('settings.keys.provider')).selectOption('deepseek')
-  await page.getByLabel(t('settings.keys.value')).fill('sk-e2e-check-1234')
+  // `exact` обязателен: на этом экране рядом с полем «Ключ» стоит переключатель
+  // «Переписывать ручные правки», и подпись его состояния («Выключено») тоже
+  // содержит эти буквы — неточный поиск нашёл бы два элемента.
+  await page.getByLabel(t('settings.keys.value'), { exact: true }).fill('sk-e2e-check-1234')
   await page.getByRole('button', { name: t('settings.keys.add') }).click()
   // Служба отдаёт только последние четыре знака — по ним и узнаём ключ.
   await expect(page.getByText('…1234')).toBeVisible({ timeout: 30_000 })

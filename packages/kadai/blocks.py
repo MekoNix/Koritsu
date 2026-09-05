@@ -126,6 +126,24 @@ def to_pdf(data: bytes) -> bytes:
     return hokoku.docx_bytes_to_pdf(data)
 
 
+def strip_refs(work, names):
+    """Список блоков без ссылок на названные имена. Текст остаётся, ссылка уходит.
+
+    Нужно ровно там, где ссылка ведёт в никуда и починить её перезапуском блока
+    не вышло: работа обязана собраться. Своего разбора ссылок здесь не заводится
+    — их читает движок тем же выражением, каким подставляет номера, и вторая
+    регулярка сняла бы не все, а какие именно, выяснилось бы по «?» в готовом
+    документе.
+    """
+    return _live.strip_refs(work, names)
+
+
+def unresolved(problems) -> list:
+    """Только замечания про ссылку в никуда. По ним и решается, что чинить."""
+    return [p for p in (problem_dict(x) for x in problems or ())
+            if p["code"] == "unresolved_ref" and p["level"] == "error"]
+
+
 def slots(work) -> list:
     """Места под связный текст: пустые и черновые текстовые блоки."""
     return _live.text_slots(work)
@@ -196,5 +214,6 @@ def errors_of(problems) -> list:
 
 
 __all__ = ["TOOL_KINDS", "TEXT_KINDS", "SECTION_TYPES", "DRAFT_MARK", "work_of", "records_of", "validate", "to_pdf",
+           "strip_refs", "unresolved",
            "assemble", "template_bytes", "slots", "outline", "listing", "draft_json",
            "is_text", "is_draft", "text_of", "problem_dict", "errors_of"]

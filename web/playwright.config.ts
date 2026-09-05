@@ -29,6 +29,9 @@ import { API_PORT, BASE_URL, FAKE_PORT, STAND_DIR, WEB_PORT } from './e2e/tests/
 
 export default defineConfig({
   testDir: './e2e/tests',
+  // `dist.spec.ts` — не отсюда: ей нужен собранный `dist` и свой показ статики
+  // вместо дев-сервера. Её поднимает `playwright.dist.config.ts` (`pnpm e2e:dist`).
+  testIgnore: /dist\.spec\.ts$/,
   // Прогон целиком — путь человека от регистрации до выхода, и он длинный:
   // сборка DOCX зовёт LibreOffice, прогон модели идёт через очередь.
   timeout: 180_000,

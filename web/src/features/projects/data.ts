@@ -21,11 +21,24 @@ import type {
   Material,
   MaterialRemoved,
   MaterialText,
-  Project,
   PendingMaterial,
+  Project,
+  ProjectRun,
+  ReportTemplate,
+  RunSort,
   UploadAccepted,
   Workspace,
 } from './types'
+
+/**
+ * Сколько ответ считается свежим там, где об изменении сообщает поток событий.
+ *
+ * Материалы, разбираемые файлы и значения тегов меняются заданиями, а конец
+ * задания гасит их ключи явно (обработчики потока на экранах). Значит,
+ * перезапрашивать их при каждом возврате на экран не нужно вовсе: это плата за
+ * переход, а не свежесть. Число одно на все три, потому что довод у них один.
+ */
+export const СВЕЖЕСТЬ_ПОД_ПОТОКОМ = 5 * 60_000
 
 /** Вид задания «разобрать принесённый файл» (`packages/api/jobs/registry.py`). */
 export const PARSE = 'parse'
@@ -116,20 +129,27 @@ export type CreateProjectInput = {
    * выбрать одно из двух, а не оба.
    */
   templateId?: string | null
+  /**
+   * Каким модулем эта работа делается. Пусто — не назначен: работу заводят
+   * раньше, чем решают, чем её делать, и главная модуля потом отбирает свои
+   * работы по этому полю.
+   */
+  module?: string
 }
 
 export function useCreateProject() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ workspaceId, name, template, templateId }: CreateProjectInput) => {
+    mutationFn: ({ workspaceId, name, template, templateId, module }: CreateProjectInput) => {
       const form = new FormData()
       form.append('workspace_id', workspaceId)
       form.append('name', name)
+      form.append('module', module ?? '')
       if (template) form.append('template', template, template.name)
       else if (templateId) form.append('template_id', templateId)
       return unwrap<Project>(
         api.POST('/api/projects', {
-          body: { workspace_id: workspaceId, name },
+          body: { workspace_id: workspaceId, name, module: module ?? '' },
           bodySerializer: () => form,
         }),
       )
@@ -138,17 +158,171 @@ export function useCreateProject() {
   })
 }
 
+/**
+ * Правка работы: имя, модуль или и то, и другое. Оба поля необязательны —
+ * служба меняет только присланное, поэтому смена модуля не переписывает имя
+ * тем, что лежало в форме на момент её открытия.
+ */
 export function useRenameProject() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
+    mutationFn: ({ id, name, module }: { id: string; name?: string; module?: string }) =>
       unwrap<Project>(
         api.PATCH('/api/projects/{project_id}', {
           params: { path: { project_id: id } },
-          body: { name },
+          body: {
+            ...(name === undefined ? {} : { name }),
+            ...(module === undefined ? {} : { module }),
+          },
         }),
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.projects.all }),
+  })
+}
+
+// ── журнал запусков ──────────────────────────────────────────────────────────
+
+/**
+ * Что в работе делали: какой модуль, когда, как называется.
+ *
+ * Порядок считает служба, а не браузер: список растёт, и сортировать его на
+ * клиенте значило бы сортировать ту часть, которую успели выкачать.
+ */
+export function useProjectRuns(
+  projectId: string | undefined,
+  sort: RunSort = 'new',
+): UseQueryResult<ProjectRun[]> {
+  return useQuery({
+    queryKey: keys.projects.runs(projectId ?? '', sort),
+    enabled: !!projectId,
+    queryFn: () =>
+      unwrap<ProjectRun[]>(
+        api.GET('/api/projects/{project_id}/runs', {
+          params: { path: { project_id: projectId as string }, query: { sort } },
+        }),
+      ),
+  })
+}
+
+/**
+ * Записать запуск. Отчёт и решение заводятся отдельно и привязываются к
+ * текущей работе — этой записью и привязываются.
+ *
+ * Имя не передаётся, когда его не дали: имя по умолчанию рисует сайт из модуля
+ * и номера (`n`), который считает служба.
+ */
+export function useCreateProjectRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      module,
+      name,
+      artifactId,
+    }: {
+      projectId: string
+      module: string
+      name?: string
+      artifactId?: string
+    }) =>
+      unwrap<ProjectRun>(
+        api.POST('/api/projects/{project_id}/runs', {
+          params: { path: { project_id: projectId } },
+          body: { module, name: name ?? '', artifact_id: artifactId ?? null },
+        }),
+      ),
+    onSuccess: (_data, { projectId }) =>
+      qc.invalidateQueries({ queryKey: keys.projects.one(projectId) }),
+  })
+}
+
+/**
+ * Убрать запись журнала — так удаляется схема из работы.
+ *
+ * Артефакт при этом остаётся на томе: он адресуется содержимым и может стоять
+ * значением тега (`packages/api/projects/runs.py`).
+ */
+export function useDeleteProjectRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ projectId, runId }: { projectId: string; runId: string }) =>
+      unwrap<void>(
+        api.DELETE('/api/projects/{project_id}/runs/{run_id}', {
+          params: { path: { project_id: projectId, run_id: runId } },
+        }),
+      ),
+    onSuccess: (_data, { projectId }) =>
+      qc.invalidateQueries({ queryKey: keys.projects.one(projectId) }),
+  })
+}
+
+// ── шаблоны работы ───────────────────────────────────────────────────────────
+
+/** Бланки, приложенные к работе: у неё их бывает несколько. */
+export function useProjectTemplates(
+  projectId: string | undefined,
+): UseQueryResult<ReportTemplate[]> {
+  return useQuery({
+    queryKey: keys.projects.projectTemplates(projectId ?? ''),
+    enabled: !!projectId,
+    queryFn: () =>
+      unwrap<ReportTemplate[]>(
+        api.GET('/api/projects/{project_id}/templates', {
+          params: { path: { project_id: projectId as string } },
+        }),
+      ),
+  })
+}
+
+/**
+ * Приложить бланк к работе: файлом или идентификатором своего сохранённого.
+ * Оба сразу служба не принимает — тот же довод, что при создании работы.
+ */
+export function useAttachProjectTemplate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      file,
+      templateId,
+      name,
+    }: {
+      projectId: string
+      file?: File | null
+      templateId?: string | null
+      name?: string
+    }) => {
+      const form = new FormData()
+      if (file) form.append('file', file, file.name)
+      else if (templateId) form.append('template_id', templateId)
+      if (name) form.append('name', name)
+      return unwrap<ReportTemplate>(
+        api.POST('/api/projects/{project_id}/templates', {
+          params: { path: { project_id: projectId } },
+          body: { file: '' },
+          bodySerializer: () => form,
+        }),
+      )
+    },
+    onSuccess: (_data, { projectId }) => {
+      void qc.invalidateQueries({ queryKey: keys.projects.projectTemplates(projectId) })
+      void qc.invalidateQueries({ queryKey: keys.templates })
+    },
+  })
+}
+
+/** Убрать бланк из работы. Файл остаётся на полке у того, кто его загрузил. */
+export function useDetachProjectTemplate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ projectId, templateId }: { projectId: string; templateId: string }) =>
+      unwrap<void>(
+        api.DELETE('/api/projects/{project_id}/templates/{template_id}', {
+          params: { path: { project_id: projectId, template_id: templateId } },
+        }),
+      ),
+    onSuccess: (_data, { projectId }) =>
+      qc.invalidateQueries({ queryKey: keys.projects.projectTemplates(projectId) }),
   })
 }
 
@@ -186,6 +360,11 @@ export function useMaterials(projectId: string | undefined): UseQueryResult<Mate
           params: { path: { project_id: projectId as string } },
         }),
       ),
+    // Опись меняется только концом разбора, и тот гасит этот ключ сам
+    // (`MaterialsPanel.finished`, `KadaiWorkPage`). Нулевая свежесть означала
+    // бы перезапрос при каждом возврате на экран ради списка, который не мог
+    // измениться, — цена перехода между экранами, а не свежесть данных.
+    staleTime: СВЕЖЕСТЬ_ПОД_ПОТОКОМ,
   })
 }
 
@@ -206,6 +385,9 @@ export function usePendingMaterials(
           params: { path: { project_id: projectId as string } },
         }),
       ),
+    // Тот же довод, что у описи: список разбираемых меняют загрузка и конец
+    // задания, и оба гасят ключ сами.
+    staleTime: СВЕЖЕСТЬ_ПОД_ПОТОКОМ,
   })
 }
 

@@ -35,7 +35,7 @@ Inline-значения подставляются внутрь runs, не тр�
 """
 from .model import (Blocks, Code, Diagram, Formula, Image, Markdown, PageBreak, Problem, RenderResult,
                     Table, Tag, Text, Toc, HokokuError, Value)
-from .tags import extract_tags
+from .tags import extract_extras, extract_tags
 from .render import render
 from .safety import validate_docx, DocxValidationError, safe_name
 from .pdf import docx_bytes_to_pdf, docx_to_pdf
@@ -53,8 +53,8 @@ from .template import (A4_GOST, BodyText, PageSetup, STYLE_SPECS, blank_document
 from . import live
 from .live import (Block, KINDS, LiveError, LiveTool, TEXT_KINDS, Work, any_block_value_schema,
                    assemble, call_tool, list_blocks, live_tools, render_work, text_slots,
-                   texts_schema, fill_texts, unresolved_refs, validate_work, work_template,
-                   work_values)
+                   strip_refs, texts_schema, fill_texts, unresolved_refs, validate_work,
+                   work_template, work_values)
 from .sample import (HeadingLook, SampleError, StyleProfile, apply_heading_numbering,
                      apply_style, document_from_sample, outline_from_sample,
                      style_from_sample)
@@ -62,7 +62,7 @@ from .sample import (HeadingLook, SampleError, StyleProfile, apply_heading_numbe
 __all__ = [
     "Text", "Markdown", "Code", "Image", "Diagram", "Table", "Formula", "Toc", "Blocks", "PageBreak", "Value",
     "Tag", "RenderResult", "HokokuError", "Problem",
-    "extract_tags", "render", "docx_to_pdf", "docx_bytes_to_pdf",
+    "extract_tags", "extract_extras", "render", "docx_to_pdf", "docx_bytes_to_pdf",
     "validate_docx", "DocxValidationError", "safe_name",
     "WIRE_VERSION", "VALUE_TYPES", "count_pages", "WireError", "value_from_json", "value_to_json",
     "values_from_json", "values_to_json", "value_schema", "build_report",
@@ -75,7 +75,7 @@ __all__ = [
     "outline_from_sample", "StyleProfile", "HeadingLook", "SampleError",
     "live", "Work", "Block", "LiveTool", "LiveError", "KINDS", "TEXT_KINDS",
     "work_values", "work_template", "render_work", "assemble",
-    "validate_work", "unresolved_refs",
+    "validate_work", "unresolved_refs", "strip_refs",
     "live_tools", "call_tool", "list_blocks", "any_block_value_schema",
     "text_slots", "texts_schema", "fill_texts",
 ]

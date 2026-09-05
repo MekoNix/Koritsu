@@ -309,3 +309,72 @@ def test_исчезнувший_тег_в_схему_не_идёт_и_keys_су�
     filled.tags["схема"].missing = True
     assert "схема" not in manifest_schema(filled)["properties"]
     assert list(manifest_schema(filled, keys=["цель"])["properties"]) == ["цель"]
+
+
+# ── комментарии и конструкции бланка ──────────────────────────────────────────
+
+def бланк_с_разметкой() -> bytes:
+    """Бланк, написанный не нами: комментарии docxtpl и табличный цикл Jinja."""
+    def build(d):
+        d.add_paragraph("{# 4–6 предложений: итог квартала #}")
+        d.add_paragraph("Цель: {{цель:Цель работы}}")
+        d.add_paragraph("{# Значения в таблице — уже отформатированные строки #}")
+        t = d.add_table(rows=1, cols=1)
+        t.cell(0, 0).text = "{%tr for k in kpis %}"
+        d.add_paragraph("{{выводы:Выводы}}")
+        d.add_paragraph("{% endfor %}")
+    return docx_bytes(build)
+
+
+def test_комментарий_становится_заданием_ближайшего_тега():
+    m = manifest_from_template(бланк_с_разметкой())
+    assert m.tags["цель"].prompt == "4–6 предложений: итог квартала"
+    assert m.tags["цель"].comment == m.tags["цель"].prompt
+    assert m.tags["выводы"].prompt == "Значения в таблице — уже отформатированные строки"
+
+
+def test_комментарий_уезжает_модели_заданием():
+    """Смысл всей затеи: подсказка автора бланка попадает в промпт, а не в документ."""
+    text = manifest_prompt(manifest_from_template(бланк_с_разметкой()))
+    assert "задание: 4–6 предложений: итог квартала" in text
+
+
+def test_конструкция_бланка_видна_манифестом_и_предупреждением():
+    шаблон = бланк_с_разметкой()
+    m = manifest_from_template(шаблон)
+    assert m.constructs == ["{%tr for k in kpis %}", "{% endfor %}"]
+    беды = [w for w in check_manifest(m, шаблон) if w.code == "unknown_construct"]
+    assert len(беды) == 2
+    assert all(w.level == "warning" for w in беды)
+
+
+def test_конструкции_переживают_json():
+    m = manifest_from_template(бланк_с_разметкой())
+    снова = manifest_from_json(manifest_to_json(m))
+    assert снова.constructs == m.constructs
+    assert снова.tags["цель"].comment == m.tags["цель"].comment
+
+
+def test_правленое_человеком_задание_бланк_не_переписывает():
+    """Обновление бланка не отменяет правку человека, но нетронутое подхватывает."""
+    старый = бланк_с_разметкой()
+    m = manifest_from_template(старый)
+    m.tags["цель"].prompt = "Своими словами, один абзац."
+
+    def build(d):
+        d.add_paragraph("{# Ровно три предложения #}")
+        d.add_paragraph("Цель: {{цель:Цель работы}}")
+        d.add_paragraph("{# Списком, по пунктам #}")
+        d.add_paragraph("{{выводы:Выводы}}")
+    новый = manifest_from_template(docx_bytes(build), base=m)
+    assert новый.tags["цель"].prompt == "Своими словами, один абзац."
+    assert новый.tags["цель"].comment == "Ровно три предложения"
+    assert новый.tags["выводы"].prompt == "Списком, по пунктам"
+
+
+def test_комментарий_после_последнего_тега_никому_не_приписывается():
+    def build(d):
+        d.add_paragraph("{{цель}}")
+        d.add_paragraph("{# заметка на полях #}")
+    m = manifest_from_template(docx_bytes(build))
+    assert m.tags["цель"].prompt == ""

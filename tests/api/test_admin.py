@@ -27,6 +27,8 @@ from api.admin import service as админ
 from api.jobs.models import QUEUED, RUNNING, Job
 from api.tokens import service as ключи
 
+from fastapi.testclient import TestClient
+
 from .c_fixtures import (войти, завести, клиент, личное_id,  # noqa: F401
                          создать_проект, сосед, хозяин)
 
@@ -622,3 +624,143 @@ def test_потолок_плана_виден_в_расходе(app, клиен�
         сводка = расход(s, settings, s.get(User, сосед.id))
     assert сводка.plan == "team"
     assert сводка.limit_units == settings.team_monthly_units
+
+
+# ── имя, на котором админка живёт ────────────────────────────────────────────
+#
+# Админка вынесена на домен третьего уровня. Заданное имя означает, что на
+# всяком другом маршрутов `/api/admin/*` **не существует** — и здесь
+# проверяется именно это: не «отказ», а `404`, и раньше всякого разбора сессии.
+#
+# Приложение в этих проверках своё: `admin_domain` — настройка, а фикстура
+# `app` собирает службу на умолчаниях, где имени нет вовсе (это состояние
+# dev-машины, и его проверяет `test_без_имени_домена_всё_как_раньше`).
+
+def служба_с_доменом(tmp_path, домен: str, **правки):
+    """Приложение, у которого админка живёт на этом имени."""
+    from api import Settings, create_app
+
+    return create_app(Settings.for_tests(tmp_path / "том",
+                                         admin_domain=домен, **правки))
+
+
+def вошедший_владелец(app, c):
+    """Завести человека, войти им и дать ему право владельца.
+
+    Имя длинное намеренно: короткое `админ` в этом файле уже занято журналом
+    безопасности (`from api.admin import service as админ`), и подмена его
+    функцией ломает соседний тест молча.
+    """
+    user = завести(app, c, "владелец@пример.рф")
+    войти(app, user)
+    return сделать_админом(app, user)
+
+
+def test_чужой_хост_админки_не_видит(tmp_path):
+    """`Host` не тот — маршрута нет. `404`, а не `403`: с имени сайта админки
+    не существует вовсе."""
+    app = служба_с_доменом(tmp_path, "admin.koritsu.example")
+    with TestClient(app, raise_server_exceptions=False) as c:
+        вошедший_владелец(app, c)
+        for путь in МАРШРУТЫ:
+            ответ = c.get(путь)                     # Host: testserver
+            assert ответ.status_code == 404, (путь, ответ.text)
+            assert ответ.json()["error"]["code"] == "not_found"
+
+
+def test_на_своём_хосте_админка_работает(tmp_path):
+    """То же приложение, тот же человек — но по имени админки."""
+    app = служба_с_доменом(tmp_path, "admin.koritsu.example")
+    with TestClient(app, base_url="http://admin.koritsu.example",
+                    raise_server_exceptions=False) as c:
+        вошедший_владелец(app, c)
+        for путь in МАРШРУТЫ:
+            assert c.get(путь).status_code == 200, путь
+
+
+def test_порт_и_схема_в_имени_не_мешают(tmp_path):
+    """Имя пишут по-разному: со схемой, с портом, с косой. Приведение к одному
+    виду сделано один раз в настройках, и `Host` с портом ему не помеха — 80 и
+    443 это один и тот же домен."""
+    app = служба_с_доменом(tmp_path, "https://admin.koritsu.example/")
+    assert app.state.settings.admin_domain == "admin.koritsu.example"
+    with TestClient(app, base_url="http://admin.koritsu.example:8443",
+                    raise_server_exceptions=False) as c:
+        вошедший_владелец(app, c)
+        assert c.get("/api/admin/users").status_code == 200
+
+
+def test_за_прокси_имя_берётся_из_forwarded_host(tmp_path):
+    """За Caddy в `Host` приезжает имя, с которым прокси пошёл в службу, а не
+    то, что набрал человек. Заголовок читается **только** при `trust_proxy` —
+    иначе админка отдавалась бы одной строкой в curl."""
+    заголовок = {"X-Forwarded-Host": "admin.koritsu.example"}
+
+    доверчивая = служба_с_доменом(tmp_path / "да", "admin.koritsu.example",
+                                  trust_proxy=True)
+    with TestClient(доверчивая, raise_server_exceptions=False) as c:
+        вошедший_владелец(доверчивая, c)
+        assert c.get("/api/admin/users", headers=заголовок).status_code == 200
+
+    строгая = служба_с_доменом(tmp_path / "нет", "admin.koritsu.example",
+                               trust_proxy=False)
+    with TestClient(строгая, raise_server_exceptions=False) as c:
+        вошедший_владелец(строгая, c)
+        assert c.get("/api/admin/users", headers=заголовок).status_code == 404
+
+
+def test_чужой_хост_старше_прав(tmp_path):
+    """Не-админ на чужом имени получает `404`, а не `403`: на этом имени
+    маршрута нет ни для кого, и отвечать по-разному разным людям значило бы
+    рассказывать, что он есть."""
+    app = служба_с_доменом(tmp_path, "admin.koritsu.example")
+    with TestClient(app, raise_server_exceptions=False) as c:
+        войти(app, завести(app, c, "обычный@пример.рф"))
+        assert c.get("/api/admin/users").status_code == 404
+
+
+def test_без_имени_домена_всё_как_раньше(app, клиент, хозяин):
+    """Умолчание — пусто: на dev-машине и на стенде имени у сайта нет вовсе, и
+    делить там нечего. Пускает флаг `is_admin`, как и до разделения."""
+    assert клиент.get("/api/admin/users").status_code == 403
+    сделать_админом(app, хозяин)
+    assert клиент.get("/api/admin/users").status_code == 200
+
+
+def test_имя_домена_едет_сайту_в_профиле(tmp_path):
+    """Сайт узнаёт имя админки из `GET /api/auth/me` — первого запроса всякой
+    загрузки страницы. Рядом с профилем, а не внутри: это настройка машины, а
+    не поле человека."""
+    app = служба_с_доменом(tmp_path, "admin.koritsu.example")
+    with TestClient(app, raise_server_exceptions=False) as c:
+        войти(app, завести(app, c, "кто@пример.рф"))
+        тело = c.get("/api/auth/me").json()
+    assert тело["admin_domain"] == "admin.koritsu.example"
+    assert "admin_domain" not in тело["user"]
+
+
+def test_без_домена_в_профиле_пусто(клиент, хозяин):
+    """Пустая строка, а не отсутствие поля: сайту нужно отличать «домена нет»
+    от «поле не пришло», и пустая строка говорит это прямо."""
+    assert клиент.get("/api/auth/me").json()["admin_domain"] == ""
+
+
+@pytest.mark.parametrize("написано, вышло", [
+    ("admin.koritsu.example", "admin.koritsu.example"),
+    ("https://admin.koritsu.example/", "admin.koritsu.example"),
+    ("http://ADMIN.koritsu.example:8443", "admin.koritsu.example"),
+    ("  admin.koritsu.example  ", "admin.koritsu.example"),
+    ("[2001:db8::1]:8443", "[2001:db8::1]"),
+    ("", ""),
+])
+def test_имя_хоста_приводится_к_одному_виду(написано, вышло):
+    """Один разбор на оба конца сравнения — и на настройку, и на заголовок
+    `Host`. Два разбора «почти одинаково» — это ровно тот случай, когда
+    проверка доступа однажды пропускает не того.
+
+    Адрес в квадратных скобках разбирается по скобке, а не по последнему
+    двоеточию: иначе `[2001:db8::1]` потерял бы половину себя.
+    """
+    from api.settings import имя_хоста
+
+    assert имя_хоста(написано) == вышло

@@ -30,6 +30,13 @@ routes — админка службы: `/api/admin`.
 который пишет кто угодно (`accounts.service.client_ip` объясняет, почему).
 Ставится флаг руками в базе — маршрута «сделай меня админом» нет и не будет:
 его пришлось бы защищать тем самым флагом, которого ещё нет.
+
+**Домен админки — второй рубеж, и он здесь.** Админка живёт на домене третьего
+уровня; заданный `KORITSU_ADMIN_DOMAIN` означает, что на всяком другом имени
+этих маршрутов **не существует** — `404`, до всякого разбора сессии
+(`только_на_своём_домене`). Не задан (dev, стенд, машина без домена) — всё как
+раньше, по флагу. Прятать за этим саму защиту нельзя и не нужно: и без домена,
+и с ним внутрь пускает `require_admin`.
 """
 from __future__ import annotations
 
@@ -37,11 +44,47 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from ..db import SessionDep
-from ..errors import ApiError
+from ..errors import NOT_FOUND, ApiError
+from ..settings import имя_хоста
 from ..workspaces.deps import CurrentUser
 from . import service
 
 FORBIDDEN = service.FORBIDDEN
+
+
+def только_на_своём_домене(request: Request) -> None:
+    """Зависимость: этот запрос пришёл на домен админки, иначе `404 not_found`.
+
+    Молчит, пока `KORITSU_ADMIN_DOMAIN` не задан: на машине разработчика и на
+    стенде имени у сайта нет вовсе, и делить там нечего.
+
+    `404`, а не `403`, и это не противоречит соседнему правилу («не-админ
+    получает `403`, потому что `/api/admin` — известный всем адрес»). Правила
+    отвечают на разные вопросы: `403` говорит вошедшему человеку, что он вошёл
+    правильно, но не туда, а `404` говорит **чужому имени**, что здесь такого
+    маршрута нет. Разное сообщение по одному адресу на разных доменах — это и
+    есть разделение входов: с домена сайта админка не видна вовсе.
+
+    `X-Forwarded-Host` читается **только** при `trust_proxy` — по той же
+    причине, по какой так же читается `X-Forwarded-For`
+    (`accounts.service.client_ip`): на открытом порту заголовок пишет кто
+    угодно, и поверив ему, служба отдала бы админку одной строкой в curl. За
+    своим прокси, наоборот, без него не обойтись: `Host` там — имя, с которым
+    Caddy пошёл в службу, а не то, что набрал человек.
+    """
+    settings = request.app.state.settings
+    свой = settings.admin_domain
+    if not свой:
+        return
+    пришло = ""
+    if settings.trust_proxy:
+        # Первый в списке: прокси дописывают свои справа, слева — тот, к кому
+        # пришёл человек.
+        пришло = request.headers.get("x-forwarded-host", "").split(",")[0]
+    if not пришло:
+        пришло = request.headers.get("host", "")
+    if имя_хоста(пришло) != свой:
+        raise ApiError(NOT_FOUND, "Not found", 404)
 
 
 def require_admin(user: CurrentUser) -> object:
@@ -56,8 +99,13 @@ def require_admin(user: CurrentUser) -> object:
     return user
 
 
+# Домен — первой зависимостью, права — второй: FastAPI разбирает их по порядку,
+# и на чужом имени маршрут обязан не существовать раньше, чем служба заглянет в
+# сессию. Иначе ответ отличал бы «нет такого адреса» от «есть, но не вам» по
+# коду `401` у не вошедшего.
 router = APIRouter(prefix="/admin", tags=["admin"],
-                   dependencies=[Depends(require_admin)])
+                   dependencies=[Depends(только_на_своём_домене),
+                                 Depends(require_admin)])
 
 
 class UserPatchIn(BaseModel):

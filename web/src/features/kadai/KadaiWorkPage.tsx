@@ -1,10 +1,11 @@
 /**
  * KadaiWorkPage — экран одной работы: `/kadai/:projectId`.
  *
- * Сверху шаги стадий, слева работа (условие → блоки), справа «как будет в
- * Word» и история версий списка. Порядок не декоративный, он повторяет порядок
- * решений: сначала подтвердить условие, потом смотреть на блоки, и только
- * потом — на вёрстку.
+ * Сверху шаги стадий, слева работа (условие → блоки), справа история версий
+ * списка, а после первой сборки — ещё и «как будет в Word». Порядок не
+ * декоративный, он повторяет порядок решений: сначала подтвердить условие,
+ * потом смотреть на блоки, и только потом — на вёрстку. Вёрстки до сборки не
+ * существует, поэтому и вкладки с ней до неё нет.
  *
  *     Три вещи, которые здесь неочевидны
  *     ----------------------------------
@@ -33,7 +34,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 
 import { errorText, keys } from '@/api'
-import { useUsage } from '@/api/hooks'
 import { useDocumentCrumb } from '@/app/shell/breadcrumbs'
 import { useT } from '@/i18n'
 import { Button, ErrorState, Icon, Segmented, SkeletonLines } from '@/ui'
@@ -41,7 +41,7 @@ import { artifactUrl, useMaterials, useProject } from '@/features/projects/data'
 import { useDefaultEndpoint, useProviders } from '@/features/reports/data'
 import { PdfPreview } from '@/features/reports/PdfPreview'
 import type { BuildState } from '@/features/reports/useBuild'
-import { ModelPicker, PriceHint } from '@/features/reports/runControls'
+import { ModelPicker } from '@/features/reports/runControls'
 
 import { BlockList, type ReworkRequest } from './BlockList'
 import { BlockVersions } from './BlockVersions'
@@ -58,7 +58,7 @@ import {
   useStageNames,
 } from './data'
 import { STUMBLED, currentStage, mergeStages, reached, ПУСТЫЕ_ПОЖЕЛАНИЯ } from './stages'
-import { KADAI_REWORK, KADAI_RUN } from './types'
+import { KADAI_RUN } from './types'
 import { useKadaiRun } from './useKadaiRun'
 
 /** Стадия, после которой готовы DOCX и PDF. Дальше только ZIP. */
@@ -76,7 +76,6 @@ export function KadaiWorkPage() {
   const blocks = useBlocks(projectId)
   const materials = useMaterials(projectId)
   const providers = useProviders()
-  const usage = useUsage()
   const setCondition = useSetCondition()
   const wishes = useKadaiWishes(projectId)
   const saveWishes = useSetKadaiWishes()
@@ -165,7 +164,6 @@ export function KadaiWorkPage() {
   // прогон после него — обычное платное задание. Оба шага делаются одним
   // нажатием намеренно: разорванные, они оставили бы работу в состоянии
   // «сброшена, но никуда не идёт», и человек решал бы, что кнопка не сработала.
-  // Цена при этом названа рядом с кнопкой — до нажатия, как везде.
   function начать_заново() {
     restart.mutate(undefined, { onSuccess: () => запустить(null) })
   }
@@ -173,6 +171,8 @@ export function KadaiWorkPage() {
   if (project.isError) return <ErrorState error={project.error} onRetry={() => project.refetch()} />
 
   const собрано = status.data?.made ?? {}
+  // Собиралась ли работа хоть раз: до этого превью показывать нечего.
+  const собиралась = !!собрано.docx || !!собрано.pdf
   const build: BuildState = {
     running: run.running && run.kind === KADAI_RUN,
     artifacts: { docx: собрано.docx, pdf: собрано.pdf },
@@ -251,9 +251,6 @@ export function KadaiWorkPage() {
             <>
               <p className="text-xs text-ink">{t('kadai.run.restartHint')}</p>
               <div className="flex flex-wrap items-center gap-s2">
-                <span className="text-xs text-muted">
-                  <PriceHint kind={KADAI_RUN} usage={usage.data} />
-                </span>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -290,12 +287,6 @@ export function KadaiWorkPage() {
                 onChange={setEndpoint}
                 disabled={run.running}
               />
-              <span className="text-xs text-muted">
-                <PriceHint
-                  kind={run.kind === KADAI_REWORK ? KADAI_REWORK : KADAI_RUN}
-                  usage={usage.data}
-                />
-              </span>
               <Button
                 variant="primary"
                 size="sm"
@@ -335,21 +326,23 @@ export function KadaiWorkPage() {
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-col gap-s2">
-          <Segmented
-            value={вкладка}
-            onChange={(v) => setВкладка(v as 'preview' | 'versions')}
-            options={[
-              { value: 'preview', label: t('kadai.tabs.preview') },
-              { value: 'versions', label: t('kadai.tabs.versions') },
-            ]}
-          />
-          {вкладка === 'preview' ? (
+          {/* Превью «как будет в Word» появляется только после первой сборки.
+              До неё показывать нечего: работа собирается стадией «Сборка», и
+              пустая рамка с кнопкой выглядела как ожидание того, чего в проекте
+              ещё нет. */}
+          {собиралась && (
+            <Segmented
+              value={вкладка}
+              onChange={(v) => setВкладка(v as 'preview' | 'versions')}
+              options={[
+                { value: 'preview', label: t('kadai.tabs.preview') },
+                { value: 'versions', label: t('kadai.tabs.versions') },
+              ]}
+            />
+          )}
+          {собиралась && вкладка === 'preview' ? (
             <div className="min-h-[520px] overflow-hidden rounded-md border border-line">
-              <PdfPreview
-                build={build}
-                priceHint={<PriceHint kind={KADAI_RUN} usage={usage.data} />}
-                canBuild={!!пресет && !!условие && confirmed}
-              />
+              <PdfPreview build={build} canBuild={!!пресет && !!условие && confirmed} />
             </div>
           ) : (
             <div className="rounded-md border border-line bg-surface p-s3">

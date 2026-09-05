@@ -1,27 +1,33 @@
 /**
  * DiagramsHome — главная страница модуля: что уже построено и где строить новое.
  *
- * Схема живёт в проекте — там её артефакт и там её тег, — поэтому список
- * собирается из значений проектов: значение вида `diagram` и есть сохранённая
- * схема. Отдельного маршрута «мои схемы» у службы нет, и заводить его ради
- * одной страницы было бы дороже, чем сложить список здесь: пространства →
- * проекты → значения.
+ * Схема живёт в работе: там её XML артефактом, там её запись в журнале запусков
+ * и там же код, которым она построена. Поэтому список собирается по работам
+ * человека — `GET …/flowcharts` или `GET …/uml` на каждую.
+ *
+ * **Список у каждого модуля свой, и это главное отличие от прежнего.** Раньше
+ * схемы отбирались из значений тегов, а в значении не записано, кто схему
+ * построил: блок-схема и диаграмма классов лежали там одинаково и попадали в
+ * оба списка сразу. Теперь модуль записан у самой схемы, и человек, пришедший
+ * за схемой алгоритма, не разбирает её среди диаграмм классов.
+ *
+ * Имя схемы рисуется из модуля, номера и названия работы («Схема 2 —
+ * Курсовая») тем же `runTitle`, что и в журнале работы: имя одно, и второе
+ * такое же правило разошлось бы с первым.
  *
  * Список пустой — не белое поле, а приглашение: пустое состояние обязано
  * предлагать действие, и действие здесь одно — начать новую схему в
- * проекте. Проектов нет вовсе — состояние другое и ведёт оно в другое место:
- * чинить нечего, пока нет проекта.
- *
- * **Список у двух модулей один и тот же, и это не недосмотр.** В значении тега
- * записано, что там схема (`type: "diagram"`), но не записано, кто её построил:
- * блок-схема и диаграмма классов лежат одинаково. Делить список по догадке
- * (скажем, по имени тега) значило бы прятать от человека его же схему всякий
- * раз, когда он назвал тег по-своему.
+ * работе. Работ нет вовсе — состояние другое и ведёт оно в другое место:
+ * чинить нечего, пока нет работы.
  */
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { errorText, keys } from '@/api'
+// Имя запуска и короткая дата — те же, что в журнале работы (`runTitle`,
+// `formatWhen`): одна и та же схема не может называться на двух экранах
+// по-разному.
+import { formatWhen, runTitle } from '@/features/projects/format'
 import { useT } from '@/i18n'
 import {
   Button,
@@ -37,15 +43,15 @@ import {
   useToast,
 } from '@/ui'
 
-import { diagramsOf, fetchAllProjects, fetchArtifact, fetchValues } from './api'
+import { deleteDiagram, fetchAllProjects, fetchArtifact, fetchDiagrams } from './api'
 import { safeFilename, saveBlob } from './download'
-import type { Module } from './DiagramWorkbench'
-import type { SavedDiagram } from './types'
+import type { DiagramInProject, Module } from './types'
 
 export function DiagramsHome({ module }: { module: Module }) {
   const t = useT()
   const toast = useToast()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const корень = module === 'uml' ? '/uml' : '/flowcharts'
 
   const projects = useQuery({
@@ -53,20 +59,31 @@ export function DiagramsHome({ module }: { module: Module }) {
     queryFn: fetchAllProjects,
   })
 
-  // Значения — по запросу на проект: одного маршрута «значения всех проектов»
-  // у службы нет, а склеивать их в один запрос значило бы завести его.
-  const значения = useQueries({
+  // По запросу на работу: списка «схемы всех работ» у службы нет, а склеивать
+  // их в один запрос значило бы завести его.
+  const списки = useQueries({
     queries: (projects.data ?? []).map((project) => ({
-      queryKey: keys.diagrams.values(project.id),
-      queryFn: () => fetchValues(project.id),
+      queryKey: keys.diagrams.list(module, project.id),
+      queryFn: () => fetchDiagrams(module, project.id),
     })),
   })
 
-  const схемы: SavedDiagram[] = (projects.data ?? []).flatMap((project, i) => {
-    const тело = значения[i]?.data
-    return тело ? diagramsOf(project, тело) : []
+  const схемы: DiagramInProject[] = (projects.data ?? []).flatMap((project, i) =>
+    (списки[i]?.data ?? []).map((diagram) => ({ project, diagram })),
+  )
+  const грузится = projects.isPending || списки.some((q) => q.isPending)
+
+  const удалить = useMutation({
+    mutationFn: ({ projectId, runId }: { projectId: string; runId: string }) =>
+      deleteDiagram(projectId, runId),
+    onSuccess: (_итог, { projectId }) => {
+      void qc.invalidateQueries({ queryKey: keys.diagrams.list(module, projectId) })
+      // Запись журнала — та же самая: список «Что в работе» на странице работы
+      // обязан обновиться тем же действием.
+      void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
+    },
+    onError: (беда: unknown) => toast.error(t('diagrams.home.removeFailed'), errorText(беда)),
   })
-  const грузится = projects.isPending || значения.some((q) => q.isPending)
 
   const заголовок = t(
     module === 'uml' ? 'diagrams.home.uml.title' : 'diagrams.home.flowcharts.title',
@@ -121,57 +138,63 @@ export function DiagramsHome({ module }: { module: Module }) {
 
           {схемы.length > 0 && (
             <ul className="flex flex-col gap-s2">
-              {схемы.map((схема) => (
-                <li
-                  key={`${схема.project.id}:${схема.key}`}
-                  className="flex flex-wrap items-center gap-s3 rounded-md border border-line bg-surface p-s3"
-                >
-                  <Icon
-                    name={module === 'uml' ? 'uml' : 'flowchart'}
-                    size={18}
-                    className="text-muted"
-                  />
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate text-sm font-semibold text-ink-strong">
-                      {схема.value.caption || схема.key}
-                    </span>
-                    <span className="truncate text-xs text-muted">
-                      {t('diagrams.home.inProject')}: {схема.project.name} ·{' '}
-                      {t('diagrams.home.tag')}: {схема.key}
-                    </span>
-                  </div>
-                  <div className="grow" />
-                  {схема.value.artifact && (
+              {схемы.map(({ project, diagram }) => {
+                const имя = runTitle(t, diagram, project.name)
+                return (
+                  <li
+                    key={diagram.run_id}
+                    className="flex flex-wrap items-center gap-s3 rounded-md border border-line bg-surface p-s3"
+                  >
+                    <Icon
+                      name={module === 'uml' ? 'uml' : 'flowchart'}
+                      size={18}
+                      className="text-muted"
+                    />
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm font-semibold text-ink-strong">{имя}</span>
+                      <span className="truncate text-xs text-muted">
+                        {t('diagrams.home.inProject')}: {project.name}
+                        {diagram.created_at ? ` · ${formatWhen(diagram.created_at)}` : ''}
+                      </span>
+                    </div>
+                    <div className="grow" />
+                    {diagram.artifact && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          void fetchArtifact(project.id, diagram.artifact)
+                            .then((blob) => saveBlob(blob, safeFilename(имя, 'drawio.xml')))
+                            .catch((беда: unknown) =>
+                              toast.error(t('diagrams.work.downloadXml'), errorText(беда)),
+                            )
+                        }
+                      >
+                        <Icon name="download" size={14} />
+                        {t('diagrams.work.downloadXml')}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => navigate(`${корень}/${project.id}?run=${diagram.run_id}`)}
+                    >
+                      {t('diagrams.home.open')}
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
+                      aria-label={t('diagrams.home.remove', { name: имя })}
+                      loading={удалить.isPending && удалить.variables?.runId === diagram.run_id}
                       onClick={() =>
-                        void fetchArtifact(схема.project.id, схема.value.artifact as string)
-                          .then((blob) => saveBlob(blob, safeFilename(схема.key, 'drawio.xml')))
-                          .catch((беда: unknown) =>
-                            toast.error(t('diagrams.work.downloadXml'), errorText(беда)),
-                          )
+                        удалить.mutate({ projectId: project.id, runId: diagram.run_id })
                       }
                     >
-                      <Icon name="download" size={14} />
-                      {t('diagrams.work.downloadXml')}
+                      <Icon name="trash" size={14} />
                     </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() =>
-                      navigate(
-                        `${корень}/${схема.project.id}${
-                          схема.value.artifact ? `?artifact=${схема.value.artifact}` : ''
-                        }`,
-                      )
-                    }
-                  >
-                    {t('diagrams.home.open')}
-                  </Button>
-                </li>
-              ))}
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>
@@ -181,9 +204,9 @@ export function DiagramsHome({ module }: { module: Module }) {
 }
 
 /**
- * «Новая схема». Проект один — сразу в него; несколько — меню выбора.
+ * «Новая схема». Работа одна — сразу в неё; несколько — меню выбора.
  *
- * Меню, а не отдельная страница выбора: выбор проекта здесь — это один клик,
+ * Меню, а не отдельная страница выбора: выбор работы здесь — это один клик,
  * а страница ради одного клика читается как ещё один шаг.
  */
 function NewDiagramButton({

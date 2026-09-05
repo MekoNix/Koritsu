@@ -54,7 +54,7 @@ export function StatsWidget() {
   ]
 
   return (
-    <Widget title={t('dashboard.stats.title')} className="lg:col-span-12">
+    <Widget title={t('dashboard.stats.title')}>
       <dl className="grid grid-cols-3 gap-s4">
         {цифры.map((цифра) => (
           <div key={цифра.key} className="min-w-0">

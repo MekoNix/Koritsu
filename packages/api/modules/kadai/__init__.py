@@ -1,5 +1,5 @@
 """
-kadai — модуль заданий: одна задача условием на входе, готовая работа на выходе.
+kadai — модуль решений: одна задача условием на входе, готовая работа на выходе.
 
 Сам сценарий живёт в пакете `kadai` и зовётся заданиями очереди (`kadai_run`,
 `kadai_rework`); маршрутов ему для этого не нужно вовсе. Карточка и два
@@ -25,7 +25,7 @@ from __future__ import annotations
 from .. import ModuleInfo
 from .routes import router
 
-MODULE = ModuleInfo(id="kadai", title="Assignments", ready=True,
+MODULE = ModuleInfo(id="kadai", title="Solutions", ready=True,
                     routes_prefix="/api/projects")
 
 __all__ = ["MODULE", "router"]

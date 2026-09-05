@@ -10,7 +10,9 @@ routes — `/api/projects`: создание, список, карточка, к
     in_trash         409  пространство в корзине / проект уже в корзине
     not_in_trash     409  восстанавливать нечего
     bad_template     400  принесённый DOCX не читается
+    unknown_module   400  названного модуля служба не отдаёт
     invalid_value    400  значение тега не объект JSON или не по форме своего типа
+    unknown_tag      404  тега с таким ключом в бланке работы нет
     project_exists   409  каталог по этим uuid уже занят
 
 **Проверка доступа идёт через пространство, а не через проект.** Проект своей
@@ -62,7 +64,7 @@ from ..log import беды
 from ..settings import Settings
 from ..workspaces.deps import CurrentUser
 from ..workspaces.service import EDITOR, VIEWER, iso, require_role
-from .models import NAME_MAX, Project
+from .models import MODULE_LEN, NAME_MAX, Project
 from .service import dir_for, dir_size, get_row, restore
 from .service import trash as в_корзину   # имя занято параметром запроса `trash`
 
@@ -72,17 +74,62 @@ BAD_TEMPLATE = "bad_template"
 INVALID_VALUE = "invalid_value"
 PROJECT_EXISTS = "project_exists"
 IN_TRASH = "in_trash"
+UNKNOWN_MODULE = "unknown_module"
+UNKNOWN_TAG = "unknown_tag"
+
+# Потолок задания на тег. Задание пишет человек, читает модель, и живёт оно в
+# манифесте на томе: без потолка одно поле формы могло бы раздуть манифест до
+# мегабайтов, которые потом уезжают в каждый запрос к модели.
+PROMPT_MAX = 4000
 
 
-class ProjectNameIn(BaseModel):
-    """Тело переименования. Имя по-английски, как у соседей: оно уезжает в
-    OpenAPI и становится именем типа в клиенте сайта."""
+class TagPromptIn(BaseModel):
+    """Тело правки задания на тег. Пустая строка — «задания нет»."""
 
-    name: str = Field(min_length=1, max_length=NAME_MAX)
+    prompt: str = Field(
+        max_length=PROMPT_MAX,
+        description=("What the model is told to write into this tag. Stored in "
+                     "the manifest of the work, so it outlives a single run."))
+
+
+class ProjectPatchIn(BaseModel):
+    """Тело правки работы: имя и модуль, оба необязательные.
+
+    Имя по-английски, как у соседей: оно уезжает в OpenAPI и становится именем
+    типа в клиенте сайта.
+
+    Оба поля необязательны, и это не «сойдёт и так»: правок у работы две и
+    делаются они из разных мест — имя правит диалог переименования, модуль
+    выбирается на карточке. Требовать оба сразу значило бы, что смена модуля
+    перепишет имя тем, что было в форме на момент открытия.
+
+    Пустое тело — не отказ, а «ничего не менять»: отвечать `422` на просьбу
+    ничего не делать незачем, а состояние работы от неё то же самое.
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=NAME_MAX)
+    module: str | None = Field(
+        default=None, max_length=MODULE_LEN,
+        description=("Module this work is done with, from GET /api/modules. "
+                     "An empty string clears it."))
 
 
 def настройки(request: Request) -> Settings:
     return request.app.state.settings
+
+
+def манифест(проект: orchestrator.Project):
+    """Манифест работы или `None`, если файла на томе нет.
+
+    `None`, а не отказ: карточку работы нельзя ронять из-за недостающего файла
+    — беда уходит в журнал, а человек видит работу без тегов, что и есть правда
+    о ней.
+    """
+    try:
+        return проект.manifest()
+    except orchestrator.OrchestratorError:
+        беды.warning("проект %s: манифеста нет — теги не показываю", проект.path)
+        return None
 
 
 def теги_шаблона(проект: orchestrator.Project) -> list[tuple]:
@@ -102,12 +149,10 @@ def теги_шаблона(проект: orchestrator.Project) -> list[tuple]:
     из-за того, что на томе недостаёт файла; беда уходит в журнал, а человек
     видит проект без тегов, что и есть правда о нём.
     """
-    try:
-        манифест = проект.manifest()
-    except orchestrator.OrchestratorError:
-        беды.warning("проект %s: манифеста нет — теги не показываю", проект.path)
+    m = манифест(проект)
+    if m is None:
         return []
-    return [(ключ, спец) for ключ, спец in манифест.tags.items() if not спец.missing]
+    return [(ключ, спец) for ключ, спец in m.tags.items() if not спец.missing]
 
 
 def карточка(p: Project, settings: Settings, *, теги: bool = False) -> dict:
@@ -119,7 +164,7 @@ def карточка(p: Project, settings: Settings, *, теги: bool = False) 
     """
     каталог = dir_for(settings, p.owner_id, p.id)
     тело = {"id": p.id, "workspace_id": p.workspace_id, "owner_id": p.owner_id,
-            "name": p.name, "created_at": iso(p.created_at),
+            "name": p.name, "module": p.module, "created_at": iso(p.created_at),
             "updated_at": iso(p.updated_at), "deleted_at": iso(p.deleted_at),
             "purge_after": iso(p.purge_after), "bytes_used": dir_size(каталог)}
     if теги:
@@ -150,11 +195,14 @@ def открыть(p: Project, settings: Settings) -> orchestrator.Project:
                  "Creates a project and its directory on the volume. Multipart: "
                  "the name and, optionally, either a DOCX template or the id of "
                  "one of your saved templates (`template_id`); without either "
-                 "the report is built from scratch. Editor role in the "
-                 "workspace. 400 bad_template, 403 forbidden, 404 not_found, "
+                 "the report is built from scratch. `module` says which module "
+                 "the work is done with (from GET /api/modules) and may be left "
+                 "out. Editor role in the workspace. 400 bad_template, "
+                 "400 unknown_module, 403 forbidden, 404 not_found, "
                  "409 project_exists."))
 def создать(request: Request, s: SessionDep, user: CurrentUser,
             workspace_id: str = Form(...), name: str = Form(""),
+            module: str = Form(""),
             template: UploadFile | None = File(None),
             template_id: str | None = Form(None)) -> dict:
     """Новый проект: строка в базе и каталог на томе.
@@ -174,6 +222,11 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
     — это чужой ГОСТ в готовой работе, и заметят его на кафедре. Отказ идёт
     кодом `bad_template`, а не своим новым: с точки зрения клиента беда одна —
     «шаблон не принят», и разбирать её по двум кодам ему незачем.
+
+    `module` — каким модулем эта работа делается. Поле, а не догадка по тому,
+    есть ли у работы теги шаблона: работа, где сделан и отчёт, и задание, ломала
+    любую догадку, а главная модуля обязана показывать свои работы, а не все
+    подряд. Пусто — законно: работу заводят раньше, чем решают, чем её делать.
 
     Порядок — сначала база, потом диск, и это не случайность: `id` каталога
     берётся из строки, а строка при беде на диске откатится сама
@@ -199,7 +252,9 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
         байты = шаблоны.байты(
             settings, шаблоны.найти(s, user.id, template_id.strip(),
                                     where="body.template_id"))
-    p = Project(workspace_id=ws.id, owner_id=user.id, name=name.strip() or "Project")
+    p = Project(workspace_id=ws.id, owner_id=user.id,
+                name=name.strip() or "Project",
+                module=проверить_модуль(module, where="body.module"))
     s.add(p)
     s.flush()
 
@@ -225,14 +280,25 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
             summary="List projects of a workspace",
             description=(
                 "Lists the projects of one workspace; `trash=true` lists the "
-                "ones in the trash instead. 400 invalid_id, 404 not_found."))
+                "ones in the trash instead, `module` narrows the list down to "
+                "the works done with one module. 400 invalid_id, "
+                "400 unknown_module, 404 not_found."))
 def список(request: Request, workspace_id: str, s: SessionDep, user: CurrentUser,
-           trash: bool = False) -> dict:
-    """Проекты пространства. `trash=true` — те, что лежат в корзине."""
+           trash: bool = False, module: str = "") -> dict:
+    """Проекты пространства. `trash=true` — те, что лежат в корзине.
+
+    `module` — отбор для главной страницы модуля: она показывает свои работы, а
+    не все подряд. Отбором, а не своим маршрутом у каждого модуля: список
+    проектов один, и четыре его копии разошлись бы на первом же новом столбце.
+    """
     settings = настройки(request)
     ws = require_role(s, user.id, check_id(workspace_id, where="query.workspace_id"),
                       VIEWER, where="query.workspace_id", allow_deleted=trash)
     запрос = select(Project).where(Project.workspace_id == ws.id)
+    if module.strip():
+        запрос = запрос.where(
+            Project.module == проверить_модуль(module, where="query.module",
+                                               пусто_можно=False))
     запрос = запрос.where(Project.deleted_at.is_not(None) if trash
                           else Project.deleted_at.is_(None))
     строки = s.scalars(запрос.order_by(Project.created_at)).all()
@@ -254,15 +320,28 @@ def карточка_одного(project_id: str, request: Request, s: SessionD
 
 
 @router.patch("/{project_id}", operation_id="rename_project",
-              summary="Rename a project",
+              summary="Rename a project or say which module it is done with",
               description=(
-                  "Renames a project, in the database and in its settings on "
-                  "the volume. Editor role. 403 forbidden, 404 not_found, "
-                  "409 in_trash, 422 validation_failed."))
-def переименовать(project_id: str, тело: ProjectNameIn, request: Request,
+                  "Changes the name of a project, in the database and in its "
+                  "settings on the volume, and the module it is done with. "
+                  "Both fields are optional; an empty body changes nothing. "
+                  "Editor role. 400 unknown_module, 403 forbidden, "
+                  "404 not_found, 409 in_trash, 422 validation_failed."))
+def переименовать(project_id: str, тело: ProjectPatchIn, request: Request,
                   s: SessionDep, user: CurrentUser) -> dict:
+    """Имя и модуль работы. Имя правится в двух местах сразу — база и том.
+
+    Имя `rename_project` осталось прежним намеренно: это тот же самый маршрут,
+    и переименование его сменило бы имя метода в сгенерированном клиенте ради
+    второго поля.
+    """
     settings = настройки(request)
     p = доступный(s, user, project_id, EDITOR)
+    if тело.module is not None:
+        p.module = проверить_модуль(тело.module, where="body.module")
+    if тело.name is None:
+        s.flush()
+        return карточка(p, settings)
     p.name = тело.name.strip()
     s.flush()
     # Имя лежит и в `project.json`: его читает `build_report`, а не мы. Один
@@ -309,11 +388,14 @@ def восстановить(project_id: str, request: Request, s: SessionDep,
             summary="Tags of the project template",
             description=(
                 "Every tag of the template, in the order they appear in the "
-                "document: key, label, type, whether it is required, and "
-                "whether it is filled, with the source and the number of the "
-                "current version when it is. Tags no longer present in the "
-                "template are left out. 400 invalid_id, 404 not_found, "
-                "409 in_trash."))
+                "document: key, label, type, whether it is required, the "
+                "prompt the model is given for it, and whether it is filled, "
+                "with the source and the number of the current version when it "
+                "is. Tags no longer present in the template are left out. "
+                "`constructs` lists the Jinja constructions of the template "
+                "the builder does not understand (`{% for %}` and the like): "
+                "they stay in the document as text and do not break the build. "
+                "400 invalid_id, 404 not_found, 409 in_trash."))
 def теги_проекта(project_id: str, request: Request, s: SessionDep,
                  user: CurrentUser) -> dict:
     """Теги шаблона со состоянием заполнения — то, из чего сделана колонка тегов.
@@ -336,16 +418,51 @@ def теги_проекта(project_id: str, request: Request, s: SessionDep,
     settings = настройки(request)
     p = доступный(s, user, project_id, VIEWER)
     проект = открыть(p, settings)
+    m = манифест(проект)
     теги = []
     for ключ, спец in теги_шаблона(проект):
         шапка = проект.head_version(ключ)
         теги.append({"key": ключ, "label": спец.label, "type": спец.type,
-                     "required": bool(спец.required),
+                     "required": bool(спец.required), "prompt": спец.prompt,
                      "filled": шапка is not None,
                      "source": None if шапка is None else шапка.source,
                      "version": None if шапка is None else шапка.n,
                      "at": None if шапка is None else шапка.at})
-    return {"tags": теги}
+    return {"tags": теги,
+            "constructs": [] if m is None else list(m.constructs)}
+
+
+@router.patch("/{project_id}/tags/{key}", operation_id="set_tag_prompt",
+              summary="Set what the model is told to write into one tag",
+              description=(
+                  "Writes the prompt of one tag into the manifest of the work. "
+                  "It is the same text a template comment fills in when the "
+                  "template carries one, and it outlives a single run, unlike "
+                  "the run-wide prompt sent with fill_report. An empty string "
+                  "clears it. Editor role. 400 invalid_id, 403 forbidden, "
+                  "404 not_found, 404 unknown_tag, 409 in_trash."))
+def задание_тега(project_id: str, key: str, тело: TagPromptIn, request: Request,
+                 s: SessionDep, user: CurrentUser) -> dict:
+    """Задание модели на один тег — поле рядом с заполнением.
+
+    Правкой манифеста, а не отдельной таблицей: задание принадлежит бланку
+    работы, живёт столько же, сколько он, и уезжает моделью из того же
+    манифеста, из которого едут тип и метка. Вторая копия в базе разошлась бы с
+    ним при первой же смене бланка.
+
+    Идёт через `Project.set_tag_prompt`, а не правит манифест здесь: движка
+    отчётов службе не видно (правило разреза), и счётчик правок манифеста
+    ставится в одном месте — при записи.
+    """
+    settings = настройки(request)
+    p = доступный(s, user, project_id, EDITOR)
+    проект = открыть(p, settings)
+    try:
+        текст = проект.set_tag_prompt(key, тело.prompt)
+    except orchestrator.OrchestratorError:
+        raise ApiError(UNKNOWN_TAG, "This work has no tag with that key", 404,
+                       where="path.key") from None
+    return {"key": key, "prompt": текст}
 
 
 @router.get("/{project_id}/values", operation_id="get_project_values",
@@ -386,7 +503,7 @@ def поставить(project_id: str, key: str, value: dict, request: Request,
     Аргумент тела назван по-английски, в отличие от прочих имён обработчиков:
     имя аргумента-тела уезжает в OpenAPI заголовком схемы (было `Значение`), а
     оттуда — в клиент сайта, где кириллицу ни набрать, ни отличить от соседней
-    (та же причина, по которой формы запроса называются `ProjectNameIn`).
+    (та же причина, по которой формы запроса называются `ProjectPatchIn`).
     """
     settings = настройки(request)
     p = доступный(s, user, project_id, EDITOR)
@@ -435,6 +552,33 @@ def проверить_форму(проект: orchestrator.Project, value: dic
 
 
 # ── общее ────────────────────────────────────────────────────────────────────
+
+def проверить_модуль(module: str | None, *, where: str,
+                     пусто_можно: bool = True) -> str:
+    """Модуль из реестра — или `400 unknown_module`. Пусто значит «не назначен».
+
+    Спрашивается тот же реестр, из которого строится `GET /api/modules`, а не
+    свой список слов: второй разошёлся бы с первым на первом же заведённом
+    модуле, и в базе оказались бы имена, которых в службе нет.
+
+    Пустая строка законна и означает «модуль не назначен» — кроме отбора в
+    списке, где пустой отбор это отсутствие отбора, а не «работы без модуля»
+    (`пусто_можно=False` там, где пустое значение уже отсеяно вызывающим).
+    """
+    # Импорт внутри функции: реестр модулей тянет их подпакеты, а те —
+    # зависимости доступа, которые читают этот пакет обратно.
+    from .. import modules                                    # noqa: PLC0415
+
+    имя = (module or "").strip()
+    if not имя:
+        if пусто_можно:
+            return ""
+        raise ApiError(UNKNOWN_MODULE, "No such module", 400, where=where)
+    if имя not in {info.id for info in modules.all_modules() if info.ready}:
+        raise ApiError(UNKNOWN_MODULE, "No such module", 400, where=where)
+    return имя
+
+
 
 def доступный(s, user, project_id: str, min_role: str, *,
               allow_deleted: bool = False) -> Project:

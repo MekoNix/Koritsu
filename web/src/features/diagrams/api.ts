@@ -1,10 +1,11 @@
 /**
  * api — запросы области схем. Экраны не зовут `unwrap` сами.
  *
- * Маршрутов у двух модулей семь, и делятся они на две ровные половины:
- * предпросмотр (без проекта, ничего не пишет на том, ограничен темпом) и
- * постройка в проект (роль editor, XML ложится артефактом). Здесь они собраны
- * рядом, чтобы разница между ними была видна одним взглядом, а не по адресу в
+ * Маршруты двух модулей делятся на три части: предпросмотр (без проекта,
+ * ничего не пишет на том, ограничен темпом), постройка в работу — она же
+ * сохранение (роль editor: XML ложится артефактом, схема попадает в журнал
+ * запусков вместе с кодом и параметрами) и чтение сохранённого. Здесь они
+ * собраны рядом, чтобы разница была видна одним взглядом, а не по адресу в
  * пяти файлах.
  *
  * Скачивание артефакта идёт мимо `openapi-fetch`: маршрут отдаёт байты с
@@ -15,10 +16,12 @@ import { api, unwrap } from '@/api'
 import { withBase } from '@/lib/basePath'
 
 import type {
-  BuiltOut,
   DiagramValue,
   FlowchartMode,
+  FullDiagram,
   Lang,
+  Module,
+  NamedSource,
   PreviewOut,
   ProjectCard,
   SavedDiagram,
@@ -26,8 +29,7 @@ import type {
   WorkspaceCard,
 } from './types'
 
-/** Исходник для UML: имя нужно замечаниям разбора, путём оно не является. */
-export type NamedSource = { name: string; source: string }
+export type { NamedSource }
 
 // ── перечни строителя ────────────────────────────────────────────────────────
 
@@ -58,13 +60,30 @@ export function previewUml(
     : unwrap<PreviewOut>(api.POST('/api/uml/objects/preview', { body }))
 }
 
-// ── постройка в проект: у схемы появляется идентификатор ─────────────────────
+// ── постройка в проект: она же сохранение ────────────────────────────────────
 
+/**
+ * Построить схему в работе. Отдельного «сохранить» нет: построенная схема
+ * ложится в работу сама — с записью в журнале запусков, кодом и параметрами.
+ *
+ * `runId` — перестройка уже сохранённой схемы: та же запись журнала, тот же
+ * номер, новая картинка. Без него заводится новая схема. Иначе пять нажатий,
+ * пока подбирается код, дали бы пять «Схема 1…5» в работе.
+ */
 export function buildFlowchart(
   projectId: string,
   body: { source: string; lang: Lang; mode: string },
-): Promise<BuiltOut> {
-  return unwrap<BuiltOut>(
+  runId?: string | null,
+): Promise<FullDiagram> {
+  if (runId) {
+    return unwrap<FullDiagram>(
+      api.PUT('/api/projects/{project_id}/flowcharts/{run_id}', {
+        params: { path: { project_id: projectId, run_id: runId } },
+        body,
+      }),
+    )
+  }
+  return unwrap<FullDiagram>(
     api.POST('/api/projects/{project_id}/flowcharts', {
       params: { path: { project_id: projectId } },
       body,
@@ -76,11 +95,65 @@ export function buildUml(
   projectId: string,
   kind: UmlKind,
   body: { sources: NamedSource[]; lang: Lang; theme: string },
-): Promise<BuiltOut> {
+  runId?: string | null,
+): Promise<FullDiagram> {
+  if (runId) {
+    return unwrap<FullDiagram>(
+      api.PUT('/api/projects/{project_id}/uml/{run_id}', {
+        params: { path: { project_id: projectId, run_id: runId } },
+        body,
+      }),
+    )
+  }
   const params = { path: { project_id: projectId } } as const
   return kind === 'classes'
-    ? unwrap<BuiltOut>(api.POST('/api/projects/{project_id}/uml/classes', { params, body }))
-    : unwrap<BuiltOut>(api.POST('/api/projects/{project_id}/uml/objects', { params, body }))
+    ? unwrap<FullDiagram>(api.POST('/api/projects/{project_id}/uml/classes', { params, body }))
+    : unwrap<FullDiagram>(api.POST('/api/projects/{project_id}/uml/objects', { params, body }))
+}
+
+// ── сохранённые схемы работы ─────────────────────────────────────────────────
+
+/**
+ * Схемы одного модуля в одной работе, новые сверху.
+ *
+ * Списка два, по одному на модуль, и это не повтор: у блок-схем и диаграмм UML
+ * своё хранение и свой список — иначе человек, пришедший за схемой алгоритма,
+ * разбирал бы её среди диаграмм классов.
+ */
+export function fetchDiagrams(module: Module, projectId: string): Promise<SavedDiagram[]> {
+  const params = { path: { project_id: projectId } } as const
+  return module === 'uml'
+    ? unwrap<SavedDiagram[]>(api.GET('/api/projects/{project_id}/uml', { params }))
+    : unwrap<SavedDiagram[]>(api.GET('/api/projects/{project_id}/flowcharts', { params }))
+}
+
+/** Одна сохранённая схема: XML, исходники и параметры — всё, чем её открыть. */
+export function fetchDiagram(
+  module: Module,
+  projectId: string,
+  runId: string,
+): Promise<FullDiagram> {
+  const params = { path: { project_id: projectId, run_id: runId } } as const
+  return module === 'uml'
+    ? unwrap<FullDiagram>(api.GET('/api/projects/{project_id}/uml/{run_id}', { params }))
+    : unwrap<FullDiagram>(api.GET('/api/projects/{project_id}/flowcharts/{run_id}', { params }))
+}
+
+/**
+ * Удалить схему из работы — записью журнала запусков.
+ *
+ * Своего маршрута удаления у схем нет намеренно: схема и её запись в журнале —
+ * одна вещь, и второй способ удалить означал бы порядок вызовов, который
+ * однажды переставят местами. XML при этом остаётся на томе: он может стоять
+ * значением тега, и снести его вслед за строкой значило бы выбить картинку из
+ * готового документа.
+ */
+export function deleteDiagram(projectId: string, runId: string): Promise<void> {
+  return unwrap<void>(
+    api.DELETE('/api/projects/{project_id}/runs/{run_id}', {
+      params: { path: { project_id: projectId, run_id: runId } },
+    }),
+  )
 }
 
 // ── проекты и их значения ────────────────────────────────────────────────────
@@ -112,12 +185,6 @@ export function fetchProject(projectId: string): Promise<ProjectCard> {
   )
 }
 
-export function fetchValues(projectId: string): Promise<Record<string, unknown>> {
-  return unwrap<{ values: Record<string, unknown> }>(
-    api.GET('/api/projects/{project_id}/values', { params: { path: { project_id: projectId } } }),
-  ).then((тело) => тело.values ?? {})
-}
-
 /** Значение тега рукой человека. Схема ложится сюда — оттуда её берёт сборка. */
 export function setValue(
   projectId: string,
@@ -130,18 +197,6 @@ export function setValue(
       body: value as unknown as Record<string, never>,
     }),
   )
-}
-
-/** Отобрать из значений проекта те, что схемы. Порядок — по ключу тега. */
-export function diagramsOf(project: ProjectCard, values: Record<string, unknown>): SavedDiagram[] {
-  const out: SavedDiagram[] = []
-  for (const [key, value] of Object.entries(values)) {
-    if (!value || typeof value !== 'object') continue
-    const тело = value as Record<string, unknown>
-    if (тело.type !== 'diagram') continue
-    out.push({ project, key, value: тело as DiagramValue })
-  }
-  return out.sort((a, b) => a.key.localeCompare(b.key, 'ru'))
 }
 
 // ── задание сборки Word ──────────────────────────────────────────────────────

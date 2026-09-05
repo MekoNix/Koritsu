@@ -15,6 +15,12 @@
  */
 
 export const keys = {
+  /**
+   * Сводка первого экрана (`GET /api/bootstrap`). Своим ключом, а не под
+   * `me`: сводка спрашивается один раз за загрузку, а её части дальше живут
+   * своими ключами, и сброс `me` не должен тянуть за собой ещё четыре ответа.
+   */
+  bootstrap: ['bootstrap'] as const,
   me: ['me'] as const,
   modules: ['modules'] as const,
   usage: ['usage'] as const,
@@ -51,6 +57,16 @@ export const keys = {
     pending: (id: string) => ['projects', 'pending', id] as const,
     materialText: (projectId: string, materialId: string) =>
       ['projects', 'material-text', projectId, materialId] as const,
+    /**
+     * Журнал запусков работы. Под корнем `projects.one`, как теги и значения:
+     * запуски принадлежат работе, и сброс работы обязан гасить их заодно —
+     * иначе созданный отчёт не появится в списке до перезагрузки страницы.
+     * Порядок входит в ключ: это разные ответы службы, а не разный вид одного.
+     */
+    runs: (projectId: string, sort: string) =>
+      ['projects', 'one', projectId, 'runs', sort] as const,
+    /** Шаблоны, приложенные к работе. Свои шаблоны — отдельный корень. */
+    projectTemplates: (projectId: string) => ['projects', 'one', projectId, 'templates'] as const,
   },
   // Область C: отчёты. Ключи начинаются с `projects`, а не со своего корня,
   // намеренно: теги и значения принадлежат проекту, и сброс проекта
@@ -106,10 +122,17 @@ export const keys = {
     all: ['diagrams'] as const,
     modes: ['diagrams', 'modes'] as const,
     themes: ['diagrams', 'themes'] as const,
-    /** Проекты всех пространств человека — из них собирается список схем. */
+    /** Проекты всех пространств человека — по ним собирается список схем. */
     projects: ['diagrams', 'projects'] as const,
-    /** Значения одного проекта: из них отбираются теги со схемами. */
-    values: (projectId: string) => ['diagrams', 'values', projectId] as const,
+    /**
+     * Сохранённые схемы одного модуля в одной работе. Модуль входит в ключ:
+     * у блок-схем и UML свои списки, и общий ключ показывал бы одному из них
+     * содержимое другого.
+     */
+    list: (module: string, projectId: string) => ['diagrams', 'list', module, projectId] as const,
+    /** Одна сохранённая схема: XML, исходники и параметры. */
+    one: (module: string, projectId: string, runId: string) =>
+      ['diagrams', 'one', module, projectId, runId] as const,
     /** Содержимое артефакта схемы — тот самый XML draw.io. */
     artifact: (projectId: string, artifactId: string) =>
       ['diagrams', 'artifact', projectId, artifactId] as const,

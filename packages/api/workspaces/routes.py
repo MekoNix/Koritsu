@@ -14,6 +14,7 @@ routes — `/api/workspaces`: список, создание, переимено
     already_member      409  этот человек уже участник
     last_owner          409  убрать или понизить последнего владельца
     unknown_role        400  роль не из списка
+    no_invite           404  отвечать не на что: приглашения нет
 
 Имена форм запроса (`WorkspaceNameIn`, `MemberIn`, `MemberRoleIn`) и имена
 операций (`operation_id`) — по-английски, как у аккаунтов и по той же причине:
@@ -21,6 +22,17 @@ routes — `/api/workspaces`: список, создание, переимено
 сайта. Когда они были русскими, генератор выписывал из них `____` —
 имя, которое ни набрать, ни отличить от соседнего. Имена самих обработчиков
 остались русскими: их наружу не видно, а читают их здесь.
+
+**Приглашение — это уведомление с двумя кнопками, а не молчаливое зачисление.**
+`POST …/members` заводит участие в состоянии `pending` и кладёт человеку строку
+в колокольчик (`notifications`); участником он становится, только ответив
+`POST …/members/{user_id}/accept`, а `…/decline` убирает строку участия вовсе.
+До ответа пространство для него не существует: `role_of` не видит `pending`, и
+любой запрос к нему получает те же 404, что и чужой.
+
+Отвечает на приглашение только тот, кого позвали, — иначе владелец мог бы
+согласиться за человека. Чужой `user_id` в пути отвечает 404, как и всё, чего
+спрашивающему видеть не положено.
 
 Корзина показывается тем же маршрутом с `?trash=true`, а не отдельным
 `/workspaces/trash`: отдельный путь пришлось бы объявлять раньше
@@ -36,13 +48,15 @@ from sqlalchemy import select
 from ..db import SessionDep
 from ..errors import ApiError
 from ..ids import check_id
+from ..notifications import service as уведомления
 from ..settings import Settings
 from .deps import (CurrentUser, emails_by_ids, nicknames_by_ids,
                    user_id_by_email)
 from .models import NAME_MAX, Workspace, WorkspaceMember
-from .service import (ALREADY_MEMBER, EDITOR, LAST_OWNER, NO_SUCH_USER, OWNER,
-                      check_role, create_personal, iso, personal_workspace,
-                      require_role, restore, role_of)
+from .service import (ACTIVE, ALREADY_MEMBER, EDITOR, LAST_OWNER, NO_INVITE,
+                      NO_SUCH_USER, OWNER, PENDING,
+                      check_role, create_personal, iso, membership,
+                      personal_workspace, require_role, restore, role_of)
 from .service import trash as в_корзину   # имя занято параметром запроса `trash`
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
@@ -87,9 +101,12 @@ def карточка(ws: Workspace, role: str) -> dict:
                 "ones in the trash instead. 401 unauthorized."))
 def список(s: SessionDep, user: CurrentUser, trash: bool = False) -> dict:
     """Свои пространства. `trash=true` — те, что лежат в корзине."""
+    # Только принятые участия: пространство, в которое человека позвали и он ещё
+    # не ответил, в списке не показывается — приглашение живёт в колокольчике.
     запрос = (select(Workspace, WorkspaceMember.role)
               .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
-              .where(WorkspaceMember.user_id == user.id))
+              .where(WorkspaceMember.user_id == user.id,
+                     WorkspaceMember.status == ACTIVE))
     запрос = запрос.where(Workspace.deleted_at.is_not(None) if trash
                           else Workspace.deleted_at.is_(None))
     # Личное первым: оно у человека одно и с него начинается любой сеанс.
@@ -113,7 +130,8 @@ def создать(тело: WorkspaceNameIn, s: SessionDep, user: CurrentUser) 
     ws = Workspace(name=тело.name.strip(), owner_id=user.id, personal=False)
     s.add(ws)
     s.flush()
-    s.add(WorkspaceMember(workspace_id=ws.id, user_id=user.id, role=OWNER))
+    s.add(WorkspaceMember(workspace_id=ws.id, user_id=user.id, role=OWNER,
+                          status=ACTIVE))
     s.flush()
     return карточка(ws, OWNER)
 
@@ -203,6 +221,10 @@ def участники(workspace_id: str, s: SessionDep, user: CurrentUser) -> d
 
     Чужих почт этим не выдаётся: список видят только участники того же
     пространства, а приглашали их по этой же почте.
+
+    `status` в каждой строке — `active` или `pending`: владелец обязан видеть,
+    кто уже в пространстве, а кто только позван и молчит. Без этого «позвал, а
+    его нет в списке» выглядело бы как потерянное приглашение.
     """
     ws = require_role(s, user.id, check_id(workspace_id, where="path.workspace_id"))
     строки = s.scalars(select(WorkspaceMember)
@@ -212,20 +234,30 @@ def участники(workspace_id: str, s: SessionDep, user: CurrentUser) -> d
     ники = nicknames_by_ids(s, кто)
     return {"members": [{"user_id": m.user_id, "nickname": ники.get(m.user_id),
                          "email": почты.get(m.user_id),
-                         "role": m.role, "created_at": iso(m.created_at)}
+                         "role": m.role, "status": m.status,
+                         "created_at": iso(m.created_at)}
                         for m in строки]}
 
 
 @router.post("/{workspace_id}/members", status_code=201,
-             summary="Add a member by email",
+             summary="Invite a member by email",
              operation_id="add_workspace_member",
              description=(
-                 "Invites a person by email address. Owner only. "
+                 "Invites a person by email address: the membership is created "
+                 "as `pending` and a `workspace_invite` notification is sent to "
+                 "them. They join only after accepting it. Owner only. "
                  "400 unknown_role, 403 forbidden, 404 no_such_user, "
                  "409 already_member."))
 def добавить(workspace_id: str, тело: MemberIn, s: SessionDep,
              user: CurrentUser) -> dict:
-    """Позвать человека по почте. Только владелец."""
+    """Позвать человека по почте. Только владелец.
+
+    Участия здесь ещё нет — есть приглашение: строка `pending` и уведомление с
+    кнопками «принять» и «отклонить». Повторное приглашение отвергается тем же
+    `already_member`, что и попытка позвать участника: с точки зрения владельца
+    оба случая — «этому человеку уже отправлено», и разводить их значило бы
+    рассказывать, ответил ли тот на приглашение.
+    """
     ws = require_role(s, user.id, check_id(workspace_id, where="path.workspace_id"),
                       OWNER)
     роль = check_role(тело.role)
@@ -235,12 +267,80 @@ def добавить(workspace_id: str, тело: MemberIn, s: SessionDep,
         # чужого аккаунта этим не выдаётся — спрашивающий и так назвал почту.
         raise ApiError(NO_SUCH_USER, "No user with this email", 404,
                        where="body.email")
-    if role_of(s, кого, ws.id) is not None:
+    if membership(s, кого, ws.id) is not None:
         raise ApiError(ALREADY_MEMBER, "Already a member of this workspace", 409,
                        where="body.email")
-    s.add(WorkspaceMember(workspace_id=ws.id, user_id=кого, role=роль))
+    s.add(WorkspaceMember(workspace_id=ws.id, user_id=кого, role=роль,
+                          status=PENDING))
     s.flush()
-    return {"user_id": кого, "role": роль}
+    уведомления.пригласили(s, user_id=кого, workspace_id=ws.id,
+                           workspace_name=ws.name, role=роль,
+                           from_nickname=getattr(user, "nickname", None))
+    return {"user_id": кого, "role": роль, "status": PENDING}
+
+
+@router.post("/{workspace_id}/members/{user_id}/accept",
+             operation_id="accept_workspace_invite",
+             summary="Accept an invitation to a workspace",
+             description=(
+                 "Accepts your own pending invitation: the membership becomes "
+                 "active and the invitation notification is removed. Only the "
+                 "invited person may call it. 400 invalid_id, 404 no_invite."))
+def принять(workspace_id: str, user_id: str, s: SessionDep,
+            user: CurrentUser) -> dict:
+    """Принять приглашение. Отвечает только тот, кого позвали."""
+    ws, участие = _приглашение(s, user, workspace_id, user_id)
+    участие.status = ACTIVE
+    s.flush()
+    _убрать_приглашения(s, user.id, ws.id)
+    return карточка(ws, участие.role)
+
+
+@router.post("/{workspace_id}/members/{user_id}/decline",
+             operation_id="decline_workspace_invite",
+             summary="Decline an invitation to a workspace",
+             description=(
+                 "Declines your own pending invitation: the membership row and "
+                 "the invitation notification are removed. Only the invited "
+                 "person may call it. 400 invalid_id, 404 no_invite."))
+def отклонить(workspace_id: str, user_id: str, s: SessionDep,
+              user: CurrentUser) -> dict:
+    """Отклонить приглашение: строка участия уходит совсем.
+
+    Уходит, а не остаётся отказом: отказ, лежащий в таблице, не даст позвать
+    человека второй раз («уже участник»), а передумать после «нет» — обычное
+    дело.
+    """
+    ws, участие = _приглашение(s, user, workspace_id, user_id)
+    s.delete(участие)
+    s.flush()
+    _убрать_приглашения(s, user.id, ws.id)
+    return {"declined": ws.id}
+
+
+def _приглашение(s, user, workspace_id: str, user_id: str):
+    """Пространство и своё не принятое приглашение в него — или 404.
+
+    Один отказ на все беды (нет пространства, нет строки участия, она уже
+    принята, в пути чужой человек) — то же правило, что и у `require_role`:
+    спрашивающий не вправе узнать, какая из них случилась. Разные ответы
+    превратили бы этот маршрут в способ перебрать чужие пространства.
+    """
+    ид = check_id(workspace_id, where="path.workspace_id")
+    кого = check_id(user_id, where="path.user_id")
+    ws = s.get(Workspace, ид)
+    участие = membership(s, кого, ид) if ws is not None else None
+    if (ws is None or участие is None or кого != user.id
+            or участие.status != PENDING or ws.deleted_at is not None):
+        raise ApiError(NO_INVITE, "No pending invitation to this workspace", 404,
+                       where="path.workspace_id")
+    return ws, участие
+
+
+def _убрать_приглашения(s, user_id: str, workspace_id: str) -> None:
+    """Убрать строки колокольчика об этом приглашении: отвечать больше не на что."""
+    for строка in уведомления.приглашения(s, user_id, workspace_id):
+        уведомления.убрать(s, строка)
 
 
 @router.patch("/{workspace_id}/members/{user_id}",
@@ -282,12 +382,18 @@ def убрать(workspace_id: str, user_id: str, s: SessionDep,
     _последний_владелец(s, ws, участник, новая=None)
     s.delete(участник)
     s.flush()
+    # Позванного убрали, не дождавшись ответа, — кнопки «принять» в его
+    # колокольчике не должны пережить приглашение.
+    _убрать_приглашения(s, кого, ws.id)
     return {"removed": кого}
 
 
 def _последний_владелец(s, ws: Workspace, участник: WorkspaceMember,
                         *, новая: str | None) -> None:
     """Не дать пространству остаться без владельца.
+
+    Считаются только принятые участия: позванный в владельцы, но не ответивший,
+    пространством пока не распоряжается и удержать его от безвластия не может.
 
     Пространство без `owner` — это пространство, которое никто не может ни
     удалить, ни переименовать, ни позвать в него человека: все три маршрута
@@ -297,6 +403,7 @@ def _последний_владелец(s, ws: Workspace, участник: Wor
         return
     владельцев = s.scalar(select(WorkspaceMember.user_id).where(
         WorkspaceMember.workspace_id == ws.id, WorkspaceMember.role == OWNER,
+        WorkspaceMember.status == ACTIVE,
         WorkspaceMember.user_id != участник.user_id))
     if владельцев is None:
         raise ApiError(LAST_OWNER, "A workspace must keep at least one owner",

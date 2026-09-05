@@ -28,19 +28,19 @@ import * as RadixDialog from '@radix-ui/react-dialog'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
-import { useCurrentWorkspace, useMe, useUsage } from '@/api/hooks'
+import { useCurrentWorkspace, useMe } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { hotkeyLabel, useActionHotkey, useHotkeyBinding } from '@/lib/hotkeys'
 import { Button, EmptyState, Icon, Select, Textarea } from '@/ui'
 import { useProject, useProjects } from '@/features/projects/data'
 import { useDefaultEndpoint, useProviders } from '@/features/reports/data'
-import { ModelPicker, PriceHint } from '@/features/reports/runControls'
+import { ModelPicker } from '@/features/reports/runControls'
 
 import { AgentHistory } from './AgentHistory'
 import { AgentRunView } from './AgentRunView'
 import { closeAgentPanel, openAgentPanel, toggleAgentPanel, useAgentPanelOpen } from './panelStore'
 import { projectFromPath } from './context'
-import { AGENT, TASK_MAX } from './types'
+import { TASK_MAX } from './types'
 import { useAgentRun, type AgentRunState } from './useAgentRun'
 
 export function AgentPanel() {
@@ -152,7 +152,6 @@ function PanelBody({
   const t = useT()
   const project = useProject(projectId ?? undefined)
   const providers = useProviders()
-  const usage = useUsage()
   const поле = useRef<HTMLTextAreaElement>(null)
 
   // Пресет по умолчанию: выбор человека из профиля, а если его нет — правило
@@ -206,7 +205,6 @@ function PanelBody({
             onChange={onEndpoint}
             disabled={занято}
           />
-          <PriceHint kind={AGENT} usage={usage.data} />
         </div>
 
         <Textarea

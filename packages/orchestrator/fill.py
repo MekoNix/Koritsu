@@ -160,7 +160,7 @@ def fill_tag(project, key: str, *, endpoint: str, run=None, chunks=(),
 
 def fill_report(project, *, endpoint: str, keys=None, chunks=(), effort=None,
                 cancel=None, max_tokens=None, on_tag=None, on_text=None,
-                overwrite: bool = False) -> RunResult:
+                overwrite: bool = False, prompt: str = "") -> RunResult:
     """Весь отчёт одним потоковым вызовом; готовые теги сохраняются по ходу.
 
     `on_text(кусок)` зовётся на каждый кусок текста потока, до разбора. Тот
@@ -182,6 +182,12 @@ def fill_report(project, *, endpoint: str, keys=None, chunks=(), effort=None,
     выбрасывается из отбора ДО сборки схемы, то есть модель о нём даже не
     спрашивают. Из промпта он при этом не исчезает — соседом он поехать обязан,
     иначе остальные теги окажутся с ним рассогласованы.
+
+    `prompt` — общая подсказка на весь прогон: одно указание сразу всем тегам,
+    которое человек пишет рядом с кнопкой «заполнить всё». В манифест она не
+    попадает намеренно: манифест описывает бланк и живёт дольше прогона, а это
+    — про сегодняшний запуск. Место ей в хвосте запроса (`request_part`), где
+    она не рушит кэшируемый префикс.
     """
     manifest = project.manifest()
     wanted = schema_mod.fillable(manifest, keys=keys)
@@ -203,7 +209,7 @@ def fill_report(project, *, endpoint: str, keys=None, chunks=(), effort=None,
     schema = schema_mod.report_schema(manifest, keys=wanted)
     run = project.start_run(level=2, endpoint=endpoint)
     parts = prompt_mod.build_parts(project, keys=wanted, level=2, manifest=manifest,
-                                   chunks=chunks)
+                                   chunks=chunks, prompt=prompt)
     _seal(project, run, parts)
 
     out = RunResult(run=run, problems=list(kept))

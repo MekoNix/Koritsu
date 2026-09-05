@@ -360,16 +360,35 @@ def test_чужое_не_видно_а_приглашённый_видит_но_
     чужое_место = шаг(клиент, отказы, "get", f"/api/workspaces/{ws_id}")
     assert чужое_место.status_code == 404
 
-    # Хозяин зовёт его читателем.
+    # Хозяин зовёт его читателем: это приглашение, а не зачисление.
     шаг(клиент, отказы, "post", "/api/auth/logout")
     войти_обратно(клиент, отказы, "хозяин@пример.рф")
     позван = шаг(клиент, отказы, "post", f"/api/workspaces/{ws_id}/members",
                  json={"email": "сосед@пример.рф", "role": "viewer"})
     assert позван.status_code == 201, позван.text
+    assert позван.json()["status"] == "pending"
 
-    # Читает — но не пишет.
+    # Приглашение лежит в колокольчике позванного, и до ответа пространства для
+    # него по-прежнему нет.
     шаг(клиент, отказы, "post", "/api/auth/logout")
     войти_обратно(клиент, отказы, "сосед@пример.рф")
+    колокольчик = шаг(клиент, отказы, "get", "/api/notifications")
+    приглашения = [n for n in колокольчик.json()["notifications"]
+                   if n["kind"] == "workspace_invite"]
+    assert len(приглашения) == 1, колокольчик.text
+    assert приглашения[0]["data"]["workspace_id"] == ws_id
+    ещё_чужое = шаг(клиент, отказы, "get", f"/api/projects/{проект['id']}")
+    assert ещё_чужое.status_code == 404
+
+    принято = шаг(клиент, отказы, "post",
+                  f"/api/workspaces/{ws_id}/members/{сосед['id']}/accept")
+    assert принято.status_code == 200, принято.text
+    # Ответ уносит строку колокольчика: отвечать больше не на что.
+    после = шаг(клиент, отказы, "get", "/api/notifications")
+    assert [n for n in после.json()["notifications"]
+            if n["kind"] == "workspace_invite"] == []
+
+    # Читает — но не пишет.
     читает = шаг(клиент, отказы, "get", f"/api/projects/{проект['id']}")
     assert читает.status_code == 200, читает.text
     значения = шаг(клиент, отказы, "get",

@@ -29,7 +29,7 @@ from .model import (Blocks, Code, Diagram, Formula, Image, Markdown, PageBreak, 
                     HokokuError, Text)
 from .styles import get_style
 from .safety import DocxValidationError, safe_join
-from .tags import find_tags, norm_key
+from .tags import find_comments, find_tags, norm_key
 from .walker import ParaLoc, iter_paragraphs, marked_paragraphs, open_document
 
 DXA_PER_CM = 567
@@ -100,6 +100,7 @@ def render(template, values: dict, output=None, *,
     for loc in iter_paragraphs(doc):
         if loc.paragraph._p not in hot:
             continue
+        _strip_comments(loc)
         _process_paragraph(ctx, loc, values)
         _process_static_refs(ctx, loc)
     result.unfilled = sorted(set(result.unfilled))
@@ -163,6 +164,47 @@ def _process_static_refs(ctx: _Ctx, loc: ParaLoc):
         _inline_replace(spans, m.start(), m.end(), "")
         _inline_insert_spans(ctx, para, spans, m.start(), md.parse_inline(m.group(0)), rpr)
         spans = _span_map(runs)
+
+
+def _strip_comments(loc: ParaLoc) -> None:
+    """Комментарий `{# … #}` — вон из документа, до подстановки значений.
+
+    Комментарий пишет автор бланка для того, кто бланк заполняет («4–6
+    предложений: итог квартала»), и в готовом отчёте он печатался бы обычным
+    текстом: движок его не знает, а Word — тем более. Вырезается он здесь, а не
+    вместе с тегом, потому что стоит комментарий чаще всего **отдельным**
+    абзацем: тега в нём нет, и до `_process_paragraph` такой абзац не доходит.
+
+    Абзац, в котором кроме комментария ничего не было, удаляется целиком —
+    иначе на его месте остаётся пустая строка, то есть тот же след, только
+    невидимый. Единственный абзац ячейки таблицы при этом остаётся: ячейка без
+    абзаца — сломанный DOCX (то же правило, что у подстановки блочных значений).
+
+    Само задание из комментария не теряется: манифест забирает его подсказкой к
+    ближайшему следующему тегу (`manifest_from_template`).
+    """
+    para = loc.paragraph
+    p_elem = para._p
+    if p_elem.getparent() is None:
+        return
+    text = loc.text()
+    if "{#" not in text:
+        return
+    matches = find_comments(text)
+    if not matches:
+        return
+    runs = loc.runs()
+    spans = _span_map(runs)
+    for m in reversed(matches):
+        _inline_replace(spans, m.start(), m.end(), "")
+        spans = _span_map(runs)
+    if _has_content(p_elem):
+        return
+    parent = p_elem.getparent()
+    siblings = [c for c in parent if c.tag == qn("w:p")]
+    if parent.tag == qn("w:tc") and len(siblings) == 1:
+        return
+    parent.remove(p_elem)
 
 
 def _process_paragraph(ctx: _Ctx, loc: ParaLoc, values: dict):

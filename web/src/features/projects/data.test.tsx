@@ -87,7 +87,9 @@ describe('заведение работы', () => {
     // Тип многочастного тела ставит сам браузер — вместе с границей.
     expect(request.headers.get('Content-Type')).toMatch(/^multipart\/form-data; boundary=/)
 
-    expect(поля()).toEqual(['workspace_id', 'name', 'template'])
+    // `module` едет всегда: у работы есть поле «каким модулем она делается», и
+    // пустая строка в нём значит «не назначен» — это состояние, а не пропуск.
+    expect(поля()).toEqual(['workspace_id', 'name', 'module', 'template'])
     expect(файл('template')?.name).toBe('шаблон.docx')
   })
 
@@ -97,7 +99,7 @@ describe('заведение работы', () => {
 
     await result.current.mutateAsync({ workspaceId: 'ws-1', name: 'Без шаблона' })
 
-    expect(поля()).toEqual(['workspace_id', 'name'])
+    expect(поля()).toEqual(['workspace_id', 'name', 'module'])
   })
 })
 

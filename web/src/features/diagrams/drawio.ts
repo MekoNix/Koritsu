@@ -1,5 +1,5 @@
 /**
- * drawio — разговор с встроенным редактором `embed.diagrams.net`.
+ * drawio — разговор с draw.io: во встроенном кадре и в отдельном окне.
  *
  * Схема показывается не картинкой, а настоящим draw.io в
  * `<iframe>`. Общаются с ним не адресом, а сообщениями: страница и кадр стоят
@@ -21,13 +21,23 @@
  *
  * `autosave` включается полем в самом `load`, а не параметром адреса: адрес
  * читается один раз при подъёме кадра, а грузим мы в него схему много раз.
+ *
+ * **Схема никогда не едет в адресе.** Прежде «открыть в draw.io» складывало XML
+ * в сам адрес (`#R…`) — и на длинной схеме кнопка гасла: длину адреса режут и
+ * браузер, и сервер draw.io, а обрезанный XML открывается пустым холстом, то
+ * есть молча врёт. Поэтому и отдельное окно получает схему тем же сообщением,
+ * что и кадр: адрес остаётся коротким и одинаковым, а длина схемы перестаёт
+ * что-либо значить.
  */
 
 /** Домен встроенного редактора. Сообщения с других доменов не читаются вовсе. */
 export const EMBED_ORIGIN = 'https://embed.diagrams.net'
 
-/** Домен обычного draw.io — туда уходит кнопка «Открыть в draw.io». */
+/** Домен обычного draw.io — туда уходит «Редактировать в draw.io». */
 export const APP_ORIGIN = 'https://app.diagrams.net'
+
+/** Домен просмотрщика — туда уходит «Просмотреть диаграмму». */
+export const VIEWER_ORIGIN = 'https://viewer.diagrams.net'
 
 /**
  * Пустая схема. Кадру нужно что-то показать до первого предпросмотра: без
@@ -36,14 +46,6 @@ export const APP_ORIGIN = 'https://app.diagrams.net'
 export const EMPTY_XML =
   '<mxGraphModel dx="800" dy="600" grid="1" page="1">' +
   '<root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel>'
-
-/**
- * Сколько знаков XML ещё влезает в адрес `#R…`. Ограничение не наше: длину
- * адреса режут и браузер, и сервер draw.io, а обрезанный XML открывается
- * пустым холстом — то есть молча врёт. Поэтому длинную схему в ссылку не
- * кладём вовсе и говорим об этом словами.
- */
-export const OPEN_URL_MAX = 100_000
 
 export type EmbedOptions = {
   /** Тёмный ли сейчас сайт: у редактора своя тема, и она обязана совпадать. */
@@ -57,7 +59,7 @@ export type EmbedOptions = {
  * `embed=1&proto=json` — протокол сообщений; `spin=1` — своя заставка на время
  * подъёма; `libraries=0` — без панели фигур (схему рисует служба, а не
  * человек с нуля); `noSaveBtn`/`noExitBtn` — кнопок «Сохранить» и «Выйти» у
- * редактора нет: сохранение у нас своё, в проект, и вторая кнопка с тем же
+ * редактора нет: схема сохраняется в работу сама, и вторая кнопка с тем же
  * словом означала бы два разных сохранения на одном экране.
  */
 export function embedUrl({ dark, lang = 'ru' }: EmbedOptions): string {
@@ -74,6 +76,51 @@ export function embedUrl({ dark, lang = 'ru' }: EmbedOptions): string {
     lang,
   })
   return `${EMBED_ORIGIN}/?${params.toString()}`
+}
+
+/** Как часто проверяем, не закрыли ли отдельное окно. */
+const ПРОВЕРКА_ОКНА_МС = 2000
+
+/** Что делают в отдельном окне: правят схему или смотрят её. */
+export type DrawioWindow = 'edit' | 'view'
+
+/** Чьи сообщения слушать у окна такого вида. */
+export function windowOrigin(kind: DrawioWindow): string {
+  return kind === 'edit' ? APP_ORIGIN : VIEWER_ORIGIN
+}
+
+export type WindowOptions = EmbedOptions & { title?: string }
+
+/**
+ * Адрес отдельного окна draw.io: правки — на `app.diagrams.net`, просмотр — на
+ * `viewer.diagrams.net`.
+ *
+ * Схемы в адресе нет: она уезжает сообщением после того, как окно скажет
+ * `init` (см. шапку модуля). Поэтому адрес не зависит от длины схемы и одинаков
+ * для схемы в три блока и в три тысячи.
+ *
+ * Правки в окне — полноценный draw.io: панель фигур включена (`libraries=1`), в
+ * отличие от кадра на странице. Просмотр — `lightbox`: там нечего править, и
+ * панели инструментов только мешали бы читать.
+ */
+export function drawioWindowUrl(
+  kind: DrawioWindow,
+  { dark, lang = 'ru', title = 'koritsu' }: WindowOptions,
+): string {
+  const общее = {
+    embed: '1',
+    proto: 'json',
+    spin: '1',
+    dark: dark ? '1' : '0',
+    lang,
+    title,
+  }
+  const params = new URLSearchParams(
+    kind === 'edit'
+      ? { ...общее, libraries: '1', noSaveBtn: '1', saveAndExit: '0' }
+      : { ...общее, lightbox: '1', edit: '_blank' },
+  )
+  return `${windowOrigin(kind)}/?${params.toString()}`
 }
 
 /** Сообщение «покажи вот этот XML». `autosave` — чтобы правки возвращались нам. */
@@ -121,13 +168,63 @@ export function parseEmbedEvent(raw: unknown): EmbedEvent | null {
 }
 
 /**
- * Ссылка «Открыть в draw.io»: схема едет в самом адресе (`#R` — сырой XML).
+ * Открыть схему в отдельном окне draw.io. → открылось ли.
  *
- * Слишком длинная схема — `null`, а не обрезанная ссылка: см. `OPEN_URL_MAX`.
+ * Схема уезжает туда сообщением, когда окно отзовётся, а не адресом — иначе
+ * длинная схема не открывалась бы вовсе (см. шапку модуля). Отсюда два
+ * следствия, которых у обычной ссылки нет:
+ *
+ * * окно открывается **без** `noopener`: без ссылки на окно ему нечего послать.
+ *   Плата известная и та же, что у встроенного кадра, — чужая страница знает
+ *   про наше окно; отдаём мы ей ровно то, что и так открыто в кадре на этой же
+ *   странице, а до нашей cookie и нашего DOM ей не достать по правилу
+ *   происхождения;
+ * * `window.open` обязан случиться **прямо в обработчике нажатия**, иначе
+ *   браузер сочтёт окно всплывающим и закроет его. Поэтому здесь нет ни одного
+ *   `await` до открытия.
+ *
+ * Правки из окна возвращаются тем же `autosave`, что и из кадра: человек,
+ * подвинувший блок в большом редакторе, вправе ждать, что «скачать XML» отдаст
+ * подвинутое. Слушатель снимается, когда окно закрыли: `message` слышит вся
+ * страница, и забытый слушатель на каждое нажатие — это утечка, растущая
+ * ровно от того, что человек часто пользуется кнопкой.
  */
-export function drawioOpenUrl(xml: string, title = 'koritsu'): string | null {
-  if (!xml) return null
-  const encoded = encodeURIComponent(xml)
-  if (encoded.length > OPEN_URL_MAX) return null
-  return `${APP_ORIGIN}/?title=${encodeURIComponent(title)}#R${encoded}`
+export function openDrawioWindow(
+  kind: DrawioWindow,
+  xml: string,
+  options: WindowOptions,
+  onEdited?: (xml: string) => void,
+): boolean {
+  const origin = windowOrigin(kind)
+  const окно = window.open(drawioWindowUrl(kind, options), '_blank')
+  if (!окно) return false
+
+  const сторож = window.setInterval(() => {
+    if (окно.closed) отписаться()
+  }, ПРОВЕРКА_ОКНА_МС)
+
+  function отписаться() {
+    window.clearInterval(сторож)
+    window.removeEventListener('message', слушать)
+  }
+
+  function слушать(событие: MessageEvent) {
+    if (событие.origin !== origin || событие.source !== окно) return
+    const весть = parseEmbedEvent(событие.data)
+    if (!весть) return
+    if (весть.event === 'init') {
+      окно?.postMessage(loadMessage(xml), origin)
+      return
+    }
+    if (весть.event === 'exit') {
+      отписаться()
+      return
+    }
+    if ((весть.event === 'autosave' || весть.event === 'save') && весть.xml) {
+      onEdited?.(весть.xml)
+    }
+  }
+
+  window.addEventListener('message', слушать)
+  return true
 }

@@ -3,7 +3,16 @@
   "jobFailed": "Задание не выполнено",
   "jobCancelled": "Задание отменено",
   "limitExhausted": "Месячный лимит исчерпан",
+  "workspaceInvite": "Приглашение в пространство",
   "download": "Скачать",
+  "delete": "Убрать уведомление",
+  "invite": {
+    "title": "Приглашение в «{name}»",
+    "from": "{who} зовёт вас — {role}",
+    "accept": "Принять",
+    "decline": "Отклонить",
+    "fromUnknown": "Приглашение — {role}"
+  },
   "kind": {
     "parse": "Разбор файла",
     "build": "Сборка документа",
@@ -11,8 +20,8 @@
     "fill_tag": "Заполнение тега",
     "fill_report": "Заполнение отчёта",
     "agent": "Агент",
-    "kadai_run": "Задание",
-    "kadai_rework": "Переделка задания",
+    "kadai_run": "Решение задачи",
+    "kadai_rework": "Переделка решения",
     "probe": "Проверка"
   },
   "widget": {

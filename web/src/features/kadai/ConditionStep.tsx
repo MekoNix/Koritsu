@@ -22,7 +22,7 @@
  * — это по построению другой материал. Прежний остаётся в описи: по нему видно,
  * что именно было распознано, и подменять эту память нельзя.
  */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 import { errorText } from '@/api'
 import { useT } from '@/i18n'
@@ -59,11 +59,14 @@ export function ConditionStep({
   const [черновик, setЧерновик] = useState('')
   const [беда, setБеда] = useState<string | null>(null)
 
-  // Черновик заводится из распознанного, а не из пустоты: правят текст, а не
-  // пишут его заново.
-  useEffect(() => {
-    if (правим && !черновик) setЧерновик(текст.data?.text ?? '')
-  }, [правим, черновик, текст.data])
+  // Черновик заводится из распознанного один раз — в момент входа в правку, а
+  // не наблюдением за пустотой поля. Наблюдение выглядело безобиднее и делало
+  // поле неочищаемым: стёртый текст тут же считался «черновика ещё нет» и
+  // подставлялся заново, так что Ctrl+A и Delete не давали ничего.
+  function править() {
+    setЧерновик(текст.data?.text ?? '')
+    setПравим(true)
+  }
 
   if (!material) {
     return (
@@ -167,7 +170,9 @@ export function ConditionStep({
             >
               {t('common.action.cancel')}
             </Button>
-            <span className="text-xs text-muted">{t('kadai.condition.saveHint')}</span>
+            <span className="text-xs text-muted">
+              {черновик.trim() ? t('kadai.condition.saveHint') : t('kadai.condition.emptyDraft')}
+            </span>
           </>
         ) : (
           <>
@@ -183,8 +188,8 @@ export function ConditionStep({
             <Button
               variant="secondary"
               size="sm"
-              disabled={disabled}
-              onClick={() => setПравим(true)}
+              disabled={disabled || текст.isPending}
+              onClick={править}
             >
               <Icon name="edit" size={14} />
               {t('kadai.condition.fix')}

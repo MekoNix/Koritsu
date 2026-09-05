@@ -39,7 +39,7 @@ from api.materials import upload
 from api.materials.routes import MATERIAL_ID_RE
 
 from .c_fixtures import (docx_байты, войти, завести, клиент, личное_id,  # noqa: F401
-                         создать_проект, сосед, хозяин)
+                         позвать, создать_проект, сосед, хозяин)
 from .d_fixtures import докрутить, дождаться, загрузить, отдать
 
 ПУТЬ = "/api/projects/{}/materials"
@@ -85,13 +85,12 @@ def пустой_проект(клиент, хозяин):
 
 
 @pytest.fixture
-def общее(клиент, хозяин, сосед):
+def общее(app, клиент, хозяин, сосед):
     """Не личное пространство с соседом-читателем. → (id пространства, проект)."""
     ws = клиент.post("/api/workspaces", json={"name": "общее"})
     assert ws.status_code == 201, ws.text
     ws_id = ws.json()["id"]
-    добавлен = клиент.post(f"/api/workspaces/{ws_id}/members",
-                           json={"email": сосед.email, "role": "viewer"})
+    добавлен = позвать(app, клиент, ws_id, сосед, "viewer")
     assert добавлен.status_code == 201, добавлен.text
     return ws_id, создать_проект(клиент, ws_id, name="общая работа")
 

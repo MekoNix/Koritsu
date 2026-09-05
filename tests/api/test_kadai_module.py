@@ -25,7 +25,7 @@ import pytest
 from api import Settings
 
 from .c_fixtures import (docx_байты, войти, завести, клиент, личное_id,  # noqa: F401
-                         создать_проект, сосед, хозяин)
+                         позвать, создать_проект, сосед, хозяин)
 from .d_fixtures import ид_материала, отдать
 
 СТАДИИ = "/api/kadai/stages"
@@ -117,8 +117,7 @@ def test_читателю_условие_назвать_нельзя(app, кли
     """Тот же разрез, что у значений: смотреть — `viewer`, менять — `editor`."""
     ws = клиент.post("/api/workspaces", json={"name": "общее"})
     ws_id = ws.json()["id"]
-    добавлен = клиент.post(f"/api/workspaces/{ws_id}/members",
-                           json={"email": сосед.email, "role": "viewer"})
+    добавлен = позвать(app, клиент, ws_id, сосед, "viewer")
     assert добавлен.status_code == 201, добавлен.text
     общий = создать_проект(клиент, ws_id, name="общая работа")
     ид = ид_материала(app, клиент, общий, "условие.txt", УСЛОВИЕ_ТЕКСТОМ)
@@ -225,8 +224,7 @@ def test_пожелания_не_заводят_работу(клиент, пр�
 def test_читателю_пожелания_писать_нельзя(app, клиент, хозяин, сосед):
     """Тот же разрез, что у условия: смотреть — `viewer`, менять — `editor`."""
     ws_id = клиент.post("/api/workspaces", json={"name": "общее"}).json()["id"]
-    клиент.post(f"/api/workspaces/{ws_id}/members",
-                json={"email": сосед.email, "role": "viewer"})
+    позвать(app, клиент, ws_id, сосед, "viewer")
     общий = создать_проект(клиент, ws_id, name="общая работа")
 
     войти(app, сосед)
@@ -302,8 +300,7 @@ def test_заново_ничего_не_стоит(app, клиент, проек
 def test_читателю_заново_нельзя(app, клиент, хозяин, сосед):
     """Переигрывать работу — правка, а не чтение."""
     ws_id = клиент.post("/api/workspaces", json={"name": "общее"}).json()["id"]
-    клиент.post(f"/api/workspaces/{ws_id}/members",
-                json={"email": сосед.email, "role": "viewer"})
+    позвать(app, клиент, ws_id, сосед, "viewer")
     общий = создать_проект(клиент, ws_id, name="общая работа")
     войти(app, сосед)
     assert клиент.post(ЗАНОВО.format(общий["id"]), json={}).status_code == 403

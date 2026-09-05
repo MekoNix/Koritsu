@@ -113,7 +113,7 @@ export interface paths {
         };
         /**
          * The signed-in user
-         * @description Returns the account behind the session cookie. 401 unauthenticated.
+         * @description Returns the account behind the session cookie, plus admin_domain: the host the admin area lives on, or an empty string when it is not split off a subdomain. 401 unauthenticated.
          */
         get: operations["get_current_user"];
         put?: never;
@@ -274,10 +274,50 @@ export interface paths {
         get: operations["list_workspace_members"];
         put?: never;
         /**
-         * Add a member by email
-         * @description Invites a person by email address. Owner only. 400 unknown_role, 403 forbidden, 404 no_such_user, 409 already_member.
+         * Invite a member by email
+         * @description Invites a person by email address: the membership is created as `pending` and a `workspace_invite` notification is sent to them. They join only after accepting it. Owner only. 400 unknown_role, 403 forbidden, 404 no_such_user, 409 already_member.
          */
         post: operations["add_workspace_member"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{workspace_id}/members/{user_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept an invitation to a workspace
+         * @description Accepts your own pending invitation: the membership becomes active and the invitation notification is removed. Only the invited person may call it. 400 invalid_id, 404 no_invite.
+         */
+        post: operations["accept_workspace_invite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{workspace_id}/members/{user_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline an invitation to a workspace
+         * @description Declines your own pending invitation: the membership row and the invitation notification are removed. Only the invited person may call it. 400 invalid_id, 404 no_invite.
+         */
+        post: operations["decline_workspace_invite"];
         delete?: never;
         options?: never;
         head?: never;
@@ -317,13 +357,13 @@ export interface paths {
         };
         /**
          * List projects of a workspace
-         * @description Lists the projects of one workspace; `trash=true` lists the ones in the trash instead. 400 invalid_id, 404 not_found.
+         * @description Lists the projects of one workspace; `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found.
          */
         get: operations["list_projects"];
         put?: never;
         /**
          * Create a project in a workspace
-         * @description Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.
+         * @description Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. `module` says which module the work is done with (from GET /api/modules) and may be left out. Editor role in the workspace. 400 bad_template, 400 unknown_module, 403 forbidden, 404 not_found, 409 project_exists.
          */
         post: operations["create_project"];
         delete?: never;
@@ -354,8 +394,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Rename a project
-         * @description Renames a project, in the database and in its settings on the volume. Editor role. 403 forbidden, 404 not_found, 409 in_trash, 422 validation_failed.
+         * Rename a project or say which module it is done with
+         * @description Changes the name of a project, in the database and in its settings on the volume, and the module it is done with. Both fields are optional; an empty body changes nothing. Editor role. 400 unknown_module, 403 forbidden, 404 not_found, 409 in_trash, 422 validation_failed.
          */
         patch: operations["rename_project"];
         trace?: never;
@@ -389,7 +429,7 @@ export interface paths {
         };
         /**
          * Tags of the project template
-         * @description Every tag of the template, in the order they appear in the document: key, label, type, whether it is required, and whether it is filled, with the source and the number of the current version when it is. Tags no longer present in the template are left out. 400 invalid_id, 404 not_found, 409 in_trash.
+         * @description Every tag of the template, in the order they appear in the document: key, label, type, whether it is required, the prompt the model is given for it, and whether it is filled, with the source and the number of the current version when it is. Tags no longer present in the template are left out. `constructs` lists the Jinja constructions of the template the builder does not understand (`{% for %}` and the like): they stay in the document as text and do not break the build. 400 invalid_id, 404 not_found, 409 in_trash.
          */
         get: operations["list_project_tags"];
         put?: never;
@@ -398,6 +438,26 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tags/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set what the model is told to write into one tag
+         * @description Writes the prompt of one tag into the manifest of the work. It is the same text a template comment fills in when the template carries one, and it outlives a single run, unlike the run-wide prompt sent with fill_report. An empty string clears it. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 404 unknown_tag, 409 in_trash.
+         */
+        patch: operations["set_tag_prompt"];
         trace?: never;
     };
     "/api/projects/{project_id}/values": {
@@ -435,6 +495,50 @@ export interface paths {
         put: operations["set_project_value"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run journal of a project
+         * @description Everything that has been started in this project: which module, when, under what name, and what it produced. `module` narrows the list down to one module; `sort` orders it: newest first by default, then oldest, by name or by module. Viewer role. 400 invalid_id, 400 unknown_module, 404 not_found.
+         */
+        get: operations["list_project_runs"];
+        put?: never;
+        /**
+         * Write down a module run of this project
+         * @description Adds one entry to the run journal of a project: which module was started, what it is called and what it produced. The answer carries `n`, the sequence number of this run of this module in this project, which the interface uses to name a run that was left unnamed. Editor role. 400 invalid_id, 400 unknown_module, 403 forbidden, 404 not_found.
+         */
+        post: operations["create_project_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove one entry from the run journal
+         * @description Removes a run from the journal of the project: this is how a diagram is deleted from a work. What the run produced stays on the volume: an artifact is addressed by its content and may be the value of a tag, so deleting it here would knock a picture out of a finished document. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        delete: operations["delete_project_run"];
         options?: never;
         head?: never;
         patch?: never;
@@ -796,6 +900,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/notifications/{notification_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete one notification
+         * @description Deletes one notification of yours for good. The job it announced and its files stay where they were. 400 invalid_id, 404 not_found.
+         */
+        delete: operations["delete_notification"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifications/read-all": {
         parameters: {
             query?: never;
@@ -1144,6 +1268,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Everything the first screen needs, in one answer
+         * @description The signed-in account, the modules the interface may show, the monthly limit with what is left, the workspaces the caller belongs to, the newest notifications with the unread count, and admin_domain: the host the admin area lives on, or an empty string when it is not split off a subdomain. Every nested object has exactly the shape its own route returns, and is built by the very same code; the separate routes stay for refreshing one thing at a time. 401 unauthenticated.
+         */
+        get: operations["bootstrap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/export": {
         parameters: {
             query?: never;
@@ -1199,7 +1343,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a report template
-         * @description Stores a DOCX template of your own (multipart field `file`, optional `name`) and answers with its card: size and how many tags it has. The file is parsed the same way a project template is, so a file rejected here would be rejected there too. 400 bad_template, 400 invalid_name, 400 no_file, 413 file_too_large, 413 quota_exceeded.
+         * @description Stores a DOCX template of your own (multipart field `file`, optional `name`) and answers with its card: size and how many tags it has. The file is parsed the same way a project template is, so a file rejected here would be rejected there too. One DOCX is one template: uploading the very same bytes again answers 200 with the template you already have, under the name you gave it then. 400 bad_template, 400 invalid_name, 400 no_file, 413 file_too_large, 413 quota_exceeded.
          */
         post: operations["upload_template"];
         delete?: never;
@@ -1243,6 +1387,70 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Templates attached to this project
+         * @description The report templates attached to this project, in the order they were attached. A project may carry several: a title page, an appendix, a standard. `active` says which one the work is currently built from. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["list_project_templates"];
+        put?: never;
+        /**
+         * Attach a report template to this project
+         * @description Attaches a template to the project: either a DOCX sent here (multipart field `file`, optional `name`), which lands on your own shelf as well, or one you have already saved, named by `template_id`. Sending both is refused. Attaching the same template twice is the same state and answers 200. Editor role. 400 bad_template, 400 invalid_id, 400 invalid_name, 400 no_file, 403 forbidden, 404 not_found, 413 file_too_large, 413 quota_exceeded.
+         */
+        post: operations["attach_project_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/templates/{template_id}/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build this project from this template
+         * @description Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        post: operations["use_project_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a template from this project
+         * @description Takes a template off the project. The file itself stays on the shelf of whoever uploaded it: the same DOCX may be attached to several works. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        delete: operations["detach_project_template"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1459,13 +1667,41 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Flowcharts kept in this project
+         * @description Every flowchart built in this project, newest first: what it is called, when it was built, what it was built with and which artifact holds its XML. UML diagrams are not in this list: they have their own. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["flowcharts_list"];
         put?: never;
         /**
          * Build a flowchart and keep it in the project
-         * @description Builds a flowchart from source code or from a text material of the project and stores the drawio XML as a project artifact. The answer carries the artifact id: download it with GET /api/projects/{project_id}/artifacts/{artifact_id} or put it into a diagram tag value. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
+         * @description Builds a flowchart from source code or from a text material of the project, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. There is no separate save step: what was built is kept, together with the code and the settings it was built with. The answer carries the XML, the artifact id and the run_id of the journal entry: delete that entry to delete the diagram. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
          */
         post: operations["flowcharts_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/flowcharts/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One kept flowchart, with its code and its XML
+         * @description The diagram as it was built: the drawio XML, the source code and the settings. This is what opens the diagram back up for editing. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["flowcharts_one"];
+        /**
+         * Rebuild a flowchart that is already in the project
+         * @description Builds the flowchart again, from new code or with a new mode, and replaces what the journal entry points at. The entry itself stays: its name and its number do not change, because this is the same diagram drawn again, not a second one. Editor role. 400 invalid_id, 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
+         */
+        put: operations["flowcharts_rebuild"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1543,7 +1779,7 @@ export interface paths {
         put?: never;
         /**
          * Build a class diagram and keep it in the project
-         * @description Builds a UML class diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The answer carries the artifact id and the classes that got drawn. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
+         * @description Builds a UML class diagram from text materials of the project or from sources in the body, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. There is no separate save step: what was built is kept, together with the sources and the palette it was built with. The answer carries the XML, the artifact id and the run_id of the journal entry: delete that entry to delete the diagram. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
          */
         post: operations["uml_classes"];
         delete?: never;
@@ -1563,9 +1799,53 @@ export interface paths {
         put?: never;
         /**
          * Build an object diagram and keep it in the project
-         * @description Builds a UML object diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The first source is the entry point, the rest are neighbouring files. The answer carries the artifact id, the instances that got drawn and the notes of the tracer. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
+         * @description Builds a UML object diagram from text materials of the project or from sources in the body, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. The first source is the entry point, the rest are neighbouring files. The answer carries the XML, the artifact id, the run_id of the journal entry and the notes of the tracer. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
          */
         post: operations["uml_objects"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/uml/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One kept UML diagram, with its sources and its XML
+         * @description The diagram as it was built: the drawio XML, the sources in the order they were given and the settings. This is what opens the diagram back up for editing. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["uml_one"];
+        /**
+         * Rebuild a UML diagram that is already in the project
+         * @description Builds the diagram again, from new sources or with a new palette, and replaces what the journal entry points at. The entry itself stays: its name and its number do not change, because this is the same diagram drawn again, not a second one. The kind of diagram is the one it was built as. Editor role. 400 invalid_id, 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
+         */
+        put: operations["uml_rebuild"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/uml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * UML diagrams kept in this project
+         * @description Every UML diagram built in this project, newest first: what it is called, when it was built, which kind it is and which artifact holds its XML. Flowcharts are not in this list: they have their own. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["uml_list"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1601,13 +1881,13 @@ export interface paths {
         };
         /**
          * List projects of a workspace
-         * @description Lists the projects of one workspace; `trash=true` lists the ones in the trash instead. 400 invalid_id, 404 not_found.
+         * @description Lists the projects of one workspace; `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found.
          */
         get: operations["list_projects_v1"];
         put?: never;
         /**
          * Create a project in a workspace
-         * @description Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.
+         * @description Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. `module` says which module the work is done with (from GET /api/modules) and may be left out. Editor role in the workspace. 400 bad_template, 400 unknown_module, 403 forbidden, 404 not_found, 409 project_exists.
          */
         post: operations["create_project_v1"];
         delete?: never;
@@ -1638,8 +1918,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Rename a project
-         * @description Renames a project, in the database and in its settings on the volume. Editor role. 403 forbidden, 404 not_found, 409 in_trash, 422 validation_failed.
+         * Rename a project or say which module it is done with
+         * @description Changes the name of a project, in the database and in its settings on the volume, and the module it is done with. Both fields are optional; an empty body changes nothing. Editor role. 400 unknown_module, 403 forbidden, 404 not_found, 409 in_trash, 422 validation_failed.
          */
         patch: operations["rename_project_v1"];
         trace?: never;
@@ -1673,7 +1953,7 @@ export interface paths {
         };
         /**
          * Tags of the project template
-         * @description Every tag of the template, in the order they appear in the document: key, label, type, whether it is required, and whether it is filled, with the source and the number of the current version when it is. Tags no longer present in the template are left out. 400 invalid_id, 404 not_found, 409 in_trash.
+         * @description Every tag of the template, in the order they appear in the document: key, label, type, whether it is required, the prompt the model is given for it, and whether it is filled, with the source and the number of the current version when it is. Tags no longer present in the template are left out. `constructs` lists the Jinja constructions of the template the builder does not understand (`{% for %}` and the like): they stay in the document as text and do not break the build. 400 invalid_id, 404 not_found, 409 in_trash.
          */
         get: operations["list_project_tags_v1"];
         put?: never;
@@ -1682,6 +1962,26 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/tags/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set what the model is told to write into one tag
+         * @description Writes the prompt of one tag into the manifest of the work. It is the same text a template comment fills in when the template carries one, and it outlives a single run, unlike the run-wide prompt sent with fill_report. An empty string clears it. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 404 unknown_tag, 409 in_trash.
+         */
+        patch: operations["set_tag_prompt_v1"];
         trace?: never;
     };
     "/api/v1/projects/{project_id}/values": {
@@ -1719,6 +2019,50 @@ export interface paths {
         put: operations["set_project_value_v1"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run journal of a project
+         * @description Everything that has been started in this project: which module, when, under what name, and what it produced. `module` narrows the list down to one module; `sort` orders it: newest first by default, then oldest, by name or by module. Viewer role. 400 invalid_id, 400 unknown_module, 404 not_found.
+         */
+        get: operations["list_project_runs_v1"];
+        put?: never;
+        /**
+         * Write down a module run of this project
+         * @description Adds one entry to the run journal of a project: which module was started, what it is called and what it produced. The answer carries `n`, the sequence number of this run of this module in this project, which the interface uses to name a run that was left unnamed. Editor role. 400 invalid_id, 400 unknown_module, 403 forbidden, 404 not_found.
+         */
+        post: operations["create_project_run_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove one entry from the run journal
+         * @description Removes a run from the journal of the project: this is how a diagram is deleted from a work. What the run produced stays on the volume: an artifact is addressed by its content and may be the value of a tag, so deleting it here would knock a picture out of a finished document. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        delete: operations["delete_project_run_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2187,13 +2531,41 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Flowcharts kept in this project
+         * @description Every flowchart built in this project, newest first: what it is called, when it was built, what it was built with and which artifact holds its XML. UML diagrams are not in this list: they have their own. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["flowcharts_list_v1"];
         put?: never;
         /**
          * Build a flowchart and keep it in the project
-         * @description Builds a flowchart from source code or from a text material of the project and stores the drawio XML as a project artifact. The answer carries the artifact id: download it with GET /api/projects/{project_id}/artifacts/{artifact_id} or put it into a diagram tag value. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
+         * @description Builds a flowchart from source code or from a text material of the project, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. There is no separate save step: what was built is kept, together with the code and the settings it was built with. The answer carries the XML, the artifact id and the run_id of the journal entry: delete that entry to delete the diagram. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
          */
         post: operations["flowcharts_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/flowcharts/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One kept flowchart, with its code and its XML
+         * @description The diagram as it was built: the drawio XML, the source code and the settings. This is what opens the diagram back up for editing. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["flowcharts_one_v1"];
+        /**
+         * Rebuild a flowchart that is already in the project
+         * @description Builds the flowchart again, from new code or with a new mode, and replaces what the journal entry points at. The entry itself stays: its name and its number do not change, because this is the same diagram drawn again, not a second one. Editor role. 400 invalid_id, 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
+         */
+        put: operations["flowcharts_rebuild_v1"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2271,7 +2643,7 @@ export interface paths {
         put?: never;
         /**
          * Build a class diagram and keep it in the project
-         * @description Builds a UML class diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The answer carries the artifact id and the classes that got drawn. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
+         * @description Builds a UML class diagram from text materials of the project or from sources in the body, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. There is no separate save step: what was built is kept, together with the sources and the palette it was built with. The answer carries the XML, the artifact id and the run_id of the journal entry: delete that entry to delete the diagram. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
          */
         post: operations["uml_classes_v1"];
         delete?: never;
@@ -2291,9 +2663,53 @@ export interface paths {
         put?: never;
         /**
          * Build an object diagram and keep it in the project
-         * @description Builds a UML object diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The first source is the entry point, the rest are neighbouring files. The answer carries the artifact id, the instances that got drawn and the notes of the tracer. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
+         * @description Builds a UML object diagram from text materials of the project or from sources in the body, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. The first source is the entry point, the rest are neighbouring files. The answer carries the XML, the artifact id, the run_id of the journal entry and the notes of the tracer. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
          */
         post: operations["uml_objects_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/uml/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One kept UML diagram, with its sources and its XML
+         * @description The diagram as it was built: the drawio XML, the sources in the order they were given and the settings. This is what opens the diagram back up for editing. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["uml_one_v1"];
+        /**
+         * Rebuild a UML diagram that is already in the project
+         * @description Builds the diagram again, from new sources or with a new palette, and replaces what the journal entry points at. The entry itself stays: its name and its number do not change, because this is the same diagram drawn again, not a second one. The kind of diagram is the one it was built as. Editor role. 400 invalid_id, 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.
+         */
+        put: operations["uml_rebuild_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/uml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * UML diagrams kept in this project
+         * @description Every UML diagram built in this project, newest first: what it is called, when it was built, which kind it is and which artifact holds its XML. Flowcharts are not in this list: they have their own. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["uml_list_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2436,6 +2852,11 @@ export interface components {
              * @default
              */
             name: string;
+            /**
+             * Module
+             * @default
+             */
+            module: string;
             /** Template */
             template?: string | null;
             /** Template Id */
@@ -2450,6 +2871,11 @@ export interface components {
              * @default
              */
             name: string;
+            /**
+             * Module
+             * @default
+             */
+            module: string;
             /** Template */
             template?: string | null;
             /** Template Id */
@@ -2470,6 +2896,237 @@ export interface components {
         ConfirmIn: {
             /** Token */
             token: string;
+        };
+        /**
+         * DiagramBuiltOut
+         * @description Только что построенная схема: к сохранённому добавлено `items`.
+         *
+         *     `items` — что строитель нарисовал: имена классов, имена экземпляров. Это
+         *     ответ строителя, а не свойство схемы, и в базе его нет: по нему человек
+         *     видит, что диаграмма про его код, **до** того, как откроет картинку, — а
+         *     открыв сохранённую, он видит это на самой картинке.
+         */
+        DiagramBuiltOut: {
+            /**
+             * Run Id
+             * @description Journal entry of this diagram; delete it to delete the diagram
+             */
+            run_id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Module
+             * @description flowcharts or uml
+             */
+            module: string;
+            /**
+             * Kind
+             * @description flowchart, classes or objects
+             */
+            kind: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * N
+             * @description Which diagram of this module in this project
+             */
+            n: number;
+            /**
+             * Artifact
+             * @description Artifact id of the drawio XML
+             */
+            artifact: string;
+            /** Lang */
+            lang: string;
+            /**
+             * Mode
+             * @description Drawing mode, flowcharts only
+             * @default
+             */
+            mode: string;
+            /**
+             * Theme
+             * @description Palette, uml only
+             * @default
+             */
+            theme: string;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Xml
+             * @description The drawio XML itself
+             */
+            xml: string;
+            /**
+             * Sources
+             * @description Sources the diagram was built from, in order
+             */
+            sources?: components["schemas"]["DiagramSource"][];
+            /**
+             * Notices
+             * @description What the builder had to say
+             */
+            notices?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Items
+             * @description What got drawn: class names, instance names
+             */
+            items?: string[];
+        };
+        /**
+         * DiagramFullOut
+         * @description Схема целиком: XML, исходники и замечания строителя.
+         *
+         *     Отдаётся при построении и при открытии сохранённой схемы — то есть ровно
+         *     тогда, когда её собираются показать в редакторе и править дальше. XML здесь
+         *     же, а не отдельным запросом за артефактом: экран без картинки бесполезен, и
+         *     второй поход за ней означал бы, что схема появляется рывком.
+         */
+        DiagramFullOut: {
+            /**
+             * Run Id
+             * @description Journal entry of this diagram; delete it to delete the diagram
+             */
+            run_id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Module
+             * @description flowcharts or uml
+             */
+            module: string;
+            /**
+             * Kind
+             * @description flowchart, classes or objects
+             */
+            kind: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * N
+             * @description Which diagram of this module in this project
+             */
+            n: number;
+            /**
+             * Artifact
+             * @description Artifact id of the drawio XML
+             */
+            artifact: string;
+            /** Lang */
+            lang: string;
+            /**
+             * Mode
+             * @description Drawing mode, flowcharts only
+             * @default
+             */
+            mode: string;
+            /**
+             * Theme
+             * @description Palette, uml only
+             * @default
+             */
+            theme: string;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Xml
+             * @description The drawio XML itself
+             */
+            xml: string;
+            /**
+             * Sources
+             * @description Sources the diagram was built from, in order
+             */
+            sources?: components["schemas"]["DiagramSource"][];
+            /**
+             * Notices
+             * @description What the builder had to say
+             */
+            notices?: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * DiagramOut
+         * @description Строка списка сохранённых схем. Исходников в ней нет намеренно.
+         *
+         *     Список читают, чтобы выбрать схему, а не чтобы её перестроить: класть в
+         *     каждую строку по мегабайту кода значило бы вычитывать с тома всю работу
+         *     ради одного экрана.
+         */
+        DiagramOut: {
+            /**
+             * Run Id
+             * @description Journal entry of this diagram; delete it to delete the diagram
+             */
+            run_id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Module
+             * @description flowcharts or uml
+             */
+            module: string;
+            /**
+             * Kind
+             * @description flowchart, classes or objects
+             */
+            kind: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * N
+             * @description Which diagram of this module in this project
+             */
+            n: number;
+            /**
+             * Artifact
+             * @description Artifact id of the drawio XML
+             */
+            artifact: string;
+            /** Lang */
+            lang: string;
+            /**
+             * Mode
+             * @description Drawing mode, flowcharts only
+             * @default
+             */
+            mode: string;
+            /**
+             * Theme
+             * @description Palette, uml only
+             * @default
+             */
+            theme: string;
+            /** Created At */
+            created_at?: string | null;
+        };
+        /**
+         * DiagramSource
+         * @description Один исходник схемы: как назывался файл и что в нём было.
+         */
+        DiagramSource: {
+            /**
+             * Name
+             * @description File name, for messages only
+             */
+            name: string;
+            /**
+             * Source
+             * @description Source code the diagram was built from
+             */
+            source: string;
         };
         /**
          * ErrorBody
@@ -2585,7 +3242,7 @@ export interface components {
          * JobIn
          * @description Тело постановки задания.
          *
-         *     Имя по-английски, как у соседей (`ProjectNameIn`, `ModelKeyIn`): оно уезжает
+         *     Имя по-английски, как у соседей (`ProjectPatchIn`, `ModelKeyIn`): оно уезжает
          *     в OpenAPI и становится именем типа в клиенте сайта.
          */
         JobIn: {
@@ -2686,13 +3343,81 @@ export interface components {
             agent_overwrite?: boolean | null;
         };
         /**
-         * ProjectNameIn
-         * @description Тело переименования. Имя по-английски, как у соседей: оно уезжает в
-         *     OpenAPI и становится именем типа в клиенте сайта.
+         * ProjectPatchIn
+         * @description Тело правки работы: имя и модуль, оба необязательные.
+         *
+         *     Имя по-английски, как у соседей: оно уезжает в OpenAPI и становится именем
+         *     типа в клиенте сайта.
+         *
+         *     Оба поля необязательны, и это не «сойдёт и так»: правок у работы две и
+         *     делаются они из разных мест — имя правит диалог переименования, модуль
+         *     выбирается на карточке. Требовать оба сразу значило бы, что смена модуля
+         *     перепишет имя тем, что было в форме на момент открытия.
+         *
+         *     Пустое тело — не отказ, а «ничего не менять»: отвечать `422` на просьбу
+         *     ничего не делать незачем, а состояние работы от неё то же самое.
          */
-        ProjectNameIn: {
+        ProjectPatchIn: {
             /** Name */
+            name?: string | null;
+            /**
+             * Module
+             * @description Module this work is done with, from GET /api/modules. An empty string clears it.
+             */
+            module?: string | null;
+        };
+        /**
+         * ProjectRunIn
+         * @description Запись о запуске. Имя по-английски: оно уезжает типом в клиент сайта.
+         */
+        ProjectRunIn: {
+            /**
+             * Module
+             * @description Module id from GET /api/modules: reports, kadai, …
+             */
+            module: string;
+            /**
+             * Name
+             * @description What to call this run. Empty is fine: the interface draws a default name from the module and n.
+             * @default
+             */
             name: string;
+            /**
+             * Artifact Id
+             * @description Artifact this run produced, when it produced one
+             */
+            artifact_id?: string | null;
+        };
+        /**
+         * ProjectRunOut
+         * @description Запись журнала наружу. Путей на томе в ней нет и быть не может.
+         */
+        ProjectRunOut: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /** Module */
+            module: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * N
+             * @description Which run of this module in this project, from 1
+             */
+            n: number;
+            /** Artifact Id */
+            artifact_id?: string | null;
+            /**
+             * User Id
+             * @description Who started it
+             */
+            user_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
         };
         /**
          * RegisterIn
@@ -2749,6 +3474,17 @@ export interface components {
             n: number;
         };
         /**
+         * TagPromptIn
+         * @description Тело правки задания на тег. Пустая строка — «задания нет».
+         */
+        TagPromptIn: {
+            /**
+             * Prompt
+             * @description What the model is told to write into this tag. Stored in the manifest of the work, so it outlives a single run.
+             */
+            prompt: string;
+        };
+        /**
          * TemplateOut
          * @description Карточка шаблона. Пути на томе в ней нет и быть не может.
          */
@@ -2779,10 +3515,20 @@ export interface components {
              */
             sha256: string;
             /**
+             * User Id
+             * @description Whose template this is. A project may carry a template uploaded by another member of the workspace.
+             */
+            user_id?: string | null;
+            /**
              * Created At
              * @description When it was uploaded
              */
             created_at?: string | null;
+            /**
+             * Active
+             * @description Whether this is the template the work is built from. Only listed for templates attached to a project: on the personal shelf the question has no meaning.
+             */
+            active?: boolean | null;
         };
         /**
          * UmlIn
@@ -3555,6 +4301,74 @@ export interface operations {
             };
         };
     };
+    accept_workspace_invite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    decline_workspace_invite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     remove_workspace_member: {
         parameters: {
             query?: never;
@@ -3632,6 +4446,7 @@ export interface operations {
             query: {
                 workspace_id: string;
                 trash?: boolean;
+                module?: string;
             };
             header?: never;
             path?: never;
@@ -3773,7 +4588,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ProjectNameIn"];
+                "application/json": components["schemas"]["ProjectPatchIn"];
             };
         };
         responses: {
@@ -3865,6 +4680,44 @@ export interface operations {
             };
         };
     };
+    set_tag_prompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagPromptIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     get_project_values: {
         parameters: {
             query?: never;
@@ -3926,6 +4779,105 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_project_runs: {
+        parameters: {
+            query?: {
+                module?: string;
+                sort?: "new" | "old" | "name" | "module";
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRunOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    create_project_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectRunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRunOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    delete_project_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Any refusal: one shape, machine-readable code */
             default: {
@@ -4649,6 +5601,39 @@ export interface operations {
             };
         };
     };
+    delete_notification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                notification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     read_all_notifications: {
         parameters: {
             query?: never;
@@ -5282,6 +6267,40 @@ export interface operations {
             };
         };
     };
+    bootstrap: {
+        parameters: {
+            query?: {
+                /** @description how many newest notifications to include */
+                notifications?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     export_project: {
         parameters: {
             query?: never;
@@ -5397,6 +6416,15 @@ export interface operations {
             };
         };
         responses: {
+            /** @description The same file was already there */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"];
+                };
+            };
             /** @description Successful Response */
             201: {
                 headers: {
@@ -5459,6 +6487,148 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_project_templates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    attach_project_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file?: string;
+                    name?: string;
+                    template_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description It was attached already */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    use_project_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    detach_project_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5846,6 +7016,37 @@ export interface operations {
             };
         };
     };
+    flowcharts_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     flowcharts_create: {
         parameters: {
             query?: never;
@@ -5867,9 +7068,75 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DiagramBuiltOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    flowcharts_one: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramFullOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    flowcharts_rebuild: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlowchartIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramBuiltOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -6003,9 +7270,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DiagramBuiltOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -6040,9 +7305,106 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DiagramBuiltOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    uml_one: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramFullOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    uml_rebuild: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UmlIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramBuiltOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    uml_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramOut"][];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -6092,6 +7454,7 @@ export interface operations {
             query: {
                 workspace_id: string;
                 trash?: boolean;
+                module?: string;
             };
             header?: never;
             path?: never;
@@ -6233,7 +7596,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ProjectNameIn"];
+                "application/json": components["schemas"]["ProjectPatchIn"];
             };
         };
         responses: {
@@ -6325,6 +7688,44 @@ export interface operations {
             };
         };
     };
+    set_tag_prompt_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TagPromptIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     get_project_values_v1: {
         parameters: {
             query?: never;
@@ -6386,6 +7787,105 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_project_runs_v1: {
+        parameters: {
+            query?: {
+                module?: string;
+                sort?: "new" | "old" | "name" | "module";
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRunOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    create_project_run_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectRunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRunOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    delete_project_run_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Any refusal: one shape, machine-readable code */
             default: {
@@ -7288,6 +8788,37 @@ export interface operations {
             };
         };
     };
+    flowcharts_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     flowcharts_create_v1: {
         parameters: {
             query?: never;
@@ -7309,9 +8840,75 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DiagramBuiltOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    flowcharts_one_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramFullOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    flowcharts_rebuild_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlowchartIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramBuiltOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -7445,9 +9042,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DiagramBuiltOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -7482,9 +9077,106 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DiagramBuiltOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    uml_one_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramFullOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    uml_rebuild_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UmlIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramBuiltOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    uml_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramOut"][];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */

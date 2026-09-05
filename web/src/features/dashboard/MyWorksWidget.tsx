@@ -33,7 +33,6 @@ export function MyWorksWidget() {
     <Widget
       title={t('dashboard.works.title')}
       note={t('dashboard.works.note')}
-      className="lg:col-span-12"
       action={
         <Button variant="ghost" size="sm" asChild>
           <Link to="/projects">{t('dashboard.works.all')}</Link>

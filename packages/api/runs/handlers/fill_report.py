@@ -2,7 +2,7 @@
 fill_report — заполнить весь отчёт. Уровень 2 оркестратора, обёрнутый в задание.
 
     payload   {"endpoint": "deepseek", "keys": ["цель", "выводы"],
-               "overwrite": false}
+               "overwrite": false, "prompt": "писать в прошедшем времени"}
     result    {"filled": ["цель", …], "outcome": "done", "problems": N,
                "key_source": "shared"}
 
@@ -22,6 +22,11 @@ fill_report — заполнить весь отчёт. Уровень 2 орк�
 записано, следующее не начато. Один механизм без другого либо тормозит базу,
 либо отвечает на «отмену» через минуту.
 
+`prompt` — общая подсказка на весь прогон: одно указание сразу всем тегам.
+В манифест она не попадает — манифест описывает бланк и живёт дольше прогона,
+а это про сегодняшний запуск, — и уезжает хвостом запроса, где не рушит
+кэшируемый префикс промпта.
+
 `problems` наружу отдаётся **числом**, а не списком: замечания прогона бывают на
 каждый тег, и класть их в `job.result` значило бы держать в базе то, что и так
 лежит в записи прогона на томе (`runs/<id>.json`).
@@ -40,6 +45,7 @@ def заполнить_отчёт(ctx) -> dict:
     ключи = payload.get("keys") or None
     if ключи is not None:
         ключи = [str(k) for k in ключи]
+    общий_промпт = str(payload.get("prompt") or "")
 
     закрыто: list[str] = []
     with Прогон(ctx) as прогон:
@@ -65,7 +71,7 @@ def заполнить_отчёт(ctx) -> dict:
         итог = orchestrator.fill_report(
             прогон.project, endpoint=прогон.ep, keys=ключи, on_text=на_текст,
             on_tag=на_тег, cancel=прогон.отмена,
-            overwrite=bool(payload.get("overwrite")))
+            overwrite=bool(payload.get("overwrite")), prompt=общий_промпт)
 
     return {"filled": list(итог.filled), "outcome": итог.outcome,
             "ok": bool(итог.ok), "problems": len(итог.problems),

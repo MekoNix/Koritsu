@@ -15,9 +15,13 @@
  *
  * Пункты собираются из трёх кусков: постоянные сверху (Дашборд, Проекты),
  * модули из службы, постоянные снизу (Настройки). Админки в меню нет ни у
- * кого — `/admin` открывается только прямой ссылкой.
+ * кого. Агента в меню нет тоже, и это не упущение: он не страница, а панель
+ * поверх текущего экрана — открывается кнопкой в шапке и сочетанием клавиш,
+ * а пункт меню обещал бы место, куда можно уйти.
+ *
+ * Наверху — только название, и оно же ссылка на дашборд.
  */
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 
 import { useModules } from '@/api/hooks'
 import { useT } from '@/i18n'
@@ -81,17 +85,24 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       )}
     >
       <div className={cn('flex items-center gap-s1', collapsed && 'flex-col gap-s2')}>
-        <div
+        {/* Название — ссылка на дашборд: это первое, за что хватается рука,
+            когда надо вернуться в начало. Значка рядом нет — квадрат с буквой
+            ничего не сообщал, а место занимал. */}
+        <Link
+          to="/"
           className={cn(
-            'flex h-[calc(var(--topbar-h)-var(--space-3))] items-center gap-s2 p-s2 font-display text-lg font-bold tracking-tight text-ink-strong',
-            collapsed ? 'flex-none p-0' : 'min-w-0 flex-1',
+            'flex h-[calc(var(--topbar-h)-var(--space-3))] items-center rounded-sm p-s2 font-display text-lg font-bold tracking-tight text-ink-strong no-underline',
+            'hover:bg-surface-2 hover:text-ink-strong hover:no-underline',
+            collapsed ? 'flex-none px-2' : 'min-w-0 flex-1',
           )}
+          aria-label={t('shell.brand')}
         >
-          <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-sm bg-accent font-mono text-[13px] font-bold text-accent-ink">
-            K
+          {/* Свёрнутое меню оставляет одну букву — как и пунктам оставляет
+              одни иконки. */}
+          <span className="truncate">
+            {collapsed ? t('shell.brand').slice(0, 1) : t('shell.brand')}
           </span>
-          {!collapsed && <span className="truncate">{t('shell.brand')}</span>}
-        </div>
+        </Link>
         <Button
           variant="ghost"
           size="sm"

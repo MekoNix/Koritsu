@@ -10,7 +10,7 @@
     POST /auth/login             200  {"user": {...}} + cookie koritsu_session
     POST /auth/logout            200  {"status": "ok"}
     POST /auth/logout-all        200  {"status": "ok"}
-    GET  /auth/me                200  {"user": {...}}
+    GET  /auth/me                200  {"user": {...}, "admin_domain": "..."}
     PATCH /auth/me               200  {"user": {...}}
     POST /auth/password/forgot   200  {"status": "reset_sent"}
     POST /auth/password/reset    200  {"status": "password_changed"}
@@ -413,11 +413,29 @@ def logout_all(me: CurrentUser, request: Request, response: Response,
 @router.get("/me", operation_id="get_current_user",
             summary="The signed-in user",
             description=(
-                "Returns the account behind the session cookie. "
+                "Returns the account behind the session cookie, plus "
+                "admin_domain: the host the admin area lives on, or an empty "
+                "string when it is not split off a subdomain. "
                 "401 unauthenticated."))
-def whoami(me: CurrentUser) -> dict:
-    """Кто вошёл. Первое, что спрашивает сайт при загрузке страницы."""
-    return {"user": профиль(me)}
+def whoami(me: CurrentUser, request: Request) -> dict:
+    """Кто вошёл. Первое, что спрашивает сайт при загрузке страницы.
+
+    Рядом с профилем едет `admin_domain` — имя домена, на котором живёт
+    админка (`KORITSU_ADMIN_DOMAIN`), или пустая строка, если домена нет.
+    Поле не про человека, поэтому и лежит **рядом** с `user`, а не внутри:
+    список полей профиля закрыт намеренно (см. `профиль`), и настройке машины
+    там не место.
+
+    Отдельного маршрута под него не заводится: это первый запрос всякой
+    загрузки страницы, и сайту значение нужно ровно тогда — чтобы решить,
+    показывать ли `/admin` здесь или увести на поддомен. Второй запрос за одной
+    строкой был бы вторым кругом ожидания на каждой загрузке.
+
+    Секрета в имени нет: домен админки — публичное имя в DNS, а пускает внутрь
+    не оно, а белый список адресов на прокси и флаг `users.is_admin`.
+    """
+    return {"user": профиль(me),
+            "admin_domain": request.app.state.settings.admin_domain}
 
 
 @router.patch("/me", operation_id="update_profile",

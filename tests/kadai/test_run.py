@@ -90,26 +90,94 @@ def test_ключи_разделов_схлопнувшиеся_после_но�
         прогнать(doors)
 
 
-def test_ссылка_в_никуда_останавливает_сборку_и_называет_блок(doors):
-    """Ссылка на ненумерованный блок — ошибка, а не предупреждение, и потому
-    прогон с ней до архива не доходит.
+def test_ссылка_в_никуда_чинится_перезапуском_блока_а_сборка_идёт(doors):
+    """Ссылка на несуществующий блок даёт «?» в готовом документе — но отказ
+    собрать работу стоит человеку целого прогона, а беда чинится одним блоком.
 
-    «?» в готовом документе хуже отказа: увидит его человек, а не служба, и
-    увидит уже после того, как за работу заплачено.
+    Поэтому блок с плохой ссылкой пишется заново (ровно один раз), работа
+    собирается, а человеку остаётся строка о том, что произошло.
     """
     session = kadai.run.new(doors.services())
     kadai.run.run(session, until="тексты")
     записи = doors.project.blocks()
+    ключ = записи[1]["key"]
     записи[1]["value"] = markdown("см. {ref:b-99}")
     doors.project.set_blocks(записи, source="agent")
 
-    with pytest.raises(kadai.KadaiError, match="b-99"):
-        kadai.run.run(session)
-    assert session.work.stage("сборка").state == kadai.STUMBLED
-    assert session.work.stage("архив").state == kadai.WAITING     # до архива не дошло
+    kadai.run.run(session)
+    assert session.work.state == "done"
+    assert session.work.stage("сборка").state == kadai.DONE
+    assert doors.project._packed is not None                      # до архива дошло
+    # Блок переписан проходом текста: ссылки в никуда в работе не осталось.
+    новый = {b["key"]: b for b in doors.project.blocks()}[ключ]
+    assert "{ref:b-99}" not in новый["value"]["text"]
+    assert len(doors.texts) == 2                                  # починка — ровно одна
     беда = [p for p in session.work.problems if p["code"] == "unresolved_ref"][0]
-    assert беда["level"] == "error" and беда["key"] == записи[1]["key"]
-    assert doors.project._packed is None                          # архива нет вовсе
+    assert беда["level"] == "warning" and беда["key"] == ключ
+    assert "b-99" in беда["message"] and "написан заново" in беда["message"]
+
+
+def test_ссылку_в_никуда_из_подписи_снимают_и_работу_всё_равно_собирают(doors):
+    """Подпись таблицы проход текста не пишет: переписывать там нечего.
+
+    Значит остаётся второе — снять ссылку и собрать работу. Текст без номера
+    рисунка человек поправит глазами; несобранную работу — нет.
+
+    Что сборка прошла со снятой ссылкой, видно по тому, что она прошла вообще:
+    ссылка в никуда — ошибка сита, и с ней стадия споткнулась бы до сборки.
+    Запись же на диске остаётся прежней: значение таблицы и схемы возвращать в
+    запись нельзя (схема живёт в ней идентификатором артефакта), и в замечании
+    человеку про это сказано.
+    """
+    session = kadai.run.new(doors.services())
+    kadai.run.run(session, until="тексты")
+    записи = doors.project.blocks()
+    таблица = [r for r in записи if r["kind"] == "table"][0]
+    таблица["value"] = {**таблица["value"], "caption": "Замеры, см. {ref:b-99}"}
+    doors.project.set_blocks(записи, source="agent")
+
+    kadai.run.run(session)
+    assert session.work.state == "done"
+    assert doors.project._packed is not None                      # до архива дошло
+    assert len(doors.texts) == 1                                  # прохода текста не было
+    беда = [p for p in session.work.problems if p["code"] == "unresolved_ref"][0]
+    assert беда["level"] == "warning" and "убрана" in беда["message"]
+
+
+def test_ссылка_в_никуда_после_перезапуска_блока_снимается(doors):
+    """Одна попытка, а не сколько получится: вторая стоит столько же и кончается
+    тем же — модель уже видела список блоков, когда сослалась мимо.
+
+    Не помогла первая — ссылка снимается, текст остаётся, работа собирается.
+    """
+    session = kadai.run.new(doors.services())
+    kadai.run.run(session, until="тексты")
+    записи = doors.project.blocks()
+    ключ = записи[1]["key"]
+    записи[1]["value"] = markdown("см. {ref:b-99}")
+    doors.project.set_blocks(записи, source="agent")
+
+    # Модель, которая на переписывании настаивает на своей же ссылке.
+    def упрямый(*, overwrite=False, **kw):
+        doors.texts.append({"overwrite": overwrite})
+        свежие = doors.project.blocks()
+        for record in свежие:
+            if record["key"] == ключ:
+                record["value"] = markdown("всё равно см. {ref:b-99}")
+        doors.project.set_blocks(свежие, source="agent", note="упрямый проход")
+        from .conftest import FakeResult
+        return FakeResult(ok=True, filled=[ключ])
+
+    kadai.run.run(session, until="тексты")
+    doors.write_texts = упрямый
+    session.services.extra["write_texts"] = упрямый
+    kadai.run.run(session)
+
+    assert session.work.state == "done"
+    текст = {b["key"]: b for b in doors.project.blocks()}[ключ]["value"]["text"]
+    assert "{ref:b-99}" not in текст and "всё равно см." in текст
+    беда = [p for p in session.work.problems if p["code"] == "unresolved_ref"][0]
+    assert беда["level"] == "warning" and "убрана" in беда["message"]
 
 
 def test_потолок_ходов_петли_сценарий_называет_свой(doors):

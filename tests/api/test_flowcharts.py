@@ -29,10 +29,17 @@ from api import Settings
 from api.projects.service import dir_for
 
 from .c_fixtures import (docx_байты, войти, завести, клиент, личное_id,  # noqa: F401
-                         создать_проект, сосед, хозяин)
+                         позвать, создать_проект, сосед, хозяин)
 from .d_fixtures import ид_материала
 
 ПУТЬ = "/api/projects/{}/flowcharts"
+
+# Состав ответа построения. Одним местом: маршрутов постройки два, форма одна.
+СОСТАВ = {"run_id", "project_id", "module", "kind", "name", "n",
+                            "artifact", "lang", "mode", "theme",
+                            "created_at", "xml", "sources", "notices",
+                            "items"}
+
 ПРЕДПРОСМОТР = "/api/flowcharts/preview"
 РЕЖИМЫ = "/api/flowcharts/modes"
 АРТЕФАКТ = "/api/projects/{}/artifacts/{}"
@@ -70,13 +77,12 @@ def проект(клиент, хозяин):
 
 
 @pytest.fixture
-def общее(клиент, хозяин, сосед):
+def общее(app, клиент, хозяин, сосед):
     """Общее пространство, где сосед — только читатель. → (id, проект)."""
     ws = клиент.post("/api/workspaces", json={"name": "общее"})
     assert ws.status_code == 201, ws.text
     ws_id = ws.json()["id"]
-    добавлен = клиент.post(f"/api/workspaces/{ws_id}/members",
-                           json={"email": сосед.email, "role": "viewer"})
+    добавлен = позвать(app, клиент, ws_id, сосед, "viewer")
     assert добавлен.status_code == 201, добавлен.text
     return ws_id, создать_проект(клиент, ws_id, name="общая работа")
 
@@ -144,10 +150,15 @@ def test_схема_из_исходника(клиент, проект):
                         json={"source": ЦИКЛ, "lang": "py"})
     assert ответ.status_code == 201, ответ.text
     тело = ответ.json()
-    assert set(тело) == {"artifact", "notices", "mode", "lang"}
+    assert set(тело) == СОСТАВ
     assert len(тело["artifact"]) == 16 and тело["artifact"].isalnum()
     assert тело["lang"] == "py" and тело["mode"] == "default"
     assert тело["notices"] == []
+    # Схема сохранилась сама: у неё есть запись журнала и номер, а имени нет —
+    # имя по умолчанию рисует интерфейс.
+    assert тело["module"] == "flowcharts" and тело["kind"] == "flowchart"
+    assert тело["n"] == 1 and тело["name"] == ""
+    assert тело["sources"] == [{"name": "source", "source": ЦИКЛ}]
 
 
 def test_схема_из_материала(app, клиент, проект):

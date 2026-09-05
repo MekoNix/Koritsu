@@ -25,8 +25,15 @@ import pytest
 from api import Settings
 
 from .c_fixtures import (docx_байты, войти, завести, клиент, личное_id,  # noqa: F401
-                         создать_проект, сосед, хозяин)
+                         позвать, создать_проект, сосед, хозяин)
 from .d_fixtures import ид_материала
+
+# Состав ответа построения. Одним местом, потому что маршрутов постройки три, а
+# форма ответа у них одна: разъехавшись, тесты перестали бы её сторожить.
+СОСТАВ = {"run_id", "project_id", "module", "kind", "name", "n",
+                            "artifact", "lang", "mode", "theme",
+                            "created_at", "xml", "sources", "notices",
+                            "items"}
 
 КЛАССЫ_ПУТЬ = "/api/projects/{}/uml/classes"
 ОБЪЕКТЫ_ПУТЬ = "/api/projects/{}/uml/objects"
@@ -85,12 +92,11 @@ def проект(клиент, хозяин):
 
 
 @pytest.fixture
-def общее(клиент, хозяин, сосед):
+def общее(app, клиент, хозяин, сосед):
     ws = клиент.post("/api/workspaces", json={"name": "общее"})
     assert ws.status_code == 201, ws.text
     ws_id = ws.json()["id"]
-    добавлен = клиент.post(f"/api/workspaces/{ws_id}/members",
-                           json={"email": сосед.email, "role": "viewer"})
+    добавлен = позвать(app, клиент, ws_id, сосед, "viewer")
     assert добавлен.status_code == 201, добавлен.text
     return ws_id, создать_проект(клиент, ws_id, name="общая работа")
 
@@ -132,10 +138,13 @@ def test_классы_из_исходников_в_теле(клиент, про
                         json={"sources": [кусок("a.py", КЛАССЫ)], "lang": "py"})
     assert ответ.status_code == 201, ответ.text
     тело = ответ.json()
-    assert set(тело) == {"artifact", "notices", "lang", "theme", "classes"}
-    assert тело["classes"] == ["Сортировщик"]
+    assert set(тело) == СОСТАВ
+    assert тело["items"] == ["Сортировщик"]
     assert тело["theme"] == "dark" and тело["lang"] == "py"
     assert len(тело["artifact"]) == 16
+    # Диаграмма сохранилась сама: запись журнала есть, кнопки «сохранить» нет.
+    assert тело["module"] == "uml" and тело["kind"] == "classes"
+    assert тело["n"] == 1 and тело["name"] == ""
 
 
 def test_классы_из_материалов_проекта(app, клиент, проект):
@@ -145,7 +154,7 @@ def test_классы_из_материалов_проекта(app, клиент
     ответ = клиент.post(КЛАССЫ_ПУТЬ.format(проект["id"]),
                         json={"sources": [первый, второй], "lang": "py"})
     assert ответ.status_code == 201, ответ.text
-    assert ответ.json()["classes"] == ["Сортировщик", "Хранилище"]
+    assert ответ.json()["items"] == ["Сортировщик", "Хранилище"]
 
 
 def test_материалы_и_наброски_в_одном_списке(app, клиент, проект):
@@ -155,7 +164,7 @@ def test_материалы_и_наброски_в_одном_списке(app, 
                         json={"sources": [mid, кусок("набросок.py", ВТОРОЙ_КЛАСС)],
                               "lang": "py"})
     assert ответ.status_code == 201, ответ.text
-    assert ответ.json()["classes"] == ["Сортировщик", "Хранилище"]
+    assert ответ.json()["items"] == ["Сортировщик", "Хранилище"]
 
 
 def test_палитра_меняет_артефакт(клиент, проект):
@@ -184,8 +193,8 @@ def test_объекты_это_снимок_экземпляров(клиент,
                         json={"sources": [кусок("a.py", ОБЪЕКТЫ)], "lang": "py"})
     assert ответ.status_code == 201, ответ.text
     тело = ответ.json()
-    assert set(тело) == {"artifact", "notices", "lang", "theme", "objects"}
-    assert тело["objects"] == ["первая"]
+    assert set(тело) == СОСТАВ
+    assert тело["items"] == ["первая"]
 
 
 def test_первый_исходник_это_точка_входа(клиент, проект):
@@ -196,7 +205,7 @@ def test_первый_исходник_это_точка_входа(клиент
         json={"sources": [кусок("вход.py", ВХОД),
                           кусок("двиг.py", БИБЛИОТЕКА)], "lang": "py"})
     assert правильный.status_code == 201, правильный.text
-    assert правильный.json()["objects"] == ["д"]
+    assert правильный.json()["items"] == ["д"]
 
 
 def test_нет_экземпляров_422(клиент, проект):

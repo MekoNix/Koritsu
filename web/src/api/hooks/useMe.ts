@@ -7,6 +7,8 @@
  */
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 
+import { запомнитьДоменАдминки } from '@/lib/adminHost'
+
 import { api, unwrap } from '../client'
 import { isApiError } from '../errors'
 import { keys } from '../queryKeys'
@@ -20,7 +22,10 @@ import type { Me } from '../types'
  */
 export async function fetchMe(): Promise<Me | null> {
   try {
-    const body = await unwrap<{ user?: Me }>(api.GET('/api/auth/me'))
+    const body = await unwrap<{ user?: Me; admin_domain?: string }>(api.GET('/api/auth/me'))
+    // Рядом с профилем приезжает имя домена админки — настройка машины, а не
+    // поле человека, поэтому она и лежит рядом, а не внутри `user`.
+    запомнитьДоменАдминки(body?.admin_domain)
     return body?.user ?? null
   } catch (e) {
     if (isApiError(e) && e.status === 401) return null
@@ -32,10 +37,11 @@ export function useMe(): UseQueryResult<Me | null> {
   return useQuery({
     queryKey: keys.me,
     queryFn: fetchMe,
-    // Профиль спрашивают все экраны сразу; полминуты свежести снимают
-    // десяток одинаковых запросов при переходах, а вход и выход и так
+    // Профиль спрашивают все экраны сразу, а меняется он ровно одним местом
+    // (`useUpdateProfile`), которое кладёт ответ в кэш само. Долгая свежесть
+    // снимает запрос на каждом переходе между экранами; вход и выход и так
     // сбрасывают ключ руками.
-    staleTime: 30_000,
+    staleTime: 5 * 60_000,
     retry: false,
   })
 }

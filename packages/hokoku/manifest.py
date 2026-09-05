@@ -29,7 +29,7 @@ import unicodedata
 from dataclasses import dataclass, field, fields, replace
 
 from .model import HokokuError, Problem
-from .tags import extract_tags, norm_key
+from .tags import extract_extras, extract_tags, norm_key
 from .wire import VALUE_TYPES, WIRE_VERSION, value_schema
 
 # Те же слова, что в значении (wire), кроме `page_break`: разрыв страницы — не задание
@@ -67,6 +67,7 @@ class TagSpec:
     inline: bool = False            # тег внутри строки — значение без заголовков и списков
     numbered: bool = True           # false ⇒ служба ставит в значении caption: false
     prompt: str = ""                # задание модели на этот тег
+    comment: str = ""               # комментарий `{# … #}` бланка, стоящий перед тегом
     example: str = ""
     limits: dict = field(default_factory=dict)
     depends_on: list = field(default_factory=list)
@@ -88,6 +89,7 @@ class Manifest:
     template_sha256: str = ""
     language: str = "ru"
     system_prompt: str = ""
+    constructs: list = field(default_factory=list)    # `{% … %}` бланка, которых движок не знает
 
 
 def _hint(name: str, known) -> str:
@@ -106,7 +108,7 @@ def suggest_type(label: str) -> str | None:
     return None
 
 
-def default_spec(tag) -> TagSpec:
+def default_spec(tag, comment: str = "") -> TagSpec:
     """Что тег получает, когда записи о нём в манифесте нет.
 
     Одно правило на два вопроса — заготовку манифеста и проверку значений (`validate`).
@@ -116,7 +118,8 @@ def default_spec(tag) -> TagSpec:
     header = tag.where in _HEADERS
     guess = suggest_type(tag.label)
     return TagSpec(type=guess or DEFAULT_TYPE, label=tag.label or tag.key,
-                   required=not header, numbered=not header, guessed=guess is not None)
+                   required=not header, numbered=not header, guessed=guess is not None,
+                   prompt=comment, comment=comment)
 
 
 def manifest_from_template(template, *, base: Manifest | None = None,
@@ -131,14 +134,34 @@ def manifest_from_template(template, *, base: Manifest | None = None,
     переносить промпт не имеем права: два тега, поменянных местами в Word, дали бы
     перепутанные значения, и никто бы этого не заметил. Подсказку об этом даёт
     `check_manifest`.
+
+    **Комментарий бланка становится заданием тега.** `{# 4–6 предложений: итог
+    квартала #}`, написанный автором бланка перед тегом, — это ровно то, что
+    человек написал бы в поле «задание модели», и переписывать его руками во
+    второй раз незачем. Комментарий кладётся и в `prompt` (уезжает модели), и в
+    `comment` (что именно взято из бланка). Второе поле нужно при обновлении:
+    задание, правленное человеком, комментарий бланка не переписывает, а
+    нетронутое — обновляется вместе с бланком. Без такой памяти пришлось бы
+    выбирать между «правка человека теряется» и «поправленный бланк ни на что
+    не влияет».
     """
+    extras = extract_extras(template)
+    подсказки: dict = {}
+    for текст, ключ in extras.comments:
+        if not ключ:
+            continue                     # после комментария тегов нет — приписать некуда
+        подсказки[ключ] = (подсказки[ключ] + "\n" + текст) if ключ in подсказки else текст
     tags: dict = {}
     for tag in extract_tags(template):
+        комментарий = подсказки.get(tag.key, "")
         old = (base.tags.get(tag.key) if base else None)
         if old is not None:
-            tags[tag.key] = replace(old, label=tag.label or old.label, missing=False)
+            свой = old.prompt.strip() not in ("", old.comment.strip())
+            tags[tag.key] = replace(old, label=tag.label or old.label, missing=False,
+                                    comment=комментарий,
+                                    prompt=old.prompt if свой else комментарий)
             continue
-        tags[tag.key] = default_spec(tag)
+        tags[tag.key] = default_spec(tag, комментарий)
     if base is not None:
         for key, old in base.tags.items():
             if key not in tags:
@@ -147,7 +170,8 @@ def manifest_from_template(template, *, base: Manifest | None = None,
                     manifest_version=(base.manifest_version + 1) if base else 1,
                     template_sha256=_sha256(template),
                     language=base.language if base else language,
-                    system_prompt=base.system_prompt if base else system_prompt)
+                    system_prompt=base.system_prompt if base else system_prompt,
+                    constructs=list(extras.constructs))
 
 
 def check_manifest(manifest: Manifest, template) -> list[Problem]:
@@ -160,6 +184,10 @@ def check_manifest(manifest: Manifest, template) -> list[Problem]:
     """
     tags = {t.key: t for t in extract_tags(template)}
     out: list[Problem] = []
+    for текст in extract_extras(template).constructs:
+        out.append(_w("warning", "unknown_construct", "",
+                      f"конструкция {текст!r} движку не знакома: она останется в "
+                      "документе текстом, а тега в ней нет"))
     for key, tag in tags.items():
         spec = manifest.tags.get(key)
         if spec is None:
@@ -224,7 +252,7 @@ def _sha256(template) -> str:
 # ── JSON ──────────────────────────────────────────────────────────────────────
 
 _MANIFEST_KEYS = ("manifest_version", "wire_version", "template_sha256", "language",
-                  "system_prompt", "tags")
+                  "system_prompt", "constructs", "tags")
 
 
 def manifest_from_json(d: dict) -> Manifest:
@@ -250,10 +278,14 @@ def manifest_from_json(d: dict) -> Manifest:
         if key in tags:
             raise ManifestError(f"ключ {raw_key!r} повторяется после нормализации NFC")
         tags[key] = _tag_from_json(key, item)
+    constructs = d.get("constructs") or []
+    if not isinstance(constructs, list) or any(not isinstance(x, str) for x in constructs):
+        raise ManifestError("constructs — список строк: тексты конструкций бланка")
     return Manifest(tags=tags, manifest_version=edit, wire_version=version,
                     template_sha256=_str(d.get("template_sha256", ""), "template_sha256"),
                     language=_str(d.get("language", "ru"), "language"),
-                    system_prompt=_str(d.get("system_prompt", ""), "system_prompt"))
+                    system_prompt=_str(d.get("system_prompt", ""), "system_prompt"),
+                    constructs=list(constructs))
 
 
 def _tag_from_json(key: str, d) -> TagSpec:
@@ -269,7 +301,7 @@ def _tag_from_json(key: str, d) -> TagSpec:
         raise ManifestError(f"тег {key!r}: неизвестный тип {type_name!r}"
                             f"{_hint(type_name, MANIFEST_TYPES)}")
     spec.type = type_name
-    for name in ("label", "prompt", "example"):
+    for name in ("label", "prompt", "comment", "example"):
         setattr(spec, name, _str(d.get(name, ""), f"{key}.{name}"))
     for name in ("required", "inline", "numbered", "guessed", "missing"):
         val = d.get(name, getattr(spec, name))
@@ -338,7 +370,8 @@ def manifest_to_json(m: Manifest) -> dict:
         tags[key] = d
     return {"manifest_version": m.manifest_version, "wire_version": m.wire_version,
             "template_sha256": m.template_sha256, "language": m.language,
-            "system_prompt": m.system_prompt, "tags": tags}
+            "system_prompt": m.system_prompt, "constructs": list(m.constructs),
+            "tags": tags}
 
 
 # ── промпт ────────────────────────────────────────────────────────────────────

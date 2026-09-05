@@ -28,6 +28,12 @@ export type Project = {
   workspace_id: string
   owner_id: string
   name: string
+  /**
+   * Каким модулем эта работа делается: `reports`, `kadai`, `flowcharts`,
+   * `uml`. Пусто — не назначен, и это законное состояние: работу заводят
+   * раньше, чем решают, чем её делать.
+   */
+  module: string
   created_at: string
   updated_at: string
   /** Не `null` — проект в корзине. */
@@ -40,6 +46,43 @@ export type Project = {
    * в списке их нет намеренно (сотня проектов — сотня обходов каталога).
    */
   keys?: string[]
+}
+
+/** `packages/api/projects/runs.py: карточка()` — запись журнала запусков. */
+export type ProjectRun = {
+  id: string
+  project_id: string
+  /** Идентификатор модуля из `GET /api/modules`. */
+  module: string
+  /** Пусто — имя рисует сайт из модуля, номера и имени работы. */
+  name: string
+  /** Который это запуск этого модуля в этой работе, с единицы. Считает служба. */
+  n: number
+  /** Что запуск произвёл, если произвёл: XML схемы, собранный документ. */
+  artifact_id: string | null
+  user_id: string | null
+  created_at: string | null
+}
+
+/** Порядок журнала запусков — тот же перечень, что понимает служба. */
+export type RunSort = 'new' | 'old' | 'name' | 'module'
+
+/** `packages/api/templates/routes.py: TemplateOut`. */
+export type ReportTemplate = {
+  id: string
+  name: string
+  bytes: number
+  /** Сколько тегов нашёл разбор DOCX. */
+  tags: number
+  sha256: string
+  /** Чей это файл: у работы бывает бланк, загруженный другим участником. */
+  user_id: string | null
+  created_at: string | null
+  /**
+   * Собирается ли работа по этому бланку. Есть только в списке бланков работы:
+   * на личной полке вопрос не имеет смысла, и служба поля там не шлёт.
+   */
+  active?: boolean | null
 }
 
 /** `packages/api/materials/service.py: карточка()`. */

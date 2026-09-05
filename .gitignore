@@ -6,7 +6,7 @@ build/
 dist/
 
 # Окружения
-.venv/
+.venv
 .env
 
 # Выход тестов uml_generator (пишутся рядом с тестами для глаз)

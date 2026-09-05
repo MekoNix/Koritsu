@@ -109,17 +109,27 @@ test.describe('правила брифа', () => {
   })
 
   test('модуль, которого нет в /api/modules, в сайдбаре не показан', async ({ page }) => {
-    // Служба отдаёт три модуля; подменяем ответ так, чтобы `uml` из него исчез,
-    // а вместо него появился модуль, которого сайт не знает вовсе.
+    // Подменяем список так, чтобы `uml` из него исчез, а вместо него появился
+    // модуль, которого сайт не знает вовсе.
+    const модули = [
+      { id: 'reports', title: 'Reports', routes: '/api/projects' },
+      { id: 'flowcharts', title: 'Flowcharts', routes: '/api/flowcharts' },
+      { id: 'assembler', title: 'Assembler', routes: '/api/assembler' },
+    ]
+    // Список модулей приезжает сводкой первого экрана (`GET /api/bootstrap`) и
+    // оттуда ложится в кэш; отдельный `GET /api/modules` на загрузке уже не
+    // уходит. Поэтому подменяются оба ответа: сводка — с сохранением остальных
+    // её частей (профиль, расход, пространства, колокольчик).
+    await page.route('**/api/bootstrap*', async (route) => {
+      const ответ = await route.fetch()
+      const тело = (await ответ.json()) as Record<string, unknown>
+      await route.fulfill({ json: { ...тело, modules: модули } })
+    })
     await page.route('**/api/modules', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([
-          { id: 'reports', title: 'Reports', routes: '/api/projects' },
-          { id: 'flowcharts', title: 'Flowcharts', routes: '/api/flowcharts' },
-          { id: 'assembler', title: 'Assembler', routes: '/api/assembler' },
-        ]),
+        body: JSON.stringify(модули),
       })
     })
     await page.reload()
@@ -134,7 +144,7 @@ test.describe('правила брифа', () => {
     await expect(меню.getByRole('link', { name: /assembler/i })).toHaveCount(0)
   })
 
-  test('в сайдбаре есть «Задания» и нет модулей из макета, которых у службы нет', async ({
+  test('в сайдбаре есть пункт kadai и нет модулей из макета, которых у службы нет', async ({
     page,
   }) => {
     const меню = page.locator('aside')

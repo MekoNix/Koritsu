@@ -1,7 +1,7 @@
 {
   "name": "koritsu-web",
   "private": true,
-  "version": "2.0.0-a5.4",
+  "version": "2.0.0-a5.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
+    "e2e:dist": "playwright test --config=playwright.dist.config.ts",
     "e2e:ui": "playwright test --ui",
     "gen:api": "${KORITSU_PYTHON:-python3} scripts/openapi-dump.py && openapi-typescript openapi.json -o src/api/schema.d.ts"
   },

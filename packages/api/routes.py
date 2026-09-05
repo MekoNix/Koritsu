@@ -120,6 +120,7 @@ def collect() -> list[APIRouter]:
     # ── сюда подпакеты дописывают свои роутеры ──────────────────────────────
     from .accounts.routes import router as accounts        # Вход и сессии
     from .projects.routes import router as projects        # Проекты, корзина
+    from .projects.runs import router as project_runs      # Журнал запусков
     from .workspaces.routes import router as workspaces    # Workspace, роли
     from .workspaces.service import register_hooks         # Личное при регистрации
 
@@ -131,6 +132,7 @@ def collect() -> list[APIRouter]:
     site.include_router(accounts)
     site.include_router(workspaces)
     site.include_router(projects)
+    site.include_router(project_runs)
 
     from .keys.routes import router as keys                 # Ключи моделей
     from .materials.routes import router as project_files   # Материалы проекта
@@ -162,15 +164,20 @@ def collect() -> list[APIRouter]:
     site.include_router(admin)
     site.include_router(billing.router)
 
+    from .bootstrap import router as bootstrap              # Сводка первого экрана
     from .export.routes import router as export             # Выгрузка файлов
     from .search.routes import router as search             # Поиск по именам
+
+    site.include_router(bootstrap)
 
     site.include_router(export)
     site.include_router(search)
 
+    from .templates.routes import project_router as project_templates
     from .templates.routes import router as templates       # Шаблоны отчётов
 
     site.include_router(templates)
+    site.include_router(project_templates)
 
     # Модули (реестр, блок-схемы, UML) и общее скачивание артефактов. Одной
     # строкой намеренно: новый модуль заводится строкой в `modules/__init__.py`,
@@ -198,8 +205,14 @@ def collect() -> list[APIRouter]:
     # умолчанием по методу — `projects:write`: архив ложится на том, в квоту
     # владельца проекта, и это запись, а не чтение. Скачивается он маршрутом
     # артефактов, который под `/api/v1` уже есть (он в `модули`).
-    ПОД_V1 = [projects, project_files, jobs, job_stream, user_stream, export,
-              *модули]
+    # Журнал запусков выставлен наружу вместе с проектами: «скрипт, который раз
+    # в неделю смотрит, что в работе делали» — тот же внешний клиент, ради
+    # которого второй вход и заведён, а прав ему хватает тех же
+    # (`projects:read` на чтение, `projects:write` на запись). Шаблонов здесь
+    # нет — ни своих, ни приложенных: это личные файлы аккаунта, и ключом в них
+    # не ходят.
+    ПОД_V1 = [projects, project_runs, project_files, jobs, job_stream,
+              user_stream, export, *модули]
 
     return [site, внешний_вход(ПОД_V1)]
 

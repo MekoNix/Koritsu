@@ -107,8 +107,9 @@ describe('AgentPanel', () => {
 
     // Работа взята из адреса — имя приезжает карточкой проекта.
     expect(await screen.findByText('Лабораторная 4 — Сортировки')).toBeInTheDocument()
-    // Цена задания и остаток — до нажатия.
-    expect(await screen.findByText(/Стоит 12/)).toBeInTheDocument()
+    // Цены и остатка в панели нет: цена прогона динамическая, и названное до
+    // нажатия число было бы обещанием, которого никто не давал.
+    expect(screen.queryByText(/Стоит/)).toBeNull()
 
     await act(async () => {
       fireEvent.keyDown(панель, { key: 'Escape' })

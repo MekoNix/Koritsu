@@ -58,8 +58,11 @@ export type FillState = {
   total: number
   /** Прогон одного тега. */
   fillTag: (key: string) => void
-  /** Прогон по списку тегов; пустой список — по всем незаполненным. */
-  fillReport: (keys: string[]) => void
+  /**
+   * Прогон по списку тегов; пустой список — по всем незаполненным.
+   * `prompt` — общая подсказка на весь прогон, одна на все теги сразу.
+   */
+  fillReport: (keys: string[], prompt?: string) => void
   /** Отказ постановки задания (лимит, нет ключа) — показывается на экране. */
   startError: unknown
 }
@@ -113,7 +116,7 @@ export function useFill(projectId: string, endpoint: string | null): FillState {
   }, [running, stream.done, stream.job, projectId, qc])
 
   const поставить = useCallback(
-    (kind: string, ключи: string[]) => {
+    (kind: string, ключи: string[], подсказка = '') => {
       if (!endpoint) return
       enqueue.mutate(
         {
@@ -122,7 +125,7 @@ export function useFill(projectId: string, endpoint: string | null): FillState {
           payload:
             kind === FILL_TAG
               ? { key: ключи[0], endpoint, overwrite: true }
-              : { endpoint, keys: ключи, overwrite: false },
+              : { endpoint, keys: ключи, overwrite: false, prompt: подсказка },
         },
         {
           onSuccess: (задание) => {
@@ -137,7 +140,10 @@ export function useFill(projectId: string, endpoint: string | null): FillState {
   )
 
   const fillTag = useCallback((key: string) => поставить(FILL_TAG, [key]), [поставить])
-  const fillReport = useCallback((ключи: string[]) => поставить(FILL_REPORT, ключи), [поставить])
+  const fillReport = useCallback(
+    (ключи: string[], подсказка = '') => поставить(FILL_REPORT, ключи, подсказка),
+    [поставить],
+  )
 
   const textFor = useCallback(
     (key: string) => {

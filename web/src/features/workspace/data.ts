@@ -160,6 +160,7 @@ export function useSetMemberRole() {
 
 export function useRemoveMember() {
   const сбросить = useInvalidateWorkspaces()
+  const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, userId }: { id: string; userId: string }) =>
       unwrap<{ removed: string }>(
@@ -167,6 +168,52 @@ export function useRemoveMember() {
           params: { path: { workspace_id: id, user_id: userId } },
         }),
       ),
-    onSuccess: сбросить,
+    onSuccess: () => {
+      сбросить()
+      // Убрали позванного — служба унесла и его приглашение: колокольчик у
+      // него обязан это заметить, а у нас в кэше лежит своё число непрочитанных.
+      void qc.invalidateQueries({ queryKey: keys.notifications })
+    },
   })
+}
+
+/**
+ * Ответ на приглашение: «принять» и «отклонить».
+ *
+ * Приглашение не зачисляет — оно приходит уведомлением с двумя кнопками, и
+ * ответ шлёт сам приглашённый. Что гасится после ответа, и почему именно это:
+ *
+ * * `workspaces` — пространство появилось в списке (или не появилось, если
+ *   отказ), а список переключателя живёт минуту и сам бы этого не заметил;
+ * * `notifications` — служба убрала строку приглашения: отвечать больше не на
+ *   что, и кнопки в колокольчике остались бы обманкой;
+ * * `projects` — принявший получил чужие работы, и если он тут же переключится
+ *   в новое пространство, список обязан быть настоящим, а не пустым.
+ */
+function useAnswerInvite(путь: 'accept' | 'decline') {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, userId }: { id: string; userId: string }) =>
+      unwrap(
+        api.POST(
+          путь === 'accept'
+            ? '/api/workspaces/{workspace_id}/members/{user_id}/accept'
+            : '/api/workspaces/{workspace_id}/members/{user_id}/decline',
+          { params: { path: { workspace_id: id, user_id: userId } } },
+        ),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.workspaces.all })
+      void qc.invalidateQueries({ queryKey: keys.notifications })
+      void qc.invalidateQueries({ queryKey: keys.projects.all })
+    },
+  })
+}
+
+export function useAcceptInvite() {
+  return useAnswerInvite('accept')
+}
+
+export function useDeclineInvite() {
+  return useAnswerInvite('decline')
 }

@@ -1,12 +1,13 @@
 /**
- * ExportDialog — «Скачать работу»: выбор формата, цена, задание, файл.
+ * ExportDialog — «Скачать работу»: выбор формата, задание, файл.
  *
  * Правило: экспорт — кнопка в проекте, задание, скачивание из уведомления.
  * Все три части здесь и ровно в этом порядке.
  *
- * **Цена и остаток — до нажатия** (то же правило, что у прогонов модели):
- * форматы стоят по-разному, потому что за ними разные задания (`export.ts`),
- * и человек обязан увидеть оба числа раньше, чем нажмёт.
+ * **Цены и остатка здесь нет** (то же правило, что у прогонов модели): цена
+ * зависит от того, сколько выйдет работы, и названное до нажатия число было бы
+ * обещанием, которого никто не давал. Расход человек смотрит одним местом —
+ * «Расход и лимиты» в настройках.
  *
  * **После постановки окно не закрывается само.** Задание уехало в очередь, и
  * закрытое окно оставило бы человека гадать, случилось ли что-нибудь. Вместо
@@ -21,10 +22,9 @@
 import { useEffect, useState } from 'react'
 
 import { errorText } from '@/api'
-import { useJobStream, useUsage } from '@/api/hooks'
+import { useJobStream } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { Button, Dialog, Icon, Segmented, Spinner, type SegmentedOption } from '@/ui'
-import { PriceHint } from '@/features/reports/runControls'
 
 import { artifactUrl, useEnqueueJob } from './data'
 import { BUILD, EXPORT, jobArtifacts, формат, useExportProject, type ExportFormat } from './export'
@@ -42,7 +42,6 @@ export function ExportDialog({
   hasTemplate: boolean
 }) {
   const t = useT()
-  const usage = useUsage()
   const enqueue = useEnqueueJob()
   const выгрузка = useExportProject()
 
@@ -129,10 +128,6 @@ export function ExportDialog({
         <p className="text-xs text-muted">{t(`projects.export.hint.${format}`)}</p>
 
         {нельзя && <p className="text-xs text-warn">{t('projects.export.noTemplate')}</p>}
-
-        <p className="text-xs text-muted">
-          <PriceHint kind={выбран.job} usage={usage.data} />
-        </p>
 
         {error && <p className="text-xs text-err">{error}</p>}
 

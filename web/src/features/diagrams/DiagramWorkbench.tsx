@@ -2,36 +2,51 @@
  * DiagramWorkbench — рабочий экран схем: слева код и параметры, справа draw.io.
  *
  * Экран один на два модуля службы. Различий у них ровно три — маршрут
- * предпросмотра, третий параметр (режим отрисовки против палитры) и число
+ * построения, третий параметр (режим отрисовки против палитры) и число
  * исходников, — и разводить ради них два дерева файлов значило бы держать две
  * копии одной раскладки, двух загрузок файла и двух сборок Word.
  *
+ * **Экран во всю ширину окна** (`useWidePage`), а не в колонке текста: здесь
+ * две крупные вещи рядом — поле кода и настоящий редактор draw.io, — и полтора
+ * сантиметра пустоты по краям забирают их у обеих. По той же причине половины
+ * равные: код читают столько же, сколько смотрят на схему.
+ *
  * Что происходит по шагам:
  *
- * * человек вставляет код → через задержку сайт просит предпросмотр
- *   (`POST /api/flowcharts/preview` или `…/uml/{вид}/preview`) — на томе службы
- *   при этом не появляется ничего;
- * * XML предпросмотра уезжает в кадр `embed.diagrams.net` сообщением; правки
- *   руками возвращаются оттуда и становятся текущей схемой;
- * * «Сохранить в проект» строит схему ещё раз, но уже маршрутом проекта: XML
- *   ложится артефактом, и тем же действием артефакт ставится значением тега —
- *   без этого сборка Word про схему не узнает;
+ * * человек вставляет код и нажимает «Построить схему» (Ctrl+Enter). Сама собой
+ *   схема строится ровно один раз — когда её ещё не было; дальше правка кода
+ *   картинку не трогает (`usePreview`);
+ * * построение **и есть сохранение**: XML ложится артефактом работы, схема
+ *   попадает в журнал запусков под своим номером («Схема 1 — Курсовая»), а
+ *   рядом с ней хранится код и параметры. Кнопки «сохранить в проект» нет —
+ *   половина построенных схем терялась бы молча;
+ * * следующие нажатия перестраивают **ту же** схему (`PUT …/{run_id}`), а не
+ *   заводят вторую: пять нажатий, пока подбирается код, — это одна схема;
+ * * XML уезжает в кадр `embed.diagrams.net` сообщением; правки руками
+ *   возвращаются оттуда и становятся текущей схемой;
+ * * «Редактировать в draw.io» и «Просмотреть диаграмму» открывают схему в
+ *   отдельном окне draw.io — тоже сообщением, а не адресом, поэтому длина схемы
+ *   ничего не значит (`drawio.ts`);
  * * «Скачать Word» ставит задание `build` и ждёт его потоком; готовый DOCX
  *   скачивается артефактом.
  *
- * Тосты — только на конце задания и на отказ, причём провал
- * задания тостит оболочка (`useUserEvents`), а не этот экран: один тост на одну
- * беду. Здесь остаются свои тосты на отказ обычного запроса — сохранения схемы
- * и постановки задания. Отказ предпросмотра тостом не показывается вовсе: он
- * живёт в правой половине экрана, рядом со схемой, которой не получилось.
+ * Тосты — только на конце задания и на отказ, причём провал задания тостит
+ * оболочка (`useUserEvents`), а не этот экран: один тост на одну беду. Отказ
+ * построения тостом не показывается вовсе: он живёт в правой половине экрана,
+ * рядом со схемой, которой не получилось.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { errorText, keys } from '@/api'
-import { useJobStream, useUsage } from '@/api/hooks'
+import { useJobStream } from '@/api/hooks'
 import { useDocumentCrumb } from '@/app/shell/breadcrumbs'
+import { useWidePage } from '@/app/shell/widePage'
+// Имя запуска рисует область работ (`runTitle`), а не этот экран: имя схемы в
+// журнале работы и имя схемы здесь — одно и то же имя, и второе такое же
+// правило разошлось бы с первым на первом же переименовании.
+import { runTitle } from '@/features/projects/format'
 import { dictionary, useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { useAppearance } from '@/theme'
@@ -40,26 +55,24 @@ import { Button, EmptyState, ErrorState, Icon, Input, SkeletonLines, Spinner, us
 import { CodeEditor } from './CodeEditor'
 import { DrawioFrame, type FrameState } from './DrawioFrame'
 import { ControlBlock, Notices, Segmented } from './controls'
-import { drawioOpenUrl } from './drawio'
+import { openDrawioWindow } from './drawio'
 import { safeFilename, saveBlob, saveText } from './download'
 import {
   buildFlowchart,
   buildUml,
   fetchArtifact,
-  fetchArtifactText,
+  fetchDiagram,
   fetchModes,
   fetchProject,
   fetchThemes,
-  previewFlowchart,
-  previewUml,
   setValue,
   startBuildJob,
   type NamedSource,
 } from './api'
 import { usePreview } from './usePreview'
-import { LANGS, type Lang, type UmlKind } from './types'
+import { LANGS, type FullDiagram, type Lang, type Module, type UmlKind } from './types'
 
-export type Module = 'flowcharts' | 'uml'
+export type { Module }
 
 /** Расширение файла по языку — для имени нового исходника. */
 const РАСШИРЕНИЕ: Record<Lang, string> = { py: 'py', cs: 'cs', cpp: 'cpp' }
@@ -95,25 +108,34 @@ export function DiagramWorkbench({ module }: { module: Module }) {
   const qc = useQueryClient()
   const { projectId = '' } = useParams()
   const [search, setSearch] = useSearchParams()
+  useWidePage()
 
   const umlKind: UmlKind = search.get('kind') === 'objects' ? 'objects' : 'classes'
-  const открытыйАртефакт = search.get('artifact')
+  const открытая = search.get('run')
 
   // ── что строим ─────────────────────────────────────────────────────────────
   const [lang, setLang] = useState<Lang>('py')
   const [mode, setMode] = useState('default')
   const [theme, setTheme] = useState(appearance.mode === 'dark' ? 'dark' : 'light')
-  const [files, setFiles] = useState<SourceFile[]>([{ name: 'source.py', source: '' }])
+  // У UML исходников несколько, и при входе их **ноль**: файл, заведённый до
+  // того, как человек что-то написал, — это пустая заготовка, о которой он не
+  // просил. Первый файл появляется от первой же строки кода (`правитьКод`).
+  const [files, setFiles] = useState<SourceFile[]>(
+    module === 'uml' ? [] : [{ name: 'source.py', source: '' }],
+  )
   const [активный, setАктивный] = useState(0)
   const [tagKey, setTagKey] = useState(ТЕГ[module === 'uml' ? umlKind : 'flowchart'])
   const [caption, setCaption] = useState('')
-  const [savedArtifact, setSavedArtifact] = useState<string | null>(null)
-  const [saveError, setSaveError] = useState<unknown>(null)
-  const [saving, setSaving] = useState(false)
+  /** Запись журнала сохранённой схемы: есть — перестраиваем её, нет — заводим. */
+  const [runId, setRunId] = useState<string | null>(открытая)
+  const [сохранена, setСохранена] = useState<{ n: number; name: string } | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
   const [frameState, setFrameState] = useState<FrameState>('connecting')
 
-  const текущий = files[Math.min(активный, files.length - 1)] ?? { name: 'source', source: '' }
+  const текущий = files[Math.min(активный, files.length - 1)] ?? {
+    name: `source.${РАСШИРЕНИЕ[lang]}`,
+    source: '',
+  }
   const естьКод = files.some((f) => f.source.trim().length > 0)
 
   // ── справочники службы ─────────────────────────────────────────────────────
@@ -134,11 +156,10 @@ export function DiagramWorkbench({ module }: { module: Module }) {
     queryFn: () => fetchProject(projectId),
     enabled: !!projectId,
   })
-  const usage = useUsage()
 
   useDocumentCrumb(project.data?.name)
 
-  // ── предпросмотр ───────────────────────────────────────────────────────────
+  // ── построение ─────────────────────────────────────────────────────────────
   const sources = useMemo<NamedSource[]>(
     () => files.filter((f) => f.source.trim()).map((f) => ({ name: f.name, source: f.source })),
     [files],
@@ -156,76 +177,77 @@ export function DiagramWorkbench({ module }: { module: Module }) {
     [module, umlKind, lang, mode, theme, sources],
   )
 
-  const request = useCallback(() => {
-    if (module === 'flowcharts') {
-      return previewFlowchart({ source: sources[0]?.source ?? '', lang, mode })
-    }
-    return previewUml(umlKind, { sources, lang, theme })
-  }, [module, umlKind, lang, mode, theme, sources])
+  /**
+   * Построить и тем же действием сохранить.
+   *
+   * Ключ тега ставится следом за постройкой: схема в работе и схема в
+   * документе — разные вещи, и сборка Word читает именно значения тегов. Отказ
+   * тега схему не отменяет — она уже сохранена, — поэтому он только тостит.
+   */
+  const request = useCallback(async () => {
+    const готово: FullDiagram =
+      module === 'flowcharts'
+        ? await buildFlowchart(projectId, { source: sources[0]?.source ?? '', lang, mode }, runId)
+        : await buildUml(projectId, umlKind, { sources, lang, theme }, runId)
+    setRunId(готово.run_id)
+    setСохранена({ n: готово.n, name: готово.name })
+    void qc.invalidateQueries({ queryKey: keys.diagrams.list(module, projectId) })
+    void qc.invalidateQueries({ queryKey: keys.diagrams.one(module, projectId, готово.run_id) })
+    // Запись журнала — та же самая: список «Что в работе» на странице работы
+    // обязан узнать о новой схеме тем же действием.
+    void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
 
-  const preview = usePreview({ signature, enabled: естьКод, request })
-  const { setXml } = preview
-
-  // Схема, открытая из списка сохранённых: показываем её, пока не вставили код.
-  const артефакт = useQuery({
-    queryKey: keys.diagrams.artifact(projectId, открытыйАртефакт ?? ''),
-    queryFn: () => fetchArtifactText(projectId, открытыйАртефакт as string),
-    enabled: !!projectId && !!открытыйАртефакт,
-    staleTime: Infinity,
-  })
-  useEffect(() => {
-    if (артефакт.data) setXml(артефакт.data)
-  }, [артефакт.data, setXml])
-
-  // ── сохранить в проект ─────────────────────────────────────────────────────
-  const сохранить = useCallback(async (): Promise<string | null> => {
-    if (!projectId || !естьКод) return null
-    setSaving(true)
-    setSaveError(null)
-    try {
-      const готово =
-        module === 'flowcharts'
-          ? await buildFlowchart(projectId, { source: sources[0]?.source ?? '', lang, mode })
-          : await buildUml(projectId, umlKind, { sources, lang, theme })
-      // Артефакт сам по себе в отчёт не попадёт: сборка читает значения тегов,
-      // поэтому тем же действием ставим схему значением. Иначе «сохранил» и
-      // «в документе появилось» оказались бы двумя разными действиями, о
-      // разнице между которыми человеку никто не сказал.
-      const ключ = tagKey.trim()
-      if (ключ) {
+    const ключ = tagKey.trim()
+    if (ключ) {
+      try {
         await setValue(projectId, ключ, {
           type: 'diagram',
           artifact: готово.artifact,
           ...(caption.trim() ? { caption: caption.trim() } : {}),
         })
+      } catch (беда) {
+        toast.error(t('diagrams.work.tagFailed'), errorText(беда))
       }
-      setSavedArtifact(готово.artifact)
-      // Список сохранённых схем на главной модуля собирается из значений
-      // проекта — значит, после записи он устарел ровно в этот момент.
-      void qc.invalidateQueries({ queryKey: keys.diagrams.values(projectId) })
-      return готово.artifact
-    } catch (беда) {
-      setSaveError(беда)
-      toast.error(t('diagrams.work.saveFailed'), errorText(беда))
-      return null
-    } finally {
-      setSaving(false)
     }
-  }, [
-    projectId,
-    естьКод,
-    module,
-    umlKind,
-    sources,
-    lang,
-    mode,
-    theme,
-    tagKey,
-    caption,
-    toast,
-    t,
-    qc,
-  ])
+    return { xml: готово.xml, notices: готово.notices }
+  }, [module, projectId, sources, lang, mode, theme, umlKind, runId, tagKey, caption, qc, toast, t])
+
+  const preview = usePreview({ signature, enabled: естьКод && !!projectId, request })
+  const { showBuilt } = preview
+
+  // ── схема, открытая из списка ──────────────────────────────────────────────
+  const сохранённая = useQuery({
+    queryKey: keys.diagrams.one(module, projectId, открытая ?? ''),
+    queryFn: () => fetchDiagram(module, projectId, открытая as string),
+    enabled: !!projectId && !!открытая,
+    staleTime: Infinity,
+  })
+
+  // Открытая схема наполняет экран целиком: код, параметры и картинку. Без
+  // кода экран показывал бы чужую схему рядом с пустым полем — то самое, из-за
+  // чего сохранённая схема была бесполезна.
+  const наполнено = useRef<string | null>(null)
+  useEffect(() => {
+    const схема = сохранённая.data
+    if (!схема || наполнено.current === схема.run_id) return
+    наполнено.current = схема.run_id
+    setRunId(схема.run_id)
+    setСохранена({ n: схема.n, name: схема.name })
+    setLang(схема.lang)
+    if (схема.mode) setMode(схема.mode)
+    if (схема.theme) setTheme(схема.theme)
+    if (схема.sources.length) {
+      setFiles(схема.sources.map((к) => ({ name: к.name || 'source', source: к.source })))
+      setАктивный(0)
+    }
+    if (схема.kind === 'classes' || схема.kind === 'objects') {
+      const следующий = new URLSearchParams(search)
+      следующий.set('kind', схема.kind)
+      setSearch(следующий, { replace: true })
+      setTagKey(ТЕГ[схема.kind])
+    }
+    showBuilt(схема.xml, схема.notices)
+  }, [сохранённая.data, search, setSearch, showBuilt])
 
   // ── Word: задание `build` и его поток ──────────────────────────────────────
   const job = useJobStream(jobId)
@@ -261,8 +283,10 @@ export function DiagramWorkbench({ module }: { module: Module }) {
   }, [job.done, job.job, jobId, projectId, project.data?.name, toast, t])
 
   const скачатьWord = useCallback(async () => {
-    const артефакт = savedArtifact ?? (await сохранить())
-    if (!артефакт) return
+    if (!runId) {
+      toast.error(t('diagrams.work.wordNeedsProject'))
+      return
+    }
     try {
       const id = await startBuildJob(
         projectId,
@@ -273,9 +297,21 @@ export function DiagramWorkbench({ module }: { module: Module }) {
     } catch (беда) {
       toast.error(t('diagrams.work.wordFailed'), errorText(беда))
     }
-  }, [savedArtifact, сохранить, projectId, project.data?.name, toast, t])
+  }, [runId, projectId, project.data?.name, toast, t])
 
-  // ── файл с кодом ───────────────────────────────────────────────────────────
+  // ── код и файлы ────────────────────────────────────────────────────────────
+
+  /** Правка кода. Первый исходник UML заводится здесь — не раньше. */
+  const правитьКод = useCallback(
+    (значение: string) => {
+      setFiles((было) => {
+        if (!было.length) return [{ name: `source.${РАСШИРЕНИЕ[lang]}`, source: значение }]
+        return было.map((f, i) => (i === активный ? { ...f, source: значение } : f))
+      })
+    },
+    [активный, lang],
+  )
+
   const ввод = useRef<HTMLInputElement | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
 
@@ -288,7 +324,7 @@ export function DiagramWorkbench({ module }: { module: Module }) {
       }
       const текст = await file.text()
       // Двоичное содержимое читается как текст с U+FFFD — по нему его и узнаём.
-      if (текст.includes('\u0000') || текст.includes('�')) {
+      if (текст.includes(' ') || текст.includes('�')) {
         setFileError(t('diagrams.file.notText'))
         return
       }
@@ -304,7 +340,6 @@ export function DiagramWorkbench({ module }: { module: Module }) {
       setFiles((было) => {
         const кусок = { name: file.name, source: текст }
         if (module === 'flowcharts') return [кусок]
-        // У UML исходников несколько; пустую заготовку первым делом заменяем.
         const без_пустых = было.filter((f) => f.source.trim())
         return [...без_пустых, кусок]
       })
@@ -317,16 +352,31 @@ export function DiagramWorkbench({ module }: { module: Module }) {
   const заголовок = t(
     module === 'uml' ? 'diagrams.home.uml.title' : 'diagrams.home.flowcharts.title',
   )
-  const открыть = preview.xml ? drawioOpenUrl(preview.xml, project.data?.name ?? 'koritsu') : null
-  const ценаWord = usage.data?.prices?.build
+  const имяСхемы =
+    сохранена &&
+    runTitle(t, { module, name: сохранена.name, n: сохранена.n }, project.data?.name ?? '')
   const wordИдёт = !!jobId && !job.done
+
+  const открытьВDrawio = useCallback(
+    (вид: 'edit' | 'view') => {
+      if (!preview.xml) return
+      const открылось = openDrawioWindow(
+        вид,
+        preview.xml,
+        { dark: appearance.mode === 'dark', title: project.data?.name ?? 'koritsu' },
+        вид === 'edit' ? preview.setXml : undefined,
+      )
+      if (!открылось) toast.error(t('diagrams.work.windowBlocked'))
+    },
+    [preview.xml, preview.setXml, appearance.mode, project.data?.name, toast, t],
+  )
 
   if (project.isError) {
     return <ErrorState error={project.error} onRetry={() => void project.refetch()} />
   }
 
   return (
-    <section className="flex flex-col gap-s4">
+    <section className="flex flex-col gap-s3">
       <header className="flex flex-col gap-s2">
         <Link
           to={module === 'uml' ? '/uml' : '/flowcharts'}
@@ -338,12 +388,26 @@ export function DiagramWorkbench({ module }: { module: Module }) {
         <h1 className="font-display text-xl font-bold tracking-tight text-ink-strong">
           {заголовок}
         </h1>
-        <p className="max-w-[70ch] text-sm text-muted">
-          {t(module === 'uml' ? 'diagrams.home.uml.lead' : 'diagrams.home.flowcharts.lead')}
-        </p>
       </header>
 
       <div className="flex flex-wrap items-center gap-s2">
+        <Button
+          variant="primary"
+          loading={preview.pending}
+          disabled={!естьКод || preview.pending}
+          onClick={preview.run}
+        >
+          <Icon name={module === 'uml' ? 'uml' : 'flowchart'} size={16} />
+          {t('diagrams.work.build')}
+        </Button>
+        <Button variant="secondary" disabled={!preview.xml} onClick={() => открытьВDrawio('edit')}>
+          <Icon name="external" size={16} />
+          {t('diagrams.work.editInDrawio')}
+        </Button>
+        <Button variant="secondary" disabled={!preview.xml} onClick={() => открытьВDrawio('view')}>
+          <Icon name="eye" size={16} />
+          {t('diagrams.work.viewDiagram')}
+        </Button>
         <Button
           variant="secondary"
           disabled={!preview.xml}
@@ -357,71 +421,23 @@ export function DiagramWorkbench({ module }: { module: Module }) {
         </Button>
         <Button
           variant="secondary"
-          loading={wordИдёт || saving}
-          disabled={!естьКод || wordИдёт}
+          loading={wordИдёт}
+          disabled={!runId || wordИдёт}
           onClick={() => void скачатьWord()}
         >
           <Icon name="file" size={16} />
           {t('diagrams.work.downloadWord')}
         </Button>
-        {/* Ссылкой, а не `onClick`: работает Ctrl+клик и «открыть в новой
-            вкладке». `noopener` обязателен — иначе чужая вкладка получает
-            ссылку на нашу. Схемы нет или она длиннее ссылки — кнопка гаснет и
-            говорит словами, почему. */}
-        {открыть ? (
-          <Button variant="secondary" asChild>
-            <a href={открыть} target="_blank" rel="noreferrer noopener">
-              <Icon name="external" size={16} />
-              {t('diagrams.work.openInDrawio')}
-            </a>
-          </Button>
-        ) : (
-          <Button
-            variant="secondary"
-            disabled
-            title={preview.xml ? t('diagrams.work.openTooBig') : undefined}
-          >
-            <Icon name="external" size={16} />
-            {t('diagrams.work.openInDrawio')}
-          </Button>
-        )}
-        <Button
-          variant="secondary"
-          loading={saving}
-          disabled={!естьКод || saving}
-          onClick={() => void сохранить()}
-        >
-          <Icon name="save" size={16} />
-          {t('diagrams.work.save')}
-        </Button>
         <div className="grow" />
-        <Button
-          variant="primary"
-          loading={preview.pending}
-          disabled={!естьКод}
-          onClick={preview.run}
-        >
-          <Icon name={module === 'uml' ? 'uml' : 'flowchart'} size={16} />
-          {t('diagrams.work.build')}
-        </Button>
+        {имяСхемы && (
+          <p className="flex items-center gap-1.5 text-xs text-ok">
+            <Icon name="checkCircle" size={14} />
+            {t('diagrams.work.savedAs', { name: имяСхемы })}
+          </p>
+        )}
       </div>
 
-      {ценаWord !== undefined && usage.data && (
-        <p className="text-xs text-muted">
-          {t('diagrams.work.wordPrice', {
-            n: ценаWord,
-            left: usage.data.remaining_units,
-          })}
-        </p>
-      )}
-      {savedArtifact && !saveError && (
-        <p className="flex items-center gap-1.5 text-xs text-ok">
-          <Icon name="checkCircle" size={14} />
-          {t('diagrams.work.saved')} · {t('diagrams.work.savedTag', { key: tagKey })}
-        </p>
-      )}
-
-      <div className="grid min-h-[460px] gap-s4 lg:h-[calc(100vh-320px)] lg:grid-cols-[minmax(340px,40%)_1fr]">
+      <div className="grid min-h-[520px] gap-s3 lg:h-[calc(100vh-210px)] lg:grid-cols-2">
         {/* ── слева: код и параметры ─────────────────────────────────────── */}
         <div className="flex min-h-0 flex-col gap-s3 overflow-auto rounded-md border border-line bg-surface p-s3">
           <div className="flex flex-wrap gap-s3">
@@ -460,7 +476,14 @@ export function DiagramWorkbench({ module }: { module: Module }) {
                     onChange={(значение) => {
                       const следующий = new URLSearchParams(search)
                       следующий.set('kind', значение)
+                      // Смена вида — это новая диаграмма, а не перестройка
+                      // прежней: классы и объекты отвечают на разные вопросы, и
+                      // подменить одно другим под тем же именем и номером
+                      // значило бы потерять первую.
+                      следующий.delete('run')
                       setSearch(следующий, { replace: true })
+                      setRunId(null)
+                      setСохранена(null)
                       setTagKey(ТЕГ[значение])
                     }}
                     options={[
@@ -484,7 +507,7 @@ export function DiagramWorkbench({ module }: { module: Module }) {
             )}
           </div>
 
-          {module === 'uml' && (
+          {module === 'uml' && files.length > 0 && (
             <ControlBlock
               label={t('diagrams.work.files')}
               hint={umlKind === 'objects' ? t('diagrams.work.entryHint') : undefined}
@@ -536,7 +559,7 @@ export function DiagramWorkbench({ module }: { module: Module }) {
             </ControlBlock>
           )}
 
-          <div className="flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-sm border border-line bg-surface-2">
+          <div className="flex min-h-[320px] flex-1 flex-col overflow-hidden rounded-sm border border-line bg-surface-2">
             <div className="flex items-center justify-between gap-s2 border-b border-line px-s3 py-2 text-xs text-muted">
               <span className="truncate font-mono">{текущий.name}</span>
               <span>{t('diagrams.work.lines', { n: текущий.source.split('\n').length })}</span>
@@ -548,11 +571,7 @@ export function DiagramWorkbench({ module }: { module: Module }) {
                 ariaLabel={t('diagrams.work.codeLabel')}
                 placeholder={t('diagrams.work.codePlaceholder')}
                 onSubmit={preview.run}
-                onChange={(значение) =>
-                  setFiles((было) =>
-                    было.map((f, i) => (i === активный ? { ...f, source: значение } : f)),
-                  )
-                }
+                onChange={правитьКод}
               />
             </div>
             <div className="flex items-center justify-between gap-s2 border-t border-line px-s3 py-2">
@@ -614,7 +633,7 @@ export function DiagramWorkbench({ module }: { module: Module }) {
           </div>
 
           <div className="relative min-h-[320px] flex-1">
-            {!естьКод && !preview.xml ? (
+            {!preview.xml ? (
               <EmptyState
                 icon="flowchart"
                 title={t('diagrams.preview.empty')}
@@ -638,8 +657,8 @@ export function DiagramWorkbench({ module }: { module: Module }) {
             {preview.error != null && !preview.rateLimited && (
               <p className="text-xs text-err">{errorText(preview.error)}</p>
             )}
-            {!preview.auto && !preview.rateLimited && (
-              <p className="text-xs text-muted">{t('diagrams.work.autoOff')}</p>
+            {preview.stale && !preview.pending && (
+              <p className="text-xs text-muted">{t('diagrams.work.codeChanged')}</p>
             )}
             <Notices notices={preview.notices} />
           </div>

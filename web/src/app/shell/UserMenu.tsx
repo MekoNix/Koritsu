@@ -9,11 +9,18 @@
  * Почты здесь нет вовсе: шапка видна на каждом экране, в том числе на
  * проекторе, а узнать по ней человек ничего не может — свой адрес он и так
  * знает. Нужна почта — она в настройках профиля.
+ *
+ * Четвёртый пункт, «Админка», виден только владельцу службы и правилу состава
+ * не противоречит: в сайдбар админка не выводится никому, и это единственное
+ * место, откуда в неё попадают не по памяти адреса. Ведёт он на её собственный
+ * домен (там она и живёт), поэтому переход — обычный переход браузера, а не
+ * роутером: между origin'ами роутер не ходит.
  */
 import { useNavigate } from 'react-router-dom'
 
-import { useLogout, useMe } from '@/api/hooks'
+import { useIsAdmin, useLogout, useMe } from '@/api/hooks'
 import { useT } from '@/i18n'
+import { адресАдминки, админкаНаЭтомИмени, доменАдминки } from '@/lib/adminHost'
 import {
   Avatar,
   Button,
@@ -29,9 +36,16 @@ export function UserMenu() {
   const t = useT()
   const navigate = useNavigate()
   const { data: me } = useMe()
+  const { isAdmin } = useIsAdmin()
   const logout = useLogout()
 
   const name = me?.nickname ?? ''
+  // Домена нет (машина разработчика, стенд) — админка живёт там же, где сайт,
+  // и пункт ведёт обычным переходом. Есть — уводим на её имя.
+  const открытьАдминку = () => {
+    if (доменАдминки() && !админкаНаЭтомИмени()) window.location.assign(адресАдминки())
+    else navigate('/admin')
+  }
 
   return (
     <MenuRoot>
@@ -54,6 +68,11 @@ export function UserMenu() {
         <MenuItem icon={<Icon name="dashboard" size={18} />} onSelect={() => navigate('/')}>
           {t('shell.user.dashboard')}
         </MenuItem>
+        {isAdmin ? (
+          <MenuItem icon={<Icon name="shield" size={18} />} onSelect={открытьАдминку}>
+            {t('shell.user.admin')}
+          </MenuItem>
+        ) : null}
         <MenuSeparator />
         <MenuItem
           danger

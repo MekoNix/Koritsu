@@ -15,6 +15,9 @@ export const LOOK: Record<string, { icon: IconName; color: string }> = {
   job_failed: { icon: 'error', color: 'text-err' },
   job_cancelled: { icon: 'close', color: 'text-muted' },
   limit_exhausted: { icon: 'warning', color: 'text-warn' },
+  // Приглашение — не весть о задании, а дело с двумя кнопками; иконка людей,
+  // а не галочка, потому что отвечать на него ещё придётся.
+  workspace_invite: { icon: 'users', color: 'text-accent' },
 }
 
 export function lookOf(kind: string): { icon: IconName; color: string } {
@@ -31,6 +34,7 @@ export const TITLE_KEY: Record<string, string> = {
   job_failed: 'notifications.jobFailed',
   job_cancelled: 'notifications.jobCancelled',
   limit_exhausted: 'notifications.limitExhausted',
+  workspace_invite: 'notifications.workspaceInvite',
 }
 
 /**

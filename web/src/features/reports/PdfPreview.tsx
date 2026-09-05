@@ -19,28 +19,18 @@
  *
  * **Превью по кнопке, а не само.** Сборка зовёт LibreOffice, стоит денег
  * (`price_build`) и занимает секунды; перерисовывать её на каждую правку тега
- * значило бы платить за каждое нажатие клавиши. Поэтому кнопка одна, и рядом с
- * ней сказано, что это стоит.
+ * значило бы платить за каждое нажатие клавиши. Поэтому кнопка одна и нажимает
+ * её человек.
  *
  * DOCX и PDF собираются одним заданием (см. `useBuild`), поэтому «скачать Word»
  * не запускает вторую сборку — файл уже есть.
  */
-import type { ReactNode } from 'react'
-
 import { useT } from '@/i18n'
 import { Button, EmptyState, Icon, Spinner } from '@/ui'
 
 import type { BuildState } from './useBuild'
 
-export function PdfPreview({
-  build,
-  priceHint,
-  canBuild,
-}: {
-  build: BuildState
-  priceHint: ReactNode
-  canBuild: boolean
-}) {
+export function PdfPreview({ build, canBuild }: { build: BuildState; canBuild: boolean }) {
   const t = useT()
 
   return (
@@ -102,12 +92,9 @@ export function PdfPreview({
             title={t('reports.pdf.emptyTitle')}
             text={t('reports.pdf.emptyText')}
             action={
-              <div className="flex flex-col items-center gap-s2">
-                <Button variant="primary" size="sm" onClick={build.start} disabled={!canBuild}>
-                  {t('reports.pdf.build')}
-                </Button>
-                <span className="text-xs text-muted">{priceHint}</span>
-              </div>
+              <Button variant="primary" size="sm" onClick={build.start} disabled={!canBuild}>
+                {t('reports.pdf.build')}
+              </Button>
             }
           />
         )}

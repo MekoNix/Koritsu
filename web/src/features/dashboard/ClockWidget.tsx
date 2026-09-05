@@ -37,7 +37,7 @@ export function ClockWidget() {
   const zone = timezoneLabel()
 
   return (
-    <Widget className="lg:col-span-3">
+    <Widget>
       <div className="flex h-full flex-col justify-between gap-s2">
         <span className="text-xs uppercase tracking-wider text-muted">
           {zone || t('dashboard.clock.local')}

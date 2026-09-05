@@ -8,7 +8,9 @@
  *    правки видит только владелец (участники — дело владельца, `editor` меняет
  *    проекты, а не людей);
  * 2. **участники** — почта, аватар, роль, дата вступления; пригласить по
- *    почте, сменить роль, убрать (с подтверждением);
+ *    почте, сменить роль, убрать (с подтверждением). Приглашение не зачисляет:
+ *    позванный стоит в списке помеченным «приглашён», пока не ответил на
+ *    уведомление, — иначе «позвал, а его нигде нет» читалось бы как пропажа;
  * 3. **корзина пространств** — своя, а не общая с корзиной проектов: у службы
  *    это разные объекты и разные сроки очистки.
  *
@@ -55,7 +57,7 @@ import {
   useWorkspaceCard,
   useWorkspaces,
 } from './data'
-import { ROLES, canManageMembers, workspaceLabel, type Member } from './types'
+import { MEMBER_PENDING, ROLES, canManageMembers, workspaceLabel, type Member } from './types'
 import { usePersonalName } from './usePersonalName'
 
 const TH =
@@ -255,6 +257,11 @@ function MembersCard({ workspaceId, canManage }: { workspaceId: string; canManag
                             {t('workspace.members.you')}
                           </span>
                         )}
+                        {m.status === MEMBER_PENDING && (
+                          <span className="mt-0.5 inline-flex">
+                            <Chip tone="warn">{t('workspace.members.pending')}</Chip>
+                          </span>
+                        )}
                       </span>
                     </span>
                   </td>
@@ -284,6 +291,10 @@ function MembersCard({ workspaceId, canManage }: { workspaceId: string; canManag
                     )}
                   </td>
                   <td className={`${TD} whitespace-nowrap text-muted`}>
+                    {/* У позванного это дата приглашения, а не вступления:
+                        вступления ещё не было. Столбец один — две даты в
+                        таблице участников читались бы хуже, чем одна с
+                        пометкой рядом с именем. */}
                     {formatDate(m.created_at)}
                   </td>
                   <td className={`${TD} text-right`}>

@@ -16,12 +16,26 @@ import { api, unwrap } from '../client'
 import { keys } from '../queryKeys'
 import type { NotificationsPage } from '../types'
 
-export function useNotifications(limit = 50): UseQueryResult<NotificationsPage> {
+/**
+ * Сколько записей показывает колокольчик — и, значит, сколько их кладёт в себя
+ * сводка первого экрана (`useBootstrap`). Число одно на оба места намеренно:
+ * длина списка — часть ключа кэша, и разойдясь, они дали бы второй запрос за
+ * тем же самым списком сразу после загрузки.
+ */
+export const СКОЛЬКО_В_КОЛОКОЛЬЧИКЕ = 20
+
+export function useNotifications(
+  limit = СКОЛЬКО_В_КОЛОКОЛЬЧИКЕ,
+): UseQueryResult<NotificationsPage> {
   return useQuery({
     queryKey: [...keys.notifications, limit],
     queryFn: () =>
       unwrap<NotificationsPage>(api.GET('/api/notifications', { params: { query: { limit } } })),
-    staleTime: 15_000,
+    // Список приезжает потоком человека: `useUserEvents` гасит этот ключ, как
+    // только служба что-то прислала. Поэтому свежесть здесь долгая — короткая
+    // означала бы перезапрос на каждом переходе между экранами ради того, что
+    // и так уже пришло.
+    staleTime: 5 * 60_000,
   })
 }
 
@@ -44,6 +58,26 @@ export function useMarkAllNotificationsRead() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: () => unwrap(api.POST('/api/notifications/read-all')),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.notifications }),
+  })
+}
+
+/**
+ * Убрать одно уведомление насовсем.
+ *
+ * Колокольчик — не архив: прочитанная строка о задании недельной давности
+ * человеку мешает. За строкой не уходит ничего, кроме неё самой, — ни задание,
+ * ни собранный им файл.
+ */
+export function useDeleteNotification() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      unwrap(
+        api.DELETE('/api/notifications/{notification_id}', {
+          params: { path: { notification_id: id } },
+        }),
+      ),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.notifications }),
   })
 }

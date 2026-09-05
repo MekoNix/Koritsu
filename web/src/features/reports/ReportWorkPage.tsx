@@ -17,15 +17,33 @@
  * Обязательные состояния все здесь: скелетон (пока едут теги), пусто (проект
  * без шаблона — тегов нет вовсе), ошибка (с повтором), запрет (роль `viewer` —
  * читать можно, писать нет).
+ *
+ * **Экран во всю ширину окна** (`useWidePage`), а не в колонке текста, как
+ * остальное приложение. Колонок здесь три, и самая узкая из них — превью
+ * страницы: полтора сантиметра пустоты по краям забирались бы у неё, то есть
+ * у вёрстки, ради которой превью и смотрят.
+ *
+ * **Бланки работы живут здесь же.** Шаблон выбирают там, где им пользуются, а
+ * не в профиле; личная полка остаётся источником файлов. Отчёт при этом
+ * заводится из работы (запись журнала `module: reports`), а не наоборот.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { isApiError } from '@/api'
-import { useUsage } from '@/api/hooks'
 import { useDocumentCrumb } from '@/app/shell/breadcrumbs'
+import { useWidePage } from '@/app/shell/widePage'
 import { useT } from '@/i18n'
-import { Button, Dialog, EmptyState, ErrorState, ForbiddenState, Icon, SkeletonLines } from '@/ui'
+import {
+  Button,
+  Dialog,
+  EmptyState,
+  ErrorState,
+  ForbiddenState,
+  Icon,
+  SkeletonLines,
+  Textarea,
+} from '@/ui'
 import { ExportDialog } from '@/features/projects/ExportDialog'
 import { MaterialsPanel } from '@/features/projects/MaterialsPanel'
 import { canEditWorkspace, useMaterials, useProject, useWorkspace } from '@/features/projects/data'
@@ -33,10 +51,11 @@ import { canEditWorkspace, useMaterials, useProject, useWorkspace } from '@/feat
 import { PdfPreview } from './PdfPreview'
 import { TagEditor } from './TagEditor'
 import { TagList } from './TagList'
+import { TemplatesPanel } from './TemplatesPanel'
 import { useDefaultEndpoint, useProjectTags, useProjectValues, useProviders } from './data'
-import { ModelPicker, PriceHint } from './runControls'
+import { ModelPicker } from './runControls'
 import { emptyKeys, filterTags, type TagFilter } from './tags'
-import { BUILD, FILL_REPORT, FILL_TAG } from './types'
+import { FILL_REPORT } from './types'
 import { useBuild } from './useBuild'
 import { useFill } from './useFill'
 
@@ -45,7 +64,7 @@ import { useFill } from './useFill'
  * со своей прокруткой обязаны иметь определённую высоту, иначе прокручивается
  * страница целиком и шапка с прогрессом уезжает вверх.
  */
-const ВЫСОТА = { height: 'calc(100vh - var(--topbar-h) - 2 * var(--space-5) - 56px)' }
+const ВЫСОТА = { height: 'calc(100vh - var(--topbar-h) - 2 * var(--space-3) - 52px)' }
 
 export function ReportWorkPage() {
   const t = useT()
@@ -58,7 +77,6 @@ export function ReportWorkPage() {
   const values = useProjectValues(projectId)
   const materials = useMaterials(projectId)
   const providers = useProviders()
-  const usage = useUsage()
 
   const [endpoint, setEndpoint] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -67,11 +85,17 @@ export function ReportWorkPage() {
   const [askAll, setAskAll] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  // Общая подсказка на весь прогон. Живёт в экране, а не в манифесте: она
+  // про сегодняшний запуск («сухо, без оценок»), а манифест описывает бланк и
+  // переживает работу. Задание отдельного тега — другое поле, в его карточке.
+  const [runPrompt, setRunPrompt] = useState('')
 
   const fill = useFill(projectId, endpoint)
   const build = useBuild(projectId)
 
   useDocumentCrumb(project.data?.name)
+  useWidePage()
 
   // Пресет по умолчанию — выбранный человеком в настройках, а если он там
   // ничего не выбрал, первый, которым есть чем платить (свой ключ вперёд
@@ -95,16 +119,17 @@ export function ReportWorkPage() {
    */
   useEffect(() => {
     if (selected !== null) return
-    const список = tags.data
+    const список = tags.data?.tags
     const первый = список?.[0]
     if (!список || !первый) return
     const изАдреса = список.find((x) => x.key === params.get('tag'))
     setSelected((изАдреса ?? первый).key)
   }, [tags.data, selected, params])
 
-  const показанные = useMemo(() => filterTags(tags.data, query, filter), [tags.data, query, filter])
-  const выбранный = tags.data?.find((x) => x.key === selected)
-  const пустые = emptyKeys(tags.data)
+  const список = tags.data?.tags
+  const показанные = useMemo(() => filterTags(список, query, filter), [список, query, filter])
+  const выбранный = список?.find((x) => x.key === selected)
+  const пустые = emptyKeys(список)
   const canEdit = workspace.data ? canEditWorkspace(workspace.data.role) : true
   const canGenerate = !!endpoint && !fill.running
 
@@ -134,20 +159,29 @@ export function ReportWorkPage() {
     return <ErrorState error={tags.error} onRetry={() => tags.refetch()} />
   }
 
-  if ((tags.data?.length ?? 0) === 0) {
-    // Проект без шаблона: тегов нет и взяться им неоткуда. Не ошибка — законный
-    // случай (документ строится с нуля), но работать с ним в отчётах нечем.
+  if ((список?.length ?? 0) === 0) {
+    // Работа без бланка: тегов нет и взяться им неоткуда. Не ошибка — законный
+    // случай (документ строится с нуля), но заполнять в нём нечего. Отсюда же
+    // и выход: бланк прикладывают прямо здесь, и тогда теги появляются.
     return (
-      <EmptyState
-        icon="file"
-        title={t('reports.work.noTemplateTitle')}
-        text={t('reports.work.noTemplateText')}
-        action={
-          <Button variant="primary" asChild>
-            <Link to={`/projects/${projectId}`}>{t('reports.work.toProject')}</Link>
-          </Button>
-        }
-      />
+      <div className="flex flex-col gap-s4">
+        <EmptyState
+          icon="file"
+          title={t('reports.work.noTemplateTitle')}
+          text={t('reports.work.noTemplateText')}
+          action={
+            <Button variant="secondary" asChild>
+              <Link to={`/projects/${projectId}`}>{t('reports.work.toProject')}</Link>
+            </Button>
+          }
+        />
+        <section className="rounded-md border border-line bg-surface p-s4">
+          <h2 className="mb-s3 font-display text-md font-semibold text-ink-strong">
+            {t('reports.templates.title')}
+          </h2>
+          <TemplatesPanel projectId={projectId} canEdit={canEdit} />
+        </section>
+      </div>
     )
   }
 
@@ -164,7 +198,7 @@ export function ReportWorkPage() {
             {project.data?.name}
           </h1>
           <p className="text-xs text-muted">
-            {t('reports.work.subtitle', { total: tags.data?.length ?? 0, empty: пустые.length })}
+            {t('reports.work.subtitle', { total: список?.length ?? 0, empty: пустые.length })}
             {!canEdit && ` · ${t('reports.work.readOnly')}`}
           </p>
         </div>
@@ -182,6 +216,13 @@ export function ReportWorkPage() {
           >
             <Icon name="agent" size={16} />
             {t('reports.work.fillAll')}
+          </Button>
+          {/* Бланки работы: приложить, отвязать, выбрать тот, по которому
+              собирается документ. Окном, а не четвёртой колонкой: смотрят на
+              них раз в работу, а место они заняли бы всегда. */}
+          <Button variant="secondary" onClick={() => setTemplatesOpen(true)}>
+            <Icon name="file" size={16} />
+            {t('reports.templates.action')}
           </Button>
           {/* Та же выгрузка, что на странице работы, тем же окном: человек,
               дописавший отчёт, забирает файл здесь, не возвращаясь в проект. */}
@@ -202,7 +243,8 @@ export function ReportWorkPage() {
       <div className="grid min-h-0 flex-1 overflow-hidden rounded-md border border-line bg-surface [grid-template-columns:280px_1fr_44%]">
         <section className="min-h-0 border-r border-line">
           <TagList
-            tags={tags.data}
+            tags={список}
+            constructs={tags.data?.constructs}
             shown={показанные}
             loading={tags.isPending}
             selected={selected}
@@ -232,16 +274,11 @@ export function ReportWorkPage() {
             canEdit={canEdit}
             canGenerate={canGenerate}
             onGenerate={(key) => fill.fillTag(key)}
-            priceHint={<PriceHint kind={FILL_TAG} usage={usage.data} />}
           />
         </section>
 
         <section className="min-h-0">
-          <PdfPreview
-            build={build}
-            canBuild={canEdit}
-            priceHint={<PriceHint kind={BUILD} usage={usage.data} />}
-          />
+          <PdfPreview build={build} canBuild={canEdit} />
         </section>
       </div>
 
@@ -259,7 +296,7 @@ export function ReportWorkPage() {
               variant="agent"
               onClick={() => {
                 setAskAll(false)
-                fill.fillReport(пустые)
+                fill.fillReport(пустые, runPrompt.trim())
               }}
             >
               {t('reports.fillAll.start')}
@@ -269,6 +306,18 @@ export function ReportWorkPage() {
       >
         <div className="flex flex-col gap-s3 text-sm">
           <p className="text-muted">{t('reports.fillAll.keepsManual')}</p>
+          {/* Общая подсказка на весь прогон — здесь, у кнопки запуска, а не в
+              карточке тега: она про этот запуск и действует сразу на все теги.
+              Задание отдельного тега она не отменяет, а дополняет. */}
+          <Textarea
+            label={t('reports.fillAll.promptLabel')}
+            hint={t('reports.fillAll.promptHint')}
+            placeholder={t('reports.fillAll.promptPlaceholder')}
+            value={runPrompt}
+            maxLength={4000}
+            className="min-h-[64px] text-sm"
+            onChange={(e) => setRunPrompt(e.target.value)}
+          />
           <ul className="flex flex-wrap gap-1">
             {пустые.map((key) => (
               <li
@@ -279,9 +328,6 @@ export function ReportWorkPage() {
               </li>
             ))}
           </ul>
-          <p className="text-xs text-muted">
-            <PriceHint kind={FILL_REPORT} usage={usage.data} />
-          </p>
         </div>
       </Dialog>
 
@@ -292,6 +338,16 @@ export function ReportWorkPage() {
         onOpenChange={setExporting}
         hasTemplate
       />
+
+      <Dialog
+        open={templatesOpen}
+        onOpenChange={setTemplatesOpen}
+        title={t('reports.templates.title')}
+        description={t('reports.templates.hint')}
+        size="lg"
+      >
+        <TemplatesPanel projectId={projectId} canEdit={canEdit} />
+      </Dialog>
 
       <Dialog
         open={filesOpen}

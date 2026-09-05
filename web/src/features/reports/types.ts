@@ -19,6 +19,8 @@ export type ProjectTag = {
   /** Тип значения: `markdown` | `text` | `code` | `table` | `image` | … */
   type: string
   required: boolean
+  /** Задание модели на этот тег — то, что человек правит рядом с полем. */
+  prompt: string
   /** Есть ли у тега хоть одна версия значения. */
   filled: boolean
   /** Кто написал то, что лежит сейчас: `manual` | `agent` | `file` | null. */
@@ -28,8 +30,14 @@ export type ProjectTag = {
   at: string | null
 }
 
-/** Тело `GET /api/projects/{id}/tags`. */
-export type ProjectTagsBody = { tags: ProjectTag[] }
+/**
+ * Тело `GET /api/projects/{id}/tags`.
+ *
+ * `constructs` — конструкции бланка, которых сборщик не понимает
+ * (`{% for %}`, `{%tr for %}`). Они остаются в документе текстом и сборку не
+ * ломают, но знать о них человек должен до сборки, а не после.
+ */
+export type ProjectTagsBody = { tags: ProjectTag[]; constructs: string[] }
 
 /**
  * Значение тега — форма `hokoku.wire`. Полей у разных типов разные, общее

@@ -1,11 +1,13 @@
 /**
  * DashboardPage — лента виджетов.
  *
- * **Лента, а не рабочий стол модуля** (правило интерфейса): виджеты разнородные
- * по размеру — утилита и часы маленькой плиткой, статистика широкой, — и
- * порядок у них фиксированный. Перетаскивание и режим правки сетки — на потом,
- * поэтому здесь нет ни ручек, ни меню добавления виджета: пустой механизм
- * настройки хуже его отсутствия.
+ * **Лента, а не рабочий стол модуля** (правило интерфейса): клетки разнородные
+ * по размеру — утилита и часы маленькой плиткой, статистика широкой.
+ *
+ * **Клетки переставляются рукой**, и порядок помнится в браузере: раскладка
+ * ленты — свойство экрана, за которым человек сидит, а не свойство аккаунта
+ * (`order.ts`). Меню «добавить виджет» при этом нет: лента показывает то, что
+ * у человека есть, и прятать половину её было бы настройкой ради настройки.
  *
  * Чего на дашборде нет и не будет: дедлайнов, семестров, учебных групп —
  * приложением пользуется не только студент, и таких данных у службы нет.
@@ -13,8 +15,8 @@
  * страницы у них нет.
  *
  * Сетка — двенадцать колонок на широком экране, шесть на среднем, одна на
- * узком; своё место каждый виджет объявляет сам классом `lg:col-span-*`, чтобы
- * порядок ленты читался здесь одним списком, а не таблицей раскладки.
+ * узком; ширины клеток лежат таблицей рядом с порядком (`order.ts`), а не
+ * внутри самих клеток: переставленная клетка обязана унести ширину с собой.
  */
 import { useMe } from '@/api/hooks'
 import { useT } from '@/i18n'
@@ -22,6 +24,7 @@ import { maskEmail } from '@/lib/maskEmail'
 import { SkeletonLines } from '@/ui'
 
 import { ClockWidget } from './ClockWidget'
+import { DashboardGrid, type Cell } from './DashboardGrid'
 import { ModuleWidgets } from './ModuleWidgets'
 import { MyWorksWidget } from './MyWorksWidget'
 import { NotificationsWidget } from './NotificationsWidget'
@@ -39,6 +42,20 @@ function timeOfDay(hour: number): 'night' | 'morning' | 'day' | 'evening' {
   if (hour < 18) return 'day'
   return 'evening'
 }
+
+/**
+ * Клетки ленты. Имена — те же, что в `order.ts`: там лежит порядок по
+ * умолчанию и ширина каждой, здесь — что в ней нарисовано.
+ */
+const КЛЕТКИ: readonly Cell[] = [
+  { id: 'clock', node: <ClockWidget /> },
+  { id: 'wordToPdf', node: <WordToPdfWidget /> },
+  { id: 'usage', node: <UsageWidget /> },
+  { id: 'modules', node: <ModuleWidgets /> },
+  { id: 'stats', node: <StatsWidget /> },
+  { id: 'works', node: <MyWorksWidget /> },
+  { id: 'notifications', node: <NotificationsWidget /> },
+]
 
 export function DashboardPage() {
   const t = useT()
@@ -70,15 +87,7 @@ export function DashboardPage() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 gap-s3 sm:grid-cols-6 lg:grid-cols-12">
-        <ClockWidget />
-        <WordToPdfWidget />
-        <UsageWidget />
-        <ModuleWidgets />
-        <StatsWidget />
-        <MyWorksWidget />
-        <NotificationsWidget />
-      </div>
+      <DashboardGrid cells={КЛЕТКИ} />
     </div>
   )
 }

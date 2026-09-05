@@ -1,5 +1,5 @@
 /**
- * KadaiHomePage — главная модуля «Задания»: список работ и заведение новой.
+ * KadaiHomePage — главная модуля «Решения»: список работ и заведение новой.
  *
  * Своя страница в сайдбаре, а не вкладка отчётов: здесь
  * другой вход — не шаблон с тегами, а одна задача условием, — и другой путь
@@ -24,23 +24,33 @@
  * «Завести» и сразу платить за решение по неверно прочитанному скану — ровно
  * та ошибка, ради которой шаг и заведён.
  *
- * **Цена и остаток показаны до нажатия** — из `GET /api/usage`, тем же
- * компонентом, что в отчётах: цена вида задания и остаток месяца приезжают
- * одним ответом и разойтись не могут.
+ * **Файлы контекста кладутся сразу и все разом**, а не по одному под каждый
+ * блок: методичка, исходники и таблица данных нужны работе целиком, и делить
+ * их по местам применения человеку нечем — он не знает, из чего сложится
+ * строение. Разбирает их та же очередь, что и условие.
+ *
+ * **Запись в журнале работы ставится здесь.** Решение привязано к работе так
+ * же, как отчёт: строка «Решение N — <работа>» появляется в её списке запусков
+ * в момент заведения, а не когда-нибудь потом.
  */
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { errorText } from '@/api'
-import { useCurrentWorkspace, useUsage } from '@/api/hooks'
+import { useCurrentWorkspace } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { Button, EmptyState, ErrorState, Field, Icon, Input, SkeletonLines, Textarea } from '@/ui'
-import { useCreateProject, useProjects, useUploadMaterial } from '@/features/projects/data'
-import { ModelPicker, PriceHint } from '@/features/reports/runControls'
+import {
+  useCreateProject,
+  useCreateProjectRun,
+  useProjects,
+  useUploadMaterial,
+} from '@/features/projects/data'
+import { FileDrop } from '@/features/projects/FileDrop'
+import { ModelPicker } from '@/features/reports/runControls'
 import { useProviders, useDefaultEndpoint } from '@/features/reports/data'
 
 import { useSetCondition, useSetKadaiWishes } from './data'
-import { KADAI_RUN } from './types'
 
 /** Что принимает разбор материалов: те же виды, что и опись проекта. */
 const ПРИНИМАЕМ = '.docx,.doc,.pdf,.txt,.md,.png,.jpg,.jpeg,.py,.cs,.cpp,.c,.h'
@@ -50,7 +60,6 @@ export function KadaiHomePage() {
   const navigate = useNavigate()
   const workspace = useCurrentWorkspace()
   const projects = useProjects(workspace.data?.id)
-  const usage = useUsage()
   const providers = useProviders()
   // Умолчание пресета: выбор человека из профиля, иначе правило сайта.
   const умолчание = useDefaultEndpoint()
@@ -84,7 +93,6 @@ export function KadaiHomePage() {
           workspaceId={workspace.data?.id}
           onDone={(projectId) => navigate(`/kadai/${projectId}`)}
           providers={providers.data}
-          priceHint={<PriceHint kind={KADAI_RUN} usage={usage.data} />}
           defaultEndpoint={умолчание}
         />
       )}
@@ -150,13 +158,11 @@ function NewWork({
   workspaceId,
   onDone,
   providers,
-  priceHint,
   defaultEndpoint,
 }: {
   workspaceId: string | undefined
   onDone: (projectId: string) => void
   providers: ReturnType<typeof useProviders>['data']
-  priceHint: React.ReactNode
   defaultEndpoint: string | null
 }) {
   const t = useT()
@@ -164,11 +170,13 @@ function NewWork({
   const upload = useUploadMaterial()
   const setCondition = useSetCondition()
   const saveWishes = useSetKadaiWishes()
+  const noteRun = useCreateProjectRun()
 
   const [name, setName] = useState('')
   const [файлом, setФайлом] = useState(true)
   const [файл, setФайл] = useState<File | null>(null)
   const [текст, setТекст] = useState('')
+  const [контекст, setКонтекст] = useState<File[]>([])
   const [wishes, setWishes] = useState('')
   const [showTask, setShowTask] = useState(false)
   const [showStructure, setShowStructure] = useState(false)
@@ -183,11 +191,24 @@ function NewWork({
     if (!workspaceId || !готово) return
     setБеда(null)
     try {
-      const проект = await create.mutateAsync({ workspaceId, name: name.trim(), template: null })
+      const проект = await create.mutateAsync({
+        workspaceId,
+        name: name.trim(),
+        template: null,
+        module: 'kadai',
+      })
+      // Запись журнала ставится сразу после работы и до условия: по ней видно,
+      // что решение в этой работе заводили, даже если разбор условия не дошёл.
+      await noteRun.mutateAsync({ projectId: проект.id, module: 'kadai' })
       const условие = файлом
         ? (файл as File)
         : new File([текст], `${имя_файла(name)}.txt`, { type: 'text/plain' })
       const принят = await upload.mutateAsync({ projectId: проект.id, file: условие })
+      // Файлы контекста — обычные материалы работы, по одному запросу на файл:
+      // приём материалов у службы поштучный, а разбор всё равно идёт очередью.
+      for (const файл_контекста of контекст) {
+        await upload.mutateAsync({ projectId: проект.id, file: файл_контекста })
+      }
       // Разбор уехал в очередь: назвать материал условием можно только после
       // него, и делает это экран работы, увидев материал в описи. Здесь мы
       // пробуем сразу — на текстовом условии разбор успевает за один запрос, а
@@ -274,6 +295,36 @@ function NewWork({
         )}
       </fieldset>
 
+      <fieldset className="flex flex-col gap-s2">
+        <legend className="mb-s1 text-sm font-medium text-ink-strong">
+          {t('kadai.new.context')}
+        </legend>
+        <FileDrop
+          multiple
+          accept={ПРИНИМАЕМ}
+          label={t('kadai.new.contextDrop')}
+          hint={t('kadai.new.contextHint')}
+          onFiles={(files) => setКонтекст((было) => [...было, ...files])}
+        />
+        {контекст.length > 0 && (
+          <ul className="flex flex-col gap-1 text-xs text-muted">
+            {контекст.map((f, i) => (
+              <li key={`${f.name}-${i}`} className="flex items-center gap-s2">
+                <Icon name="file" size={14} />
+                <span className="truncate">{f.name}</span>
+                <button
+                  type="button"
+                  className="ml-auto text-muted hover:text-ink"
+                  onClick={() => setКонтекст((было) => было.filter((_, j) => j !== i))}
+                >
+                  {t('common.action.delete')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </fieldset>
+
       <Field label={t('kadai.new.wishes')} hint={t('kadai.new.wishesHint')} htmlFor="kadai-wishes">
         <Textarea
           id="kadai-wishes"
@@ -307,7 +358,6 @@ function NewWork({
 
       <div className="flex flex-wrap items-center gap-s3 border-t border-line pt-s3">
         <ModelPicker providers={providers} value={пресет} onChange={setEndpoint} disabled={идёт} />
-        <span className="text-xs text-muted">{priceHint}</span>
         <Button
           variant="primary"
           className="ml-auto"

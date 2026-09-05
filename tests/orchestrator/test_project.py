@@ -254,3 +254,45 @@ def test_проект_без_шаблона_строит_документ_сам
     p.update_template(template_bytes())
     assert p.settings()["template_source"] == "given"
     assert list(p.manifest().tags) == ["цель", "введение", "таблица"]
+
+
+# ── потолок истории значений ──────────────────────────────────────────────────
+
+def test_версий_значения_не_больше_пяти(project):
+    """История тега — это шаг-другой назад, а не архив всех прогонов."""
+    for i in range(8):
+        project.set_value("цель", markdown_value(f"текст {i}"), source="agent")
+    номера = [v.n for v in project.versions("цель")]
+    assert номера == [4, 5, 6, 7, 8]
+    assert project.head_version("цель").n == 8
+    assert project.value("цель")["text"] == "текст 7"
+
+
+def test_обрезанная_версия_не_читается_и_номера_не_повторяются(project):
+    for i in range(7):
+        project.set_value("цель", markdown_value(f"текст {i}"), source="agent")
+    with pytest.raises(OrchestratorError):
+        project.version("цель", 1)
+    следующая = project.set_value("цель", markdown_value("ещё"), source="manual")
+    assert следующая.n == 8
+
+
+def test_короткая_история_не_трогается(project):
+    for i in range(3):
+        project.set_value("цель", markdown_value(f"текст {i}"), source="agent")
+    assert [v.n for v in project.versions("цель")] == [1, 2, 3]
+
+
+# ── задание модели на тег ─────────────────────────────────────────────────────
+
+def test_задание_тега_правится_и_считается_правкой_манифеста(project):
+    было = project.manifest().manifest_version
+    project.set_tag_prompt("цель", "Один абзац, своими словами.")
+    m = project.manifest()
+    assert m.tags["цель"].prompt == "Один абзац, своими словами."
+    assert m.manifest_version == было + 1
+
+
+def test_задание_чужому_тегу_отказ(project):
+    with pytest.raises(OrchestratorError):
+        project.set_tag_prompt("которого-нет", "что-нибудь")

@@ -26,7 +26,7 @@ from api.jobs.service import убрать_старые
 from api.workspaces import EDITOR, VIEWER
 
 from .c_fixtures import (docx_байты, войти, клиент, личное_id,  # noqa: F401
-                         создать_проект, сосед, хозяин)
+                         позвать, создать_проект, сосед, хозяин)
 
 
 def поставить(клиент, вид: str = "probe", **тело):
@@ -114,8 +114,7 @@ def test_читателю_проекта_ставить_нельзя(app, кли
     и переписывает теги, то есть это запись, а не чтение."""
     ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()["id"]
     проект = создать_проект(клиент, ws, шаблон=docx_байты())
-    клиент.post(f"/api/workspaces/{ws}/members",
-                json={"email": сосед.email, "role": VIEWER})
+    позвать(app, клиент, ws, сосед, VIEWER)
 
     войти(app, сосед)
     отказ = поставить(клиент, "parse", project_id=проект["id"])

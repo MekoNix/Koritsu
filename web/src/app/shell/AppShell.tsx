@@ -54,7 +54,10 @@ export function AppShell() {
         <Sidebar collapsed={collapsed} onToggle={toggle} />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar />
-          <main className="mx-auto w-full max-w-content flex-1 p-s5">
+          {/* Потолок ширины и поля — переменными: рабочий экран (отчёт) снимает
+              их на время своей жизни через `useWidePage`, остальные живут в
+              обычной колонке. */}
+          <main className="mx-auto w-full max-w-[var(--page-max,var(--content-max))] flex-1 p-[var(--page-pad,var(--space-5))]">
             <Outlet />
           </main>
         </div>

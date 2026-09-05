@@ -5,9 +5,12 @@
  * по адресу, а имя документа сообщает эта страница через `useDocumentCrumb`.
  * Иерархии «Проекты / … / Отчёт» нет и не заводится.
  *
- * Переходы в модули строятся из `GET /api/modules`: служба не отдаёт неготовые
- * вовсе, а модуль без экрана работы отсеивает таблица `moduleRoutes` — ссылка
- * в никуда считается ошибкой, а «скоро» запрещено брифом.
+ * Первым делом на странице — журнал запусков (`RunsPanel`): что в этой работе
+ * делали и как оно называется. Переходы в модули стоят под ним и отвечают на
+ * другой вопрос — «чем ещё эту работу можно делать»; строятся они из
+ * `GET /api/modules`: служба не отдаёт неготовые вовсе, а модуль без экрана
+ * работы отсеивает таблица `moduleRoutes` — ссылка в никуда считается ошибкой,
+ * а «скоро» запрещено брифом.
  *
  * Отдельное состояние — проект в корзине: служба отвечает на него `409
  * in_trash`, и это не ошибка, а положение дел, из которого есть выход
@@ -39,6 +42,7 @@ import { ExportDialog } from './ExportDialog'
 import { MaterialsPanel } from './MaterialsPanel'
 import { Panel } from './Panel'
 import { RenameProjectDialog } from './RenameProjectDialog'
+import { RunsPanel } from './RunsPanel'
 import {
   canEditWorkspace,
   useProject,
@@ -183,6 +187,8 @@ export function ProjectPage() {
           )}
         </div>
       </header>
+
+      <RunsPanel projectId={карточка.id} projectName={карточка.name} canEdit={canEdit} />
 
       <Panel title={t('projects.page.modules')} note={t('projects.page.modulesNote')}>
         {modules.isPending ? (

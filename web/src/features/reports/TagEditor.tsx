@@ -27,7 +27,7 @@
  * значения у службы нет вовсе, и «очистить» обязано так же откатываться, как
  * всё прочее.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { errorField, errorText } from '@/api'
 import { useT } from '@/i18n'
@@ -36,7 +36,7 @@ import { Button, Icon, Spinner, Textarea } from '@/ui'
 
 import { JsonEditor } from './JsonEditor'
 import { TagVersions } from './TagVersions'
-import { useSetValue } from './data'
+import { useSetTagPrompt, useSetValue } from './data'
 import { isTextual, tagTitle, textToValue, valueText } from './tags'
 import { blankValue, parseValue, valueToJson } from './values'
 import type { ProjectTag, TagValue } from './types'
@@ -52,7 +52,6 @@ export type TagEditorProps = {
   canEdit: boolean
   onGenerate: (key: string) => void
   /** Цена прогона и остаток месяца — показываются ДО нажатия. */
-  priceHint: ReactNode
   /** Можно ли вообще звать модель (есть ли пресет с ключом). */
   canGenerate: boolean
 }
@@ -65,7 +64,6 @@ export function TagEditor({
   busy,
   canEdit,
   onGenerate,
-  priceHint,
   canGenerate,
 }: TagEditorProps) {
   const t = useT()
@@ -233,8 +231,9 @@ export function TagEditor({
           >
             {t('common.action.save')}
           </Button>
-          <span className="ml-auto text-xs text-muted">{priceHint}</span>
         </div>
+
+        <TagPrompt projectId={projectId} tag={tag} canEdit={canEdit && !busy} />
 
         {текстовый ? (
           <Textarea
@@ -302,5 +301,68 @@ export function TagEditor({
         />
       </div>
     </div>
+  )
+}
+
+/**
+ * TagPrompt — что модели велено написать в этом теге.
+ *
+ * Поле стоит прямо над значением, а не прячется в настройках работы: человек
+ * пишет задание ровно в ту минуту, когда смотрит на пустой тег и решает, чего
+ * он от него хочет. Прежде задание задавалось только комментарием в бланке —
+ * то есть в Word, до начала работы, — и поправить его с сайта было нельзя.
+ *
+ * Комментарий бланка (`{# … #}`) приезжает сюда же: служба кладёт его в это
+ * поле при разборе шаблона. Поэтому поле бывает заполнено само, и правка
+ * человека дальше сильнее бланка.
+ *
+ * Отправляется по уходу из поля, как и значение: задание живёт в манифесте, а
+ * тот считает каждую запись правкой, и версия манифеста на каждое нажатие
+ * клавиши сделала бы счётчик бессмысленным.
+ */
+function TagPrompt({
+  projectId,
+  tag,
+  canEdit,
+}: {
+  projectId: string
+  tag: ProjectTag
+  canEdit: boolean
+}) {
+  const t = useT()
+  const save = useSetTagPrompt(projectId)
+  const [draft, setDraft] = useState(tag.prompt)
+  const [dirty, setDirty] = useState(false)
+  const прежний = useRef(tag.key)
+
+  useEffect(() => {
+    if (прежний.current !== tag.key) {
+      прежний.current = tag.key
+      setDraft(tag.prompt)
+      setDirty(false)
+      return
+    }
+    if (!dirty) setDraft(tag.prompt)
+  }, [tag.key, tag.prompt, dirty])
+
+  return (
+    <Textarea
+      label={t('reports.editor.promptLabel')}
+      hint={t('reports.editor.promptHint')}
+      value={draft}
+      disabled={!canEdit}
+      maxLength={4000}
+      placeholder={t('reports.editor.promptPlaceholder')}
+      className="min-h-[64px] text-sm"
+      onChange={(e) => {
+        setDraft(e.target.value)
+        setDirty(true)
+      }}
+      onBlur={() => {
+        if (!dirty) return
+        setDirty(false)
+        save.mutate({ key: tag.key, prompt: draft })
+      }}
+    />
   )
 }

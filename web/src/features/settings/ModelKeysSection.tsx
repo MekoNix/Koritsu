@@ -1,16 +1,16 @@
 /**
  * ModelKeysSection — свои ключи поставщиков моделей.
  *
+ * Карточка раздела «Конфигурация агентов»: стоит под выбором пресета, потому
+ * что ключ — это то, чем выбранный пресет оплачивается.
+ *
  * Служба никогда не возвращает ключ и не может: наружу уезжают поставщик,
  * четыре последних знака и даты (`keys/models.py: ModelKey.to_dict`). Поэтому
  * здесь нет ни «показать», ни «изменить» — только завести и отозвать.
  *
- * **Чем платится каждый поставщик** — из `key_source` в ответе
- * `GET /api/keys/providers`: `own` (свой ключ), `shared` (общий ключ службы,
- * `KORITSU_PROVIDER_KEY_<ПРЕСЕТ>` в окружении), `none` (платить нечем). Поле
- * появляется в службе позже самого списка, поэтому его отсутствие — не
- * поломка: тогда вместо пометки стоит честное «служба не рассказывает», а не
- * догадка про общий ключ.
+ * Списка «чем платится каждый поставщик» здесь нет: он один на раздел и стоит
+ * рядом с выбором пресета, где на него и смотрят (`AgentSection`). Два
+ * одинаковых списка на одном экране человек читает как два разных.
  *
  * Тост здесь один — на отказ. «Ключ добавлен» тостом не показывается: общее
  * правило (тосты — на завершение фоновой задачи и на ошибку), а сама
@@ -40,7 +40,7 @@ import {
 
 import { useAddModelKey, useKeyProviders, useModelKeys, useRevokeModelKey } from './api'
 import { formatDate } from './format'
-import type { KeySource, ModelKey } from './types'
+import type { ModelKey } from './types'
 
 const schema = z.object({
   provider: z.string().min(1, { message: translate('settings.valid.providerRequired') }),
@@ -72,12 +72,6 @@ export function ModelKeysSection() {
   })
 
   const providerNames = providers.data?.providers ?? []
-  const source = providers.data?.key_source
-  const SOURCE_TONE: Record<KeySource, 'ok' | 'accent' | 'warn'> = {
-    own: 'ok',
-    shared: 'accent',
-    none: 'warn',
-  }
 
   async function submit(values: Values) {
     try {
@@ -121,31 +115,6 @@ export function ModelKeysSection() {
             />
             <p className="text-xs text-muted">{t('settings.keys.sharedHint')}</p>
           </>
-        )}
-
-        {/* Чем платится каждый поставщик. Показывается всегда: и когда своих
-            ключей нет (тогда видно, что работает общий), и когда они есть — у
-            одного поставщика ключ может быть, а у второго нет. */}
-        {providerNames.length > 0 && (
-          <div className="flex flex-col gap-s2">
-            <span className="text-sm font-medium text-ink">{t('settings.keys.sourceTitle')}</span>
-            <ul className="flex flex-wrap gap-s2">
-              {providerNames.map((provider) => {
-                const state = source?.[provider]
-                return (
-                  <li key={provider} className="flex items-center gap-1.5">
-                    <span className="font-mono text-xs text-muted">{provider}</span>
-                    <Chip tone={state ? SOURCE_TONE[state] : 'muted'}>
-                      {t(`settings.keys.source.${state ?? 'unknown'}`)}
-                    </Chip>
-                  </li>
-                )
-              })}
-            </ul>
-            {!source && (
-              <p className="text-xs text-muted">{t('settings.keys.sourceUnknownHint')}</p>
-            )}
-          </div>
         )}
 
         {list.data && list.data.length > 0 && (

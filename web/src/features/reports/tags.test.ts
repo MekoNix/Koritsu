@@ -16,6 +16,7 @@ function тег(part: Partial<ProjectTag> & { key: string }): ProjectTag {
     label: '',
     type: 'markdown',
     required: true,
+    prompt: '',
     filled: false,
     source: null,
     version: null,

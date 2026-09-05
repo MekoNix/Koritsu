@@ -39,6 +39,7 @@ const ТЕГИ = [
     label: 'Цель работы',
     type: 'markdown',
     required: true,
+    prompt: 'Четыре предложения, без оценок.',
     filled: true,
     source: 'agent',
     version: 2,
@@ -49,6 +50,7 @@ const ТЕГИ = [
     label: 'Теоретические сведения',
     type: 'markdown',
     required: true,
+    prompt: '',
     filled: false,
     source: null,
     version: null,
@@ -59,6 +61,7 @@ const ТЕГИ = [
     label: 'Листинг быстрой сортировки',
     type: 'code',
     required: true,
+    prompt: '',
     filled: false,
     source: null,
     version: null,
@@ -73,13 +76,16 @@ function json(body: unknown): Response {
   })
 }
 
-function служба(теги: unknown[] = ТЕГИ) {
+function служба(теги: unknown[] = ТЕГИ, конструкции: string[] = []) {
   return vi.fn((request: Request) => {
     const { pathname } = new URL(request.url)
     if (pathname === '/api/projects/p-1') return Promise.resolve(json(ПРОЕКТ))
     if (pathname === '/api/workspaces/ws-1')
       return Promise.resolve(json({ id: 'ws-1', name: 'Личное', personal: true, role: 'owner' }))
-    if (pathname === '/api/projects/p-1/tags') return Promise.resolve(json({ tags: теги }))
+    if (pathname === '/api/projects/p-1/tags')
+      return Promise.resolve(json({ tags: теги, constructs: конструкции }))
+    if (pathname === '/api/projects/p-1/templates') return Promise.resolve(json([]))
+    if (pathname === '/api/templates') return Promise.resolve(json([]))
     if (pathname === '/api/projects/p-1/values')
       return Promise.resolve(
         json({ values: { цель: { type: 'markdown', text: 'Изучить алгоритмы сортировки.' } } }),
@@ -143,18 +149,32 @@ describe('экран работы над отчётом', () => {
     expect(await screen.findByDisplayValue('Изучить алгоритмы сортировки.')).toBeInTheDocument()
   })
 
-  it('называет цену задания и остаток месяца до нажатия', async () => {
+  it('цены и остатка на экране нет: они не обещаются до нажатия', async () => {
+    // Цена прогона динамическая, и названное заранее число было бы обещанием,
+    // которого никто не давал. Расход человек смотрит одним местом — в
+    // настройках, разделом «Расход и лимиты».
     нарисовать()
-    // Цена прогона тега — над полем, цена сборки — в панели превью: остаток
-    // назван у каждой кнопки, которая его тратит.
-    expect(await screen.findByText(/Стоит 100 ед/)).toBeInTheDocument()
-    expect(screen.getByText(/Стоит 50 ед/)).toBeInTheDocument()
-    expect(screen.getAllByText(/осталось 1 999 800/).length).toBeGreaterThan(1)
+    expect(await screen.findByText('1 из 3')).toBeInTheDocument()
+    expect(screen.queryByText(/Стоит/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/осталось/)).not.toBeInTheDocument()
   })
 
   it('проект без шаблона — пустое состояние, а не пустой список', async () => {
     vi.stubGlobal('fetch', служба([]))
     нарисовать()
     expect(await screen.findByText('У этого проекта нет шаблона')).toBeInTheDocument()
+  })
+
+  it('задание тега стоит рядом с полем, а не спрятано в настройках', async () => {
+    // Человек пишет задание тогда, когда смотрит на пустой тег: поле обязано
+    // быть на этом же экране и рядом со значением.
+    нарисовать()
+    expect(await screen.findByDisplayValue('Четыре предложения, без оценок.')).toBeInTheDocument()
+  })
+
+  it('непонятная конструкция бланка названа до сборки, а не после', async () => {
+    vi.stubGlobal('fetch', служба(ТЕГИ, ['{%tr for k in kpis %}']))
+    нарисовать()
+    expect(await screen.findByText('{%tr for k in kpis %}')).toBeInTheDocument()
   })
 })

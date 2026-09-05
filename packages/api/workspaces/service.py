@@ -19,6 +19,12 @@ service — роли, проверка доступа и жизнь простр
 
 Удалить личное нельзя. Проверяется по полю `personal`, а не по имени: имя
 человек переименует.
+
+**Приглашённый — ещё не участник.** У строки участия есть состояние: `pending`
+у позванного, `active` у согласившегося. Роль спрашивают через `role_of`, и она
+видит только `active` — то есть позванный не получает ни строки чужого
+пространства, пока не ответил «принять». Так и задумано: приглашение приходит
+уведомлением с двумя кнопками, а не молча подкладывает человеку чужие работы.
 """
 from __future__ import annotations
 
@@ -41,9 +47,19 @@ ROLES = (VIEWER, EDITOR, OWNER)
 # Сила роли. Единственное место, где записано, кто кого старше.
 РАНГ = {VIEWER: 1, EDITOR: 2, OWNER: 3}
 
-# Имя личного пространства. По-английски: наружу служба говорит по-английски,
-# а перевод «Личное» сделает интерфейс — он же знает флаг `personal`.
+# Состояние участия. `active` — человек в пространстве; `pending` — позван и
+# ещё не ответил. Список закрыт так же, как список ролей.
+ACTIVE = "active"
+PENDING = "pending"
+STATUSES = (ACTIVE, PENDING)
+
+# Запасное имя личного пространства: им зовутся строки, заведённые до того, как
+# у аккаунта появился ник. Обычное имя собирает `personal_name` из ника.
 PERSONAL_NAME = "Personal"
+
+# Хвост имени личного пространства: `<ник>-workspace`. По-английски, как и
+# `PERSONAL_NAME`, и по той же причине — наружу служба говорит по-английски.
+PERSONAL_SUFFIX = "-workspace"
 
 NOT_FOUND = "not_found"
 FORBIDDEN = "forbidden"
@@ -54,6 +70,7 @@ ALREADY_MEMBER = "already_member"
 LAST_OWNER = "last_owner"
 UNKNOWN_ROLE = "unknown_role"
 NO_SUCH_USER = "no_such_user"
+NO_INVITE = "no_invite"
 
 
 def iso(dt: datetime.datetime | None) -> str | None:
@@ -83,10 +100,27 @@ def check_role(role: str, *, where: str = "body.role") -> str:
 # ── доступ ───────────────────────────────────────────────────────────────────
 
 def role_of(s: Session, user_id: str, workspace_id: str) -> str | None:
-    """Роль человека в пространстве или None, если он не участник."""
+    """Роль человека в пространстве или None, если он не участник.
+
+    Позванный, но не ответивший (`pending`), участником здесь не считается: он
+    ещё не решил, хочет ли туда. Отсюда же берётся и весь отказ в доступе —
+    `require_role` увидит `None` и ответит 404, ровно как чужому.
+    """
     return s.scalar(select(WorkspaceMember.role).where(
         WorkspaceMember.workspace_id == workspace_id,
-        WorkspaceMember.user_id == user_id))
+        WorkspaceMember.user_id == user_id,
+        WorkspaceMember.status == ACTIVE))
+
+
+def membership(s: Session, user_id: str, workspace_id: str) -> WorkspaceMember | None:
+    """Строка участия любого состояния — в том числе не принятое приглашение.
+
+    Нужна ровно тем двум маршрутам, которые с приглашением и работают
+    («принять» и «отклонить»): им запрещено ходить через `role_of`, потому что
+    та по замыслу не видит `pending`.
+    """
+    return s.get(WorkspaceMember, {"workspace_id": workspace_id,
+                                   "user_id": user_id})
 
 
 def require_role(s: Session, user_id: str, workspace_id: str,
@@ -123,6 +157,21 @@ def personal_workspace(s: Session, user_id: str) -> Workspace | None:
                                             Workspace.personal.is_(True)))
 
 
+def personal_name(nickname: str | None) -> str:
+    """Имя личного пространства по умолчанию: `<ник>-workspace`.
+
+    Имя, а не подстановка на экране: человек видит его в переключателе, в
+    поиске и в списке пространств, и «Личное» рядом с «кафедрой» не отвечало на
+    вопрос, чьё оно. Ник у аккаунта обязателен; пустой остаётся только у строк,
+    заведённых до того, как он появился, — им достаётся `PERSONAL_NAME`.
+
+    Переименовать личное пространство человек вправе: имя — обычное поле, а
+    «личное» — флаг `personal`.
+    """
+    ник = (nickname or "").strip()
+    return f"{ник}{PERSONAL_SUFFIX}" if ник else PERSONAL_NAME
+
+
 def create_personal(s: Session, user) -> Workspace:
     """Завести личное пространство. Идемпотентно: второй вызов вернёт то же.
 
@@ -134,12 +183,14 @@ def create_personal(s: Session, user) -> Workspace:
     уже = personal_workspace(s, user.id)
     if уже is not None:
         return уже
-    ws = Workspace(name=PERSONAL_NAME, owner_id=user.id, personal=True)
+    ws = Workspace(name=personal_name(getattr(user, "nickname", None)),
+                   owner_id=user.id, personal=True)
     s.add(ws)
     # `id` ставится умолчанием на стороне Python, то есть на сбросе: без него
     # участнику нечего записать в `workspace_id`.
     s.flush()
-    s.add(WorkspaceMember(workspace_id=ws.id, user_id=user.id, role=OWNER))
+    s.add(WorkspaceMember(workspace_id=ws.id, user_id=user.id, role=OWNER,
+                          status=ACTIVE))
     s.flush()
     return ws
 
@@ -210,8 +261,10 @@ def restore(s: Session, ws: Workspace) -> None:
 
 
 __all__ = ["OWNER", "EDITOR", "VIEWER", "ROLES", "РАНГ", "PERSONAL_NAME",
-           "iso", "check_role", "role_of", "require_role", "personal_workspace",
+           "PERSONAL_SUFFIX", "ACTIVE", "PENDING", "STATUSES",
+           "iso", "check_role", "role_of", "membership", "require_role",
+           "personal_workspace", "personal_name",
            "create_personal", "register_hooks", "trash", "restore",
            "NOT_FOUND", "FORBIDDEN", "PERSONAL_WORKSPACE", "NOT_IN_TRASH",
            "IN_TRASH", "ALREADY_MEMBER", "LAST_OWNER", "UNKNOWN_ROLE",
-           "NO_SUCH_USER"]
+           "NO_SUCH_USER", "NO_INVITE"]

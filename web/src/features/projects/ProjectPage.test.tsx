@@ -1,9 +1,9 @@
 /**
  * Проверка страницы работы на подменённых ответах службы.
  *
- * Проверяется то, ради чего страница существует: имя работы, переходы в
- * готовые модули по адресам, о которых договорились области, и опись файлов с
- * приёмником. Плюс отдельное состояние «работа в корзине» — служба отвечает на
+ * Проверяется то, ради чего страница существует: имя работы, журнал запусков
+ * (в том числе имя схемы, которое сайт рисует сам), переходы в готовые модули
+ * по адресам, о которых договорились области, и опись файлов с приёмником. Плюс отдельное состояние «работа в корзине» — служба отвечает на
  * него `409 in_trash`, и показать это надо не экраном ошибки, а выходом
  * («восстановить»).
  */
@@ -27,8 +27,36 @@ const ПРОЕКТ = {
   deleted_at: null,
   purge_after: null,
   bytes_used: 1048576,
+  module: 'reports',
   keys: ['цель', 'выводы'],
 }
+
+/**
+ * Журнал запусков. Вторая запись — без имени: его сайт собирает сам из модуля,
+ * номера и имени работы, потому что наружу служба говорит по-английски.
+ */
+const ЗАПУСКИ = [
+  {
+    id: 'r-1',
+    project_id: 'p-1',
+    module: 'reports',
+    name: 'Отчёт по практике',
+    n: 1,
+    artifact_id: null,
+    user_id: 'u-1',
+    created_at: '2026-09-02T10:10:00+00:00',
+  },
+  {
+    id: 'r-2',
+    project_id: 'p-1',
+    module: 'flowcharts',
+    name: '',
+    n: 2,
+    artifact_id: 'a1b2c3d4e5f60718',
+    user_id: 'u-1',
+    created_at: '2026-09-02T10:20:00+00:00',
+  },
+]
 
 const МАТЕРИАЛ = {
   id: 'df06a90d2382ec18',
@@ -72,6 +100,7 @@ function служба(проект: unknown | 'in_trash') {
       return Promise.resolve(json({ id: 'ws-1', name: 'Личное', personal: true, role: 'owner' }))
     }
     if (path === '/api/modules') return Promise.resolve(json(МОДУЛИ))
+    if (path === '/api/projects/p-1/runs') return Promise.resolve(json(ЗАПУСКИ))
     if (path === '/api/projects/p-1/materials') return Promise.resolve(json([МАТЕРИАЛ]))
     if (path === '/api/projects/p-1/materials/pending') return Promise.resolve(json([]))
     throw new Error(`тест не ждал запроса ${path}`)
@@ -110,16 +139,26 @@ describe('страница работы', () => {
 
     expect(await screen.findByRole('heading', { name: 'Курсовая — ИС библиотеки' })).toBeVisible()
 
-    // Адреса экранов модулей — договор между областями.
-    expect(await screen.findByRole('link', { name: /Отчёты/ })).toHaveAttribute(
+    // Адреса экранов модулей — договор между областями. Плитки ищутся по
+    // приписке, а не по названию модуля: то же название стоит и в строке
+    // журнала, и поиск по нему нашёл бы две ссылки вместо одной.
+    expect(await screen.findByRole('link', { name: /Заполнить теги/ })).toHaveAttribute(
       'href',
       '/reports/p-1',
     )
-    expect(screen.getByRole('link', { name: /Блок-схемы/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Блок-схема по коду/ })).toHaveAttribute(
       'href',
       '/flowcharts/p-1',
     )
-    expect(screen.getByRole('link', { name: /UML/ })).toHaveAttribute('href', '/uml/p-1')
+    expect(screen.getByRole('link', { name: /Диаграмма классов/ })).toHaveAttribute(
+      'href',
+      '/uml/p-1',
+    )
+
+    // Журнал: своё имя показывается как есть, а безымянной схеме имя рисует
+    // сайт — служба его не сочиняет.
+    expect(await screen.findByText('Отчёт по практике')).toBeVisible()
+    expect(screen.getByText('Схема 2 — Курсовая — ИС библиотеки')).toBeVisible()
 
     expect(await screen.findByText('методичка.pdf')).toBeVisible()
     expect(screen.getByText(/12 страниц/)).toBeVisible()

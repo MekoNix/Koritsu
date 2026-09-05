@@ -303,3 +303,21 @@ def test_сухой_показ_промпта_идёт_через_слой(proje
     показ = orchestrator.render(parts, mark)
     assert показ.index(orchestrator.RULES[:20]) < показ.index(MATERIAL_TEXT[:20])
     assert f"<<{llm.layout.MARK_NAME} {mark}>>" in показ
+
+
+def test_общая_подсказка_прогона_в_хвосте_запроса(project):
+    """Подсказка на весь прогон стоит в `request` — после последнего брейкпойнта,
+    иначе кэшируемый префикс промахивается на каждом запуске."""
+    parts = orchestrator.build_parts(project, keys=["цель", "введение"], level=2,
+                               prompt="писать в прошедшем времени")
+    хвост = [p for p in parts if p.role == "request"]
+    assert len(хвост) == 1
+    assert "писать в прошедшем времени" in хвост[0].text
+    стабильные = [p.text for p in parts if p.stable]
+    assert not any("прошедшем" in t for t in стабильные)
+
+
+def test_без_общей_подсказки_текст_прежний(project):
+    без = orchestrator.build_parts(project, keys=["цель"], level=1)
+    пустая = orchestrator.build_parts(project, keys=["цель"], level=1, prompt="   ")
+    assert [p.text for p in без] == [p.text for p in пустая]

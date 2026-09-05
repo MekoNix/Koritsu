@@ -1,9 +1,10 @@
 /**
- * runControls — выбор пресета модели и цена прогона.
+ * runControls — выбор пресета модели.
  *
- * **Цена и остаток показываются ДО нажатия**: оба числа
- * приезжают одним ответом `GET /api/usage` — цена вида задания и остаток месяца,
- * — и показываются рядом с кнопкой, а не после отказа по лимиту.
+ * **Цены и остатка рядом с кнопками нет.** Цена прогона динамическая: она
+ * зависит от того, сколько модель прочтёт и напишет, и названное до нажатия
+ * число было бы обещанием, которого никто не давал. Расход и потолок месяца
+ * человек смотрит одним местом — «Расход и лимиты» в настройках.
  *
  * **Пресет — это `payload.endpoint`.** Список берётся у службы вместе с тем,
  * чем по каждому платить (`own` | `shared` | `none`): пресет, которым платить
@@ -12,7 +13,6 @@
  */
 import { Link } from 'react-router-dom'
 
-import type { Usage } from '@/api/types'
 import { useT } from '@/i18n'
 
 import type { ProvidersBody } from './types'
@@ -62,25 +62,5 @@ export function ModelPicker({
         ))}
       </select>
     </label>
-  )
-}
-
-/**
- * «Стоит столько, осталось столько». Цена берётся из того же ответа, что и
- * остаток, — они не могут разойтись, потому что приезжают вместе.
- */
-export function PriceHint({ kind, usage }: { kind: string; usage: Usage | undefined }) {
-  const t = useT()
-  if (!usage) return null
-  const цена = usage.prices?.[kind] ?? 0
-  const мало = цена > usage.remaining_units
-  return (
-    <span className={мало ? 'text-err' : undefined}>
-      {t('reports.price.line', {
-        price: цена.toLocaleString('ru-RU'),
-        left: usage.remaining_units.toLocaleString('ru-RU'),
-      })}
-      {мало ? ` · ${t('reports.price.notEnough')}` : ''}
-    </span>
   )
 }

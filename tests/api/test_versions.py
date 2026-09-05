@@ -16,7 +16,7 @@ from api.projects.service import project_dir
 from api.workspaces import EDITOR, VIEWER
 
 from .c_fixtures import (docx_байты, войти, клиент, личное_id,  # noqa: F401
-                         создать_проект, сосед, хозяин)
+                         позвать, создать_проект, сосед, хозяин)
 
 ЦЕЛЬ_1 = {"type": "markdown", "text": "Первая редакция цели."}
 ЦЕЛЬ_2 = {"type": "markdown", "text": "Вторая редакция цели."}
@@ -42,11 +42,10 @@ def на_томе(app, project_id: str) -> orchestrator.Project:
             project_dir(s, app.state.settings, project_id))
 
 
-def общий_проект(клиент, сосед, роль: str) -> dict:
+def общий_проект(app, клиент, сосед, роль: str) -> dict:
     """Проект в общем пространстве, где сосед — с названной ролью."""
     ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()["id"]
-    клиент.post(f"/api/workspaces/{ws}/members",
-                json={"email": сосед.email, "role": роль})
+    позвать(app, клиент, ws, сосед, роль)
     return создать_проект(клиент, ws, шаблон=docx_байты())
 
 
@@ -117,7 +116,7 @@ def test_версии_нет_это_404(app, клиент, хозяин):
 def test_читатель_видит_историю_но_не_возвращает(app, клиент, хозяин, сосед):
     """Смотреть историю может всякий, кто видит проект; менять то, что попадёт
     в отчёт, — только тот, кому доверили писать."""
-    p = общий_проект(клиент, сосед, VIEWER)
+    p = общий_проект(app, клиент, сосед, VIEWER)
     клиент.put(f"/api/projects/{p['id']}/values/цель", json=ЦЕЛЬ_1)
     клиент.put(f"/api/projects/{p['id']}/values/цель", json=ЦЕЛЬ_2)
 
@@ -131,7 +130,7 @@ def test_читатель_видит_историю_но_не_возвращае
 
 
 def test_редактор_возвращает(app, клиент, хозяин, сосед):
-    p = общий_проект(клиент, сосед, EDITOR)
+    p = общий_проект(app, клиент, сосед, EDITOR)
     клиент.put(f"/api/projects/{p['id']}/values/цель", json=ЦЕЛЬ_1)
     клиент.put(f"/api/projects/{p['id']}/values/цель", json=ЦЕЛЬ_2)
 

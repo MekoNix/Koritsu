@@ -83,9 +83,11 @@ export function useAgentRun(
     if (!jobId || !stream.done || закрыто.current === jobId || !projectId) return
     закрыто.current = jobId
     // Один сброс на весь проект: теги, значения и версии лежат под ключом
-    // `projects.one` (`api/queryKeys.ts`), схемы — своим ключом области схем.
+    // `projects.one` (`api/queryKeys.ts`), схемы — своим корнем области схем:
+    // прогон агента строит и их, а какой именно модуль он тронул, отсюда не
+    // видно.
     void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
-    void qc.invalidateQueries({ queryKey: keys.diagrams.values(projectId) })
+    void qc.invalidateQueries({ queryKey: keys.diagrams.all })
   }, [jobId, stream.done, projectId, qc])
 
   const поставить = useCallback(

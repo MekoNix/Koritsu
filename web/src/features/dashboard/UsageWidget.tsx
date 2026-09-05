@@ -20,7 +20,7 @@ export function UsageWidget() {
 
   if (usage.isPending) {
     return (
-      <Widget title={t('dashboard.usage.title')} className="lg:col-span-6">
+      <Widget title={t('dashboard.usage.title')}>
         <div className="flex flex-col gap-s3">
           <Skeleton className="h-7 w-1/3" />
           <Skeleton className="h-2 w-full" />
@@ -32,7 +32,7 @@ export function UsageWidget() {
 
   if (usage.isError || !usage.data) {
     return (
-      <Widget title={t('dashboard.usage.title')} className="lg:col-span-6">
+      <Widget title={t('dashboard.usage.title')}>
         <ErrorState error={usage.error} onRetry={() => void usage.refetch()} />
       </Widget>
     )
@@ -49,7 +49,6 @@ export function UsageWidget() {
     <Widget
       title={t('dashboard.usage.title')}
       note={t('dashboard.usage.plan', { plan: usage.data.plan })}
-      className="lg:col-span-6"
     >
       <div className="flex h-full flex-col justify-between gap-s3">
         <div className="flex items-baseline gap-s2">

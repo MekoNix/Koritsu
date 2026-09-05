@@ -1,13 +1,17 @@
 """
 routes — `/api/notifications`: колокольчик.
 
-    GET  /api/notifications              200  свои, новые сверху (фильтр unread)
-    POST /api/notifications/{id}/read    200  пометить одно
-    POST /api/notifications/read-all     200  пометить все
+    GET    /api/notifications            200  свои, новые сверху (фильтр unread)
+    POST   /api/notifications/{id}/read  200  пометить одно
+    POST   /api/notifications/read-all   200  пометить все
+    DELETE /api/notifications/{id}       200  убрать одно
 
-Три маршрута, и третий не роскошь: «прочитать все» одним запросом — это одна
-транзакция вместо пятидесяти, а после ночного прогона непрочитанных бывает
-именно столько.
+«Прочитать все» одним запросом — не роскошь: это одна транзакция вместо
+пятидесяти, а после ночного прогона непрочитанных бывает именно столько.
+
+Удаление есть потому, что колокольчик — не архив: прочитанную строку человек
+вправе убрать с глаз. Уносит она с собой только себя — ни задание, ни его файлы
+за ней не идут.
 
 `unread_count` кладётся в ответ списка, чтобы колокольчик рисовался без второго
 запроса: число на нём и сам список показываются вместе, и разделять их значило
@@ -51,6 +55,19 @@ def список(s: SessionDep, user: CurrentUser,
 def прочитать(notification_id: str, s: SessionDep, user: CurrentUser) -> dict:
     строка = service.получить(s, user.id, notification_id)
     return service.карточка(service.прочитать(s, строка))
+
+
+@router.delete("/{notification_id}", operation_id="delete_notification",
+               summary="Delete one notification",
+               description=(
+                   "Deletes one notification of yours for good. The job it "
+                   "announced and its files stay where they were. "
+                   "400 invalid_id, 404 not_found."))
+def удалить(notification_id: str, s: SessionDep, user: CurrentUser) -> dict:
+    строка = service.получить(s, user.id, notification_id)
+    service.убрать(s, строка)
+    return {"deleted": notification_id,
+            "unread_count": service.непрочитанных(s, user.id)}
 
 
 @router.post("/read-all", operation_id="read_all_notifications",

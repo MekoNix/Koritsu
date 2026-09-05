@@ -23,7 +23,7 @@ from api.workspaces import EDITOR, VIEWER
 from api.workspaces.service import personal_workspace
 
 from .c_fixtures import (docx_байты, войти, клиент, личное_id,  # noqa: F401
-                         создать_проект, сосед, хозяин)
+                         позвать, создать_проект, сосед, хозяин)
 
 # Кусок абсолютного пути в теле ответа. Ищем и наш временный том, и боевой
 # `/data`: тест обязан ловить утечку и на машине, где тома нет.
@@ -133,8 +133,7 @@ def test_viewer_читает_editor_пишет(app, клиент, хозяин, 
     ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()["id"]
     проект = создать_проект(клиент, ws, шаблон=docx_байты())
     pid = проект["id"]
-    клиент.post(f"/api/workspaces/{ws}/members",
-                json={"email": сосед.email, "role": VIEWER})
+    позвать(app, клиент, ws, сосед, VIEWER)
 
     войти(app, сосед)
     assert клиент.get(f"/api/projects/{pid}/values").status_code == 200
@@ -417,8 +416,7 @@ def test_bytes_used_считает_по_владельцу(app, клиент, х
     """
     ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()["id"]
     создать_проект(клиент, ws, name="мой", шаблон=docx_байты())
-    клиент.post(f"/api/workspaces/{ws}/members",
-                json={"email": сосед.email, "role": EDITOR})
+    позвать(app, клиент, ws, сосед, EDITOR)
 
     with app.state.db.session_scope() as s:
         мой = bytes_used(s, settings, хозяин.id)
@@ -477,3 +475,56 @@ def test_личное_пространство_хозяина_видно_в_ба
         assert personal_workspace(s, хозяин.id) is not None
         сколько = len(s.scalars(select(Project)).all())
     assert сколько == 0
+
+
+import io as _io
+
+from docx import Document as _Document
+
+# ── задание модели на тег ────────────────────────────────────────────────────
+
+def test_задание_тега_пишется_и_читается(клиент, хозяин):
+    проект = создать_проект(клиент, личное_id(клиент), шаблон=docx_байты(("цель",)))
+    ответ = клиент.patch(f"/api/projects/{проект['id']}/tags/цель",
+                         json={"prompt": "Один абзац, своими словами."})
+    assert ответ.status_code == 200, ответ.text
+    assert ответ.json()["prompt"] == "Один абзац, своими словами."
+
+    теги = клиент.get(f"/api/projects/{проект['id']}/tags").json()["tags"]
+    assert теги[0]["prompt"] == "Один абзац, своими словами."
+
+
+def test_задание_чужому_тегу_отказ(клиент, хозяин):
+    проект = создать_проект(клиент, личное_id(клиент), шаблон=docx_байты(("цель",)))
+    ответ = клиент.patch(f"/api/projects/{проект['id']}/tags/которого-нет",
+                         json={"prompt": "что-нибудь"})
+    assert ответ.status_code == 404
+    assert ответ.json()["error"]["code"] == "unknown_tag"
+
+
+def test_комментарий_бланка_становится_заданием(клиент, хозяин):
+    """Пояснение автора бланка человек не переписывает в поле руками."""
+    doc = _Document()
+    doc.add_paragraph("{# 4-6 предложений: итог квартала #}")
+    doc.add_paragraph("{{цель}}")
+    buf = _io.BytesIO()
+    doc.save(buf)
+    проект = создать_проект(клиент, личное_id(клиент), шаблон=buf.getvalue())
+
+    теги = клиент.get(f"/api/projects/{проект['id']}/tags").json()["tags"]
+    assert теги[0]["prompt"] == "4-6 предложений: итог квартала"
+
+
+def test_непонятная_конструкция_видна_в_списке_тегов(клиент, хозяин):
+    """Цикл Jinja сборку не ломает, но человек о нём узнаёт до сборки."""
+    doc = _Document()
+    doc.add_paragraph("{%tr for k in kpis %}")
+    doc.add_paragraph("{{цель}}")
+    doc.add_paragraph("{% endfor %}")
+    buf = _io.BytesIO()
+    doc.save(buf)
+    проект = создать_проект(клиент, личное_id(клиент), шаблон=buf.getvalue())
+
+    тело = клиент.get(f"/api/projects/{проект['id']}/tags").json()
+    assert тело["constructs"] == ["{%tr for k in kpis %}", "{% endfor %}"]
+    assert [t["key"] for t in тело["tags"]] == ["цель"]

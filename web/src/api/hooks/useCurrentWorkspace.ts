@@ -21,8 +21,8 @@
  * Выбранного пространства не стало (удалили, убрали из участников) — выбор
  * гасится сам, и человек возвращается в личное, а не смотрит на «не найдено».
  */
-import { useQuery, type UseQueryResult } from '@tanstack/react-query'
-import { useEffect, useSyncExternalStore } from 'react'
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 
 import { ApiError } from '../errors'
 import { api, unwrap } from '../client'
@@ -81,6 +81,38 @@ export function setCurrentWorkspaceId(id: string | null): void {
 /** Идентификатор выбранного пространства или `null`, если это личное. */
 export function useCurrentWorkspaceId(): string | null {
   return useSyncExternalStore(подписаться, снимок, () => null)
+}
+
+/**
+ * Сброс кэша при смене пространства. Ставится **один раз** на приложение —
+ * рядом с переключателем, который в оболочке ровно один.
+ *
+ * Зачем он, если ключ списка работ и так несёт идентификатор пространства
+ * (`keys.projects.list`): потому что на этом одном совпадении держится всё.
+ * Ключ несёт пространство не у каждого запроса — есть и такие, что показывают
+ * своё содержимое, не спрашивая, где человек находится, — а свежесть у списка
+ * работ сегодня нулевая только потому, что ей не назначили другую. Появится
+ * `staleTime` — и переключатель начнёт показывать чужие работы, не сломав ни
+ * одной проверки. Смена пространства — это смена всего, что видно на экране, и
+ * здесь это сказано прямо, а не выведено из совпадения двух умолчаний.
+ *
+ * Гасится, а не выбрасывается (`invalidateQueries`, не `removeQueries`):
+ * гашение перезапрашивает то, что сейчас на экране, и помечает устаревшим
+ * остальное — то есть ровно то, что нужно. Выбрасывание сверх этого стёрло бы
+ * открытую работу, которая от смены пространства никуда не делась.
+ */
+export function useWorkspaceScopeReset(): void {
+  const qc = useQueryClient()
+  const id = useCurrentWorkspaceId()
+  const прежнее = useRef(id)
+
+  useEffect(() => {
+    if (прежнее.current === id) return
+    прежнее.current = id
+    void qc.invalidateQueries({ queryKey: keys.projects.all })
+    void qc.invalidateQueries({ queryKey: keys.diagrams.all })
+    void qc.invalidateQueries({ queryKey: keys.search.all })
+  }, [id, qc])
 }
 
 /**

@@ -3,7 +3,10 @@
  *
  * Показывает то, что считается прямо сейчас, — за этим человек и лезет в
  * шапку. Список короткий и обновляется не таймером, а событиями потока
- * (`useUserEvents` сбрасывает ключ `jobs`), поэтому опроса здесь нет.
+ * (`useUserEvents` сбрасывает ключ `jobs`), поэтому опроса здесь нет. Сам
+ * список берётся общим хуком (`useActiveJobs`): те же задания считает и
+ * статистика на дашборде, и второй запрос за ними был бы вторым ответом с тем
+ * же содержимым.
  *
  * Иконка — «отложенные действия», а не крутилка: крутилка в шапке читается как
  * «страница грузится».
@@ -13,12 +16,10 @@
  * (`export`, `build`), и показывать её слова в шапке значило бы объяснять
  * человеку устройство очереди.
  */
-import { useQuery } from '@tanstack/react-query'
-
-import { api, unwrap } from '@/api'
-import { keys } from '@/api/queryKeys'
 import { useT } from '@/i18n'
 import { kindTitle } from '@/features/notifications/present'
+
+import { useActiveJobs } from './useActiveJobs'
 import {
   Badge,
   Button,
@@ -30,28 +31,6 @@ import {
   MenuTrigger,
   Spinner,
 } from '@/ui'
-
-type JobCard = { id: string; kind: string; status: string; created_at: string }
-
-function useActiveJobs() {
-  return useQuery({
-    queryKey: keys.jobs.list('active'),
-    queryFn: async () => {
-      // Служба фильтрует по одному состоянию за запрос, поэтому два запроса и
-      // склейка здесь: «в работе» без «в очереди» — половина правды.
-      const [running, queued] = await Promise.all([
-        unwrap<{ jobs: JobCard[] }>(
-          api.GET('/api/jobs', { params: { query: { status: 'running', limit: 20 } } }),
-        ),
-        unwrap<{ jobs: JobCard[] }>(
-          api.GET('/api/jobs', { params: { query: { status: 'queued', limit: 20 } } }),
-        ),
-      ])
-      return [...running.jobs, ...queued.jobs]
-    },
-    staleTime: 10_000,
-  })
-}
 
 export function JobsMenu() {
   const t = useT()

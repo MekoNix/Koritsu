@@ -13,10 +13,12 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 
 import { api, keys, unwrap } from '@/api'
+import { СВЕЖЕСТЬ_ПОД_ПОТОКОМ } from '@/features/projects/data'
 import { useMe } from '@/api/hooks'
 
+import type { ReportTemplate } from '@/features/projects/types'
+
 import type {
-  ProjectTag,
   ProjectTagsBody,
   ProvidersBody,
   TagValue,
@@ -34,8 +36,12 @@ import type {
  *
  * Именно этот маршрут, а не `project.keys`: карточка проекта отдаёт только
  * ключи, а колонке нужны метка, тип и «кто это написал».
+ *
+ * Отдаётся тело целиком, а не один список тегов: рядом с тегами приезжают
+ * непонятные сборщику конструкции бланка (`constructs`), и разделять их на два
+ * запроса значило бы дважды разбирать один манифест.
  */
-export function useProjectTags(projectId: string | undefined): UseQueryResult<ProjectTag[]> {
+export function useProjectTags(projectId: string | undefined): UseQueryResult<ProjectTagsBody> {
   return useQuery({
     queryKey: keys.reports.tags(projectId ?? ''),
     enabled: !!projectId,
@@ -45,7 +51,7 @@ export function useProjectTags(projectId: string | undefined): UseQueryResult<Pr
           params: { path: { project_id: projectId as string } },
         }),
       )
-      return body.tags
+      return body
     },
   })
 }
@@ -71,6 +77,10 @@ export function useProjectValues(
       )
       return body.values
     },
+    // Значения меняют запись рукой и конец прогона, и оба гасят этот ключ
+    // сами (`useSetValue`, `useFill`). Перезапрос при возврате на экран
+    // добавил бы ответ, содержимое которого уже лежит в кэше.
+    staleTime: СВЕЖЕСТЬ_ПОД_ПОТОКОМ,
   })
 }
 
@@ -219,4 +229,51 @@ export function useDefaultEndpoint(): string | null {
   const me = useMe()
   const providers = useProviders()
   return me.data?.default_endpoint ?? defaultProvider(providers.data)
+}
+
+/**
+ * Задание модели на один тег — поле рядом с заполнением.
+ *
+ * Живёт в манифесте работы, а не в прогоне: написанное однажды («сухо, без
+ * оценок») действует и завтра, и после смены бланка. Общая подсказка на весь
+ * прогон — другое поле и другой путь (`useFill`), и путать их нельзя: первая
+ * про этот тег навсегда, вторая про сегодняшний запуск.
+ */
+export function useSetTagPrompt(projectId: string | undefined) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ key, prompt }: { key: string; prompt: string }) =>
+      unwrap<{ key: string; prompt: string }>(
+        api.PATCH('/api/projects/{project_id}/tags/{key}', {
+          params: { path: { project_id: projectId as string, key } },
+          body: { prompt },
+        }),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.reports.tags(projectId ?? '') })
+    },
+  })
+}
+
+/**
+ * Собирать работу по этому приложенному бланку.
+ *
+ * Гасит и список бланков (у одного из них меняется пометка «выбран»), и теги
+ * со значениями: манифест перестроен, и колонка тегов теперь другая.
+ */
+export function useUseProjectTemplate(projectId: string | undefined) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ templateId }: { templateId: string }) =>
+      unwrap<ReportTemplate>(
+        api.POST('/api/projects/{project_id}/templates/{template_id}/use', {
+          params: { path: { project_id: projectId as string, template_id: templateId } },
+        }),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.projects.projectTemplates(projectId ?? '') })
+      void qc.invalidateQueries({ queryKey: keys.reports.tags(projectId ?? '') })
+      void qc.invalidateQueries({ queryKey: keys.reports.values(projectId ?? '') })
+    },
+  })
 }

@@ -36,17 +36,19 @@ export function LoginPage() {
   const login = useMutation({
     mutationFn: (values: LoginValues) => unwrap(api.POST('/api/auth/login', { body: values })),
     onSuccess: async () => {
-      // Профиль перечитывается до перехода: иначе защищённый маршрут увидит
-      // старое «не вошёл» и отправит обратно на вход.
+      // Сводка первого экрана перечитывается до перехода: иначе защищённый
+      // маршрут увидит старое «не вошёл» и отправит обратно на вход. Профиль
+      // приезжает той же сводкой и раскладывается по ключам ею же
+      // (`api/hooks/useBootstrap`), поэтому второй строки на `me` здесь нет.
       //
       // `refetchType: 'all'`, а не умолчание. Умолчание перечитывает только
-      // ЖИВЫЕ запросы, а на странице входа профиль никто не спрашивает — он
+      // ЖИВЫЕ запросы, а на странице входа сводку никто не спрашивает — она
       // лежит в кэше значением `null`, оставленным охраной маршрута, когда она
       // увела сюда с закрытого адреса. Без этой строки самый обычный путь
       // («открыл ссылку на работу → отправили на вход → вошёл») возвращал на
       // вход второй раз: `RequireAuth` успевал прочитать то самое `null`.
       // Найдено сквозной проверкой (`e2e/tests/flow.spec.ts`, последний шаг).
-      await qc.invalidateQueries({ queryKey: keys.me, refetchType: 'all' })
+      await qc.invalidateQueries({ queryKey: keys.bootstrap, refetchType: 'all' })
       const from = (location.state as { from?: string } | null)?.from
       navigate(from ?? '/', { replace: true })
     },

@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 from .c_fixtures import (docx_байты, войти, завести, клиент, личное_id,  # noqa: F401
-                         создать_проект, сосед, хозяин)
+                         позвать, создать_проект, сосед, хозяин)
 from .d_fixtures import ид_материала
 
 ПОИСК = "/api/search"
@@ -72,8 +72,7 @@ def test_работа_общего_пространства_находится_�
                                                          сосед):
     """Приглашённый ищет по тем же пространствам, что и владелец."""
     ws_id = клиент.post("/api/workspaces", json={"name": "общее"}).json()["id"]
-    клиент.post(f"/api/workspaces/{ws_id}/members",
-                json={"email": сосед.email, "role": "viewer"})
+    позвать(app, клиент, ws_id, сосед, "viewer")
     создать_проект(клиент, ws_id, name="Общая работа")
 
     войти(app, сосед)

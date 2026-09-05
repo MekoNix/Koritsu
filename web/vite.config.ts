@@ -12,6 +12,40 @@ const apiTarget = `http://127.0.0.1:${apiPort}`
 // Порт самого Vite — тоже из окружения, чтобы запуски не толкались на 5173.
 const webPort = Number(process.env.WEB_PORT ?? 5173)
 
+// Порт показа собранного `dist` (`vite preview`). Отдельный от дев-сервера:
+// показ и разработка бывают подняты разом.
+const previewPort = Number(process.env.PREVIEW_PORT ?? 4173)
+
+/**
+ * Прокси на службу. Один и тот же у дев-сервера и у показа `dist`.
+ *
+ * Cookie-сессия работает только на том же origin, поэтому весь `/api` ходит
+ * через прокси, а не по абсолютному адресу службы. В бою эту работу делает
+ * Caddy — и `dist`, и `/api` он отдаёт с одного имени.
+ *
+ * **Префикс пути учитывается.** Сайт под префиксом зовёт службу по
+ * `/<префикс>/api/…` (`lib/basePath.ts`), а служба про префикс не знает вовсе:
+ * в бою его снимает `handle_path` в `Caddyfile`. Здесь то же самое — путь
+ * подбирается с префиксом, а уезжает без него. Без префикса (`base` = `/`)
+ * получается ровно прежняя таблица.
+ *
+ * `ws: false` намеренно: потоки заданий — SSE, а не веб-сокеты.
+ */
+function apiProxy(base: string): Record<string, object> {
+  const префикс = base.replace(/\/+$/, '')
+  const пути = ['/api', '/openapi.json', '/docs', '/health']
+  return Object.fromEntries(
+    пути.map((путь) => [
+      `${префикс}${путь}`,
+      {
+        target: apiTarget,
+        changeOrigin: false,
+        rewrite: (path: string) => path.slice(префикс.length),
+      },
+    ]),
+  )
+}
+
 /**
  * Префикс пути, под которым живёт сайт: домена нет, адрес — IP машины плюс
  * случайная строка, чтобы сайт не нашли перебором.
@@ -117,15 +151,22 @@ export default defineConfig(({ mode }) => ({
     host: '127.0.0.1',
     port: webPort,
     strictPort: true,
-    proxy: {
-      // Cookie-сессия работает только на том же origin, поэтому весь `/api`
-      // ходит через прокси Vite, а не по абсолютному адресу службы.
-      // `ws: false` намеренно: потоки заданий — SSE, а не веб-сокеты.
-      '/api': { target: apiTarget, changeOrigin: false },
-      '/openapi.json': { target: apiTarget, changeOrigin: false },
-      '/docs': { target: apiTarget, changeOrigin: false },
-      '/health': { target: apiTarget, changeOrigin: false },
-    },
+    proxy: apiProxy(basePath),
+  },
+  /**
+   * Показ собранного `dist` — тем же способом, каким сайт живёт в бою: статика
+   * под префиксом пути плюс `/api` с того же имени.
+   *
+   * Нужен затем, что боевая сборка отличается от `pnpm dev` не мелочью:
+   * деление на куски, ленивые `import()` по областям, обфускация и префикс
+   * пути. Всё это ломается только здесь, и увидеть это можно только здесь —
+   * `pnpm e2e` ходит по дев-серверу и такой поломки не заметит.
+   */
+  preview: {
+    host: '127.0.0.1',
+    port: previewPort,
+    strictPort: true,
+    proxy: apiProxy(basePath),
   },
   build: {
     outDir: 'dist',

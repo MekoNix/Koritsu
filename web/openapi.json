@@ -212,7 +212,7 @@
      "auth"
     ],
     "summary": "The signed-in user",
-    "description": "Returns the account behind the session cookie. 401 unauthenticated.",
+    "description": "Returns the account behind the session cookie, plus admin_domain: the host the admin area lives on, or an empty string when it is not split off a subdomain. 401 unauthenticated.",
     "operationId": "get_current_user",
     "responses": {
      "200": {
@@ -726,8 +726,8 @@
     "tags": [
      "workspaces"
     ],
-    "summary": "Add a member by email",
-    "description": "Invites a person by email address. Owner only. 400 unknown_role, 403 forbidden, 404 no_such_user, 409 already_member.",
+    "summary": "Invite a member by email",
+    "description": "Invites a person by email address: the membership is created as `pending` and a `workspace_invite` notification is sent to them. They join only after accepting it. Owner only. 400 unknown_role, 403 forbidden, 404 no_such_user, 409 already_member.",
     "operationId": "add_workspace_member",
     "parameters": [
      {
@@ -759,6 +759,114 @@
          "type": "object",
          "additionalProperties": true,
          "title": "Response Add Workspace Member"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/workspaces/{workspace_id}/members/{user_id}/accept": {
+   "post": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "Accept an invitation to a workspace",
+    "description": "Accepts your own pending invitation: the membership becomes active and the invitation notification is removed. Only the invited person may call it. 400 invalid_id, 404 no_invite.",
+    "operationId": "accept_workspace_invite",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     },
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "User Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Accept Workspace Invite"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/workspaces/{workspace_id}/members/{user_id}/decline": {
+   "post": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "Decline an invitation to a workspace",
+    "description": "Declines your own pending invitation: the membership row and the invitation notification are removed. Only the invited person may call it. 400 invalid_id, 404 no_invite.",
+    "operationId": "decline_workspace_invite",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     },
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "User Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Decline Workspace Invite"
         }
        }
       }
@@ -898,7 +1006,7 @@
      "projects"
     ],
     "summary": "Create a project in a workspace",
-    "description": "Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.",
+    "description": "Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. `module` says which module the work is done with (from GET /api/modules) and may be left out. Editor role in the workspace. 400 bad_template, 400 unknown_module, 403 forbidden, 404 not_found, 409 project_exists.",
     "operationId": "create_project",
     "requestBody": {
      "required": true,
@@ -940,7 +1048,7 @@
      "projects"
     ],
     "summary": "List projects of a workspace",
-    "description": "Lists the projects of one workspace; `trash=true` lists the ones in the trash instead. 400 invalid_id, 404 not_found.",
+    "description": "Lists the projects of one workspace; `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found.",
     "operationId": "list_projects",
     "parameters": [
      {
@@ -960,6 +1068,16 @@
        "type": "boolean",
        "default": false,
        "title": "Trash"
+      }
+     },
+     {
+      "name": "module",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Module"
       }
      }
     ],
@@ -1037,8 +1155,8 @@
     "tags": [
      "projects"
     ],
-    "summary": "Rename a project",
-    "description": "Renames a project, in the database and in its settings on the volume. Editor role. 403 forbidden, 404 not_found, 409 in_trash, 422 validation_failed.",
+    "summary": "Rename a project or say which module it is done with",
+    "description": "Changes the name of a project, in the database and in its settings on the volume, and the module it is done with. Both fields are optional; an empty body changes nothing. Editor role. 400 unknown_module, 403 forbidden, 404 not_found, 409 in_trash, 422 validation_failed.",
     "operationId": "rename_project",
     "parameters": [
      {
@@ -1056,7 +1174,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "$ref": "#/components/schemas/ProjectNameIn"
+        "$ref": "#/components/schemas/ProjectPatchIn"
        }
       }
      }
@@ -1181,7 +1299,7 @@
      "projects"
     ],
     "summary": "Tags of the project template",
-    "description": "Every tag of the template, in the order they appear in the document: key, label, type, whether it is required, and whether it is filled, with the source and the number of the current version when it is. Tags no longer present in the template are left out. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "description": "Every tag of the template, in the order they appear in the document: key, label, type, whether it is required, the prompt the model is given for it, and whether it is filled, with the source and the number of the current version when it is. Tags no longer present in the template are left out. `constructs` lists the Jinja constructions of the template the builder does not understand (`{% for %}` and the like): they stay in the document as text and do not break the build. 400 invalid_id, 404 not_found, 409 in_trash.",
     "operationId": "list_project_tags",
     "parameters": [
      {
@@ -1203,6 +1321,70 @@
          "type": "object",
          "additionalProperties": true,
          "title": "Response List Project Tags"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/tags/{key}": {
+   "patch": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Set what the model is told to write into one tag",
+    "description": "Writes the prompt of one tag into the manifest of the work. It is the same text a template comment fills in when the template carries one, and it outlives a single run, unlike the run-wide prompt sent with fill_report. An empty string clears it. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 404 unknown_tag, 409 in_trash.",
+    "operationId": "set_tag_prompt",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Key"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagPromptIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Set Tag Prompt"
         }
        }
       }
@@ -1317,6 +1499,175 @@
         }
        }
       }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/runs": {
+   "post": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Write down a module run of this project",
+    "description": "Adds one entry to the run journal of a project: which module was started, what it is called and what it produced. The answer carries `n`, the sequence number of this run of this module in this project, which the interface uses to name a run that was left unnamed. Editor role. 400 invalid_id, 400 unknown_module, 403 forbidden, 404 not_found.",
+    "operationId": "create_project_run",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectRunIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProjectRunOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Run journal of a project",
+    "description": "Everything that has been started in this project: which module, when, under what name, and what it produced. `module` narrows the list down to one module; `sort` orders it: newest first by default, then oldest, by name or by module. Viewer role. 400 invalid_id, 400 unknown_module, 404 not_found.",
+    "operationId": "list_project_runs",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "module",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Module"
+      }
+     },
+     {
+      "name": "sort",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "enum": [
+        "new",
+        "old",
+        "name",
+        "module"
+       ],
+       "type": "string",
+       "default": "new",
+       "title": "Sort"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ProjectRunOut"
+         },
+         "title": "Response List Project Runs"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/runs/{run_id}": {
+   "delete": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Remove one entry from the run journal",
+    "description": "Removes a run from the journal of the project: this is how a diagram is deleted from a work. What the run produced stays on the volume: an artifact is addressed by its content and may be the value of a tag, so deleting it here would knock a picture out of a finished document. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "delete_project_run",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
      },
      "default": {
       "description": "Any refusal: one shape, machine-readable code",
@@ -2443,6 +2794,51 @@
     }
    }
   },
+  "/api/notifications/{notification_id}": {
+   "delete": {
+    "tags": [
+     "notifications"
+    ],
+    "summary": "Delete one notification",
+    "description": "Deletes one notification of yours for good. The job it announced and its files stay where they were. 400 invalid_id, 404 not_found.",
+    "operationId": "delete_notification",
+    "parameters": [
+     {
+      "name": "notification_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Notification Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Delete Notification"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/notifications/read-all": {
    "post": {
     "tags": [
@@ -3336,6 +3732,56 @@
     }
    }
   },
+  "/api/bootstrap": {
+   "get": {
+    "tags": [
+     "bootstrap"
+    ],
+    "summary": "Everything the first screen needs, in one answer",
+    "description": "The signed-in account, the modules the interface may show, the monthly limit with what is left, the workspaces the caller belongs to, the newest notifications with the unread count, and admin_domain: the host the admin area lives on, or an empty string when it is not split off a subdomain. Every nested object has exactly the shape its own route returns, and is built by the very same code; the separate routes stay for refreshing one thing at a time. 401 unauthenticated.",
+    "operationId": "bootstrap",
+    "parameters": [
+     {
+      "name": "notifications",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 100,
+       "minimum": 1,
+       "description": "how many newest notifications to include",
+       "default": 20,
+       "title": "Notifications"
+      },
+      "description": "how many newest notifications to include"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Bootstrap"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/projects/{project_id}/export": {
    "post": {
     "tags": [
@@ -3484,7 +3930,7 @@
      "templates"
     ],
     "summary": "Upload a report template",
-    "description": "Stores a DOCX template of your own (multipart field `file`, optional `name`) and answers with its card: size and how many tags it has. The file is parsed the same way a project template is, so a file rejected here would be rejected there too. 400 bad_template, 400 invalid_name, 400 no_file, 413 file_too_large, 413 quota_exceeded.",
+    "description": "Stores a DOCX template of your own (multipart field `file`, optional `name`) and answers with its card: size and how many tags it has. The file is parsed the same way a project template is, so a file rejected here would be rejected there too. One DOCX is one template: uploading the very same bytes again answers 200 with the template you already have, under the name you gave it then. 400 bad_template, 400 invalid_name, 400 no_file, 413 file_too_large, 413 quota_exceeded.",
     "operationId": "upload_template",
     "requestBody": {
      "content": {
@@ -3525,6 +3971,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     },
+     "200": {
+      "description": "The same file was already there",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TemplateOut"
         }
        }
       }
@@ -3589,6 +4045,223 @@
     ],
     "responses": {
      "200": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/templates": {
+   "get": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Templates attached to this project",
+    "description": "The report templates attached to this project, in the order they were attached. A project may carry several: a title page, an appendix, a standard. `active` says which one the work is currently built from. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "list_project_templates",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/TemplateOut"
+         },
+         "title": "Response List Project Templates"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Attach a report template to this project",
+    "description": "Attaches a template to the project: either a DOCX sent here (multipart field `file`, optional `name`), which lands on your own shelf as well, or one you have already saved, named by `template_id`. Sending both is refused. Attaching the same template twice is the same state and answers 200. Editor role. 400 bad_template, 400 invalid_id, 400 invalid_name, 400 no_file, 403 forbidden, 404 not_found, 413 file_too_large, 413 quota_exceeded.",
+    "operationId": "attach_project_template",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TemplateOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     },
+     "200": {
+      "description": "It was attached already",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TemplateOut"
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         },
+         "name": {
+          "type": "string"
+         },
+         "template_id": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/templates/{template_id}/use": {
+   "post": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Build this project from this template",
+    "description": "Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "use_project_template",
+    "parameters": [
+     {
+      "name": "template_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Template Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TemplateOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/templates/{template_id}": {
+   "delete": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Remove a template from this project",
+    "description": "Takes a template off the project. The file itself stays on the shelf of whoever uploaded it: the same DOCX may be attached to several works. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "detach_project_template",
+    "parameters": [
+     {
+      "name": "template_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Template Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
       "description": "Successful Response"
      },
      "default": {
@@ -4127,7 +4800,7 @@
      "flowcharts"
     ],
     "summary": "Build a flowchart and keep it in the project",
-    "description": "Builds a flowchart from source code or from a text material of the project and stores the drawio XML as a project artifact. The answer carries the artifact id: download it with GET /api/projects/{project_id}/artifacts/{artifact_id} or put it into a diagram tag value. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "description": "Builds a flowchart from source code or from a text material of the project, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. There is no separate save step: what was built is kept, together with the code and the settings it was built with. The answer carries the XML, the artifact id and the run_id of the journal entry: delete that entry to delete the diagram. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
     "operationId": "flowcharts_create",
     "parameters": [
      {
@@ -4156,9 +4829,164 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object",
-         "additionalProperties": true,
-         "title": "Response Flowcharts Create"
+         "$ref": "#/components/schemas/DiagramBuiltOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "flowcharts"
+    ],
+    "summary": "Flowcharts kept in this project",
+    "description": "Every flowchart built in this project, newest first: what it is called, when it was built, what it was built with and which artifact holds its XML. UML diagrams are not in this list: they have their own. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "flowcharts_list",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/DiagramOut"
+         },
+         "title": "Response Flowcharts List"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/flowcharts/{run_id}": {
+   "put": {
+    "tags": [
+     "flowcharts"
+    ],
+    "summary": "Rebuild a flowchart that is already in the project",
+    "description": "Builds the flowchart again, from new code or with a new mode, and replaces what the journal entry points at. The entry itself stays: its name and its number do not change, because this is the same diagram drawn again, not a second one. Editor role. 400 invalid_id, 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "operationId": "flowcharts_rebuild",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FlowchartIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DiagramBuiltOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "flowcharts"
+    ],
+    "summary": "One kept flowchart, with its code and its XML",
+    "description": "The diagram as it was built: the drawio XML, the source code and the settings. This is what opens the diagram back up for editing. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "flowcharts_one",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DiagramFullOut"
         }
        }
       }
@@ -4306,7 +5134,7 @@
      "uml"
     ],
     "summary": "Build a class diagram and keep it in the project",
-    "description": "Builds a UML class diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The answer carries the artifact id and the classes that got drawn. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "description": "Builds a UML class diagram from text materials of the project or from sources in the body, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. There is no separate save step: what was built is kept, together with the sources and the palette it was built with. The answer carries the XML, the artifact id and the run_id of the journal entry: delete that entry to delete the diagram. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
     "operationId": "uml_classes",
     "parameters": [
      {
@@ -4335,9 +5163,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object",
-         "additionalProperties": true,
-         "title": "Response Uml Classes"
+         "$ref": "#/components/schemas/DiagramBuiltOut"
         }
        }
       }
@@ -4361,7 +5187,7 @@
      "uml"
     ],
     "summary": "Build an object diagram and keep it in the project",
-    "description": "Builds a UML object diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The first source is the entry point, the rest are neighbouring files. The answer carries the artifact id, the instances that got drawn and the notes of the tracer. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "description": "Builds a UML object diagram from text materials of the project or from sources in the body, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. The first source is the entry point, the rest are neighbouring files. The answer carries the XML, the artifact id, the run_id of the journal entry and the notes of the tracer. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
     "operationId": "uml_objects",
     "parameters": [
      {
@@ -4390,9 +5216,166 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object",
-         "additionalProperties": true,
-         "title": "Response Uml Objects"
+         "$ref": "#/components/schemas/DiagramBuiltOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/uml/{run_id}": {
+   "put": {
+    "tags": [
+     "uml"
+    ],
+    "summary": "Rebuild a UML diagram that is already in the project",
+    "description": "Builds the diagram again, from new sources or with a new palette, and replaces what the journal entry points at. The entry itself stays: its name and its number do not change, because this is the same diagram drawn again, not a second one. The kind of diagram is the one it was built as. Editor role. 400 invalid_id, 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "operationId": "uml_rebuild",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UmlIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DiagramBuiltOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "uml"
+    ],
+    "summary": "One kept UML diagram, with its sources and its XML",
+    "description": "The diagram as it was built: the drawio XML, the sources in the order they were given and the settings. This is what opens the diagram back up for editing. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "uml_one",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DiagramFullOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/uml": {
+   "get": {
+    "tags": [
+     "uml"
+    ],
+    "summary": "UML diagrams kept in this project",
+    "description": "Every UML diagram built in this project, newest first: what it is called, when it was built, which kind it is and which artifact holds its XML. Flowcharts are not in this list: they have their own. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "uml_list",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/DiagramOut"
+         },
+         "title": "Response Uml List"
         }
        }
       }
@@ -4452,7 +5435,7 @@
      "projects"
     ],
     "summary": "Create a project in a workspace",
-    "description": "Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.",
+    "description": "Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. `module` says which module the work is done with (from GET /api/modules) and may be left out. Editor role in the workspace. 400 bad_template, 400 unknown_module, 403 forbidden, 404 not_found, 409 project_exists.",
     "operationId": "create_project_v1",
     "requestBody": {
      "required": true,
@@ -4495,7 +5478,7 @@
      "projects"
     ],
     "summary": "List projects of a workspace",
-    "description": "Lists the projects of one workspace; `trash=true` lists the ones in the trash instead. 400 invalid_id, 404 not_found.",
+    "description": "Lists the projects of one workspace; `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found.",
     "operationId": "list_projects_v1",
     "parameters": [
      {
@@ -4515,6 +5498,16 @@
        "type": "boolean",
        "default": false,
        "title": "Trash"
+      }
+     },
+     {
+      "name": "module",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Module"
       }
      }
     ],
@@ -4594,8 +5587,8 @@
      "v1",
      "projects"
     ],
-    "summary": "Rename a project",
-    "description": "Renames a project, in the database and in its settings on the volume. Editor role. 403 forbidden, 404 not_found, 409 in_trash, 422 validation_failed.",
+    "summary": "Rename a project or say which module it is done with",
+    "description": "Changes the name of a project, in the database and in its settings on the volume, and the module it is done with. Both fields are optional; an empty body changes nothing. Editor role. 400 unknown_module, 403 forbidden, 404 not_found, 409 in_trash, 422 validation_failed.",
     "operationId": "rename_project_v1",
     "parameters": [
      {
@@ -4613,7 +5606,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "$ref": "#/components/schemas/ProjectNameIn"
+        "$ref": "#/components/schemas/ProjectPatchIn"
        }
       }
      }
@@ -4741,7 +5734,7 @@
      "projects"
     ],
     "summary": "Tags of the project template",
-    "description": "Every tag of the template, in the order they appear in the document: key, label, type, whether it is required, and whether it is filled, with the source and the number of the current version when it is. Tags no longer present in the template are left out. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "description": "Every tag of the template, in the order they appear in the document: key, label, type, whether it is required, the prompt the model is given for it, and whether it is filled, with the source and the number of the current version when it is. Tags no longer present in the template are left out. `constructs` lists the Jinja constructions of the template the builder does not understand (`{% for %}` and the like): they stay in the document as text and do not break the build. 400 invalid_id, 404 not_found, 409 in_trash.",
     "operationId": "list_project_tags_v1",
     "parameters": [
      {
@@ -4763,6 +5756,71 @@
          "type": "object",
          "additionalProperties": true,
          "title": "Response List Project Tags V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/tags/{key}": {
+   "patch": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Set what the model is told to write into one tag",
+    "description": "Writes the prompt of one tag into the manifest of the work. It is the same text a template comment fills in when the template carries one, and it outlives a single run, unlike the run-wide prompt sent with fill_report. An empty string clears it. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 404 unknown_tag, 409 in_trash.",
+    "operationId": "set_tag_prompt_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Key"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TagPromptIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Set Tag Prompt V1"
         }
        }
       }
@@ -4879,6 +5937,178 @@
         }
        }
       }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/runs": {
+   "post": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Write down a module run of this project",
+    "description": "Adds one entry to the run journal of a project: which module was started, what it is called and what it produced. The answer carries `n`, the sequence number of this run of this module in this project, which the interface uses to name a run that was left unnamed. Editor role. 400 invalid_id, 400 unknown_module, 403 forbidden, 404 not_found.",
+    "operationId": "create_project_run_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectRunIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProjectRunOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Run journal of a project",
+    "description": "Everything that has been started in this project: which module, when, under what name, and what it produced. `module` narrows the list down to one module; `sort` orders it: newest first by default, then oldest, by name or by module. Viewer role. 400 invalid_id, 400 unknown_module, 404 not_found.",
+    "operationId": "list_project_runs_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "module",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Module"
+      }
+     },
+     {
+      "name": "sort",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "enum": [
+        "new",
+        "old",
+        "name",
+        "module"
+       ],
+       "type": "string",
+       "default": "new",
+       "title": "Sort"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ProjectRunOut"
+         },
+         "title": "Response List Project Runs V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/runs/{run_id}": {
+   "delete": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Remove one entry from the run journal",
+    "description": "Removes a run from the journal of the project: this is how a diagram is deleted from a work. What the run produced stays on the volume: an artifact is addressed by its content and may be the value of a tag, so deleting it here would knock a picture out of a finished document. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "delete_project_run_v1",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
      },
      "default": {
       "description": "Any refusal: one shape, machine-readable code",
@@ -6306,7 +7536,7 @@
      "flowcharts"
     ],
     "summary": "Build a flowchart and keep it in the project",
-    "description": "Builds a flowchart from source code or from a text material of the project and stores the drawio XML as a project artifact. The answer carries the artifact id: download it with GET /api/projects/{project_id}/artifacts/{artifact_id} or put it into a diagram tag value. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "description": "Builds a flowchart from source code or from a text material of the project, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. There is no separate save step: what was built is kept, together with the code and the settings it was built with. The answer carries the XML, the artifact id and the run_id of the journal entry: delete that entry to delete the diagram. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
     "operationId": "flowcharts_create_v1",
     "parameters": [
      {
@@ -6335,9 +7565,167 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object",
-         "additionalProperties": true,
-         "title": "Response Flowcharts Create V1"
+         "$ref": "#/components/schemas/DiagramBuiltOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "v1",
+     "flowcharts"
+    ],
+    "summary": "Flowcharts kept in this project",
+    "description": "Every flowchart built in this project, newest first: what it is called, when it was built, what it was built with and which artifact holds its XML. UML diagrams are not in this list: they have their own. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "flowcharts_list_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/DiagramOut"
+         },
+         "title": "Response Flowcharts List V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/flowcharts/{run_id}": {
+   "put": {
+    "tags": [
+     "v1",
+     "flowcharts"
+    ],
+    "summary": "Rebuild a flowchart that is already in the project",
+    "description": "Builds the flowchart again, from new code or with a new mode, and replaces what the journal entry points at. The entry itself stays: its name and its number do not change, because this is the same diagram drawn again, not a second one. Editor role. 400 invalid_id, 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "operationId": "flowcharts_rebuild_v1",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FlowchartIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DiagramBuiltOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "v1",
+     "flowcharts"
+    ],
+    "summary": "One kept flowchart, with its code and its XML",
+    "description": "The diagram as it was built: the drawio XML, the source code and the settings. This is what opens the diagram back up for editing. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "flowcharts_one_v1",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DiagramFullOut"
         }
        }
       }
@@ -6489,7 +7877,7 @@
      "uml"
     ],
     "summary": "Build a class diagram and keep it in the project",
-    "description": "Builds a UML class diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The answer carries the artifact id and the classes that got drawn. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "description": "Builds a UML class diagram from text materials of the project or from sources in the body, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. There is no separate save step: what was built is kept, together with the sources and the palette it was built with. The answer carries the XML, the artifact id and the run_id of the journal entry: delete that entry to delete the diagram. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
     "operationId": "uml_classes_v1",
     "parameters": [
      {
@@ -6518,9 +7906,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object",
-         "additionalProperties": true,
-         "title": "Response Uml Classes V1"
+         "$ref": "#/components/schemas/DiagramBuiltOut"
         }
        }
       }
@@ -6545,7 +7931,7 @@
      "uml"
     ],
     "summary": "Build an object diagram and keep it in the project",
-    "description": "Builds a UML object diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The first source is the entry point, the rest are neighbouring files. The answer carries the artifact id, the instances that got drawn and the notes of the tracer. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "description": "Builds a UML object diagram from text materials of the project or from sources in the body, stores the drawio XML as a project artifact and writes the diagram down in the run journal of the project. The first source is the entry point, the rest are neighbouring files. The answer carries the XML, the artifact id, the run_id of the journal entry and the notes of the tracer. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
     "operationId": "uml_objects_v1",
     "parameters": [
      {
@@ -6574,9 +7960,169 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object",
-         "additionalProperties": true,
-         "title": "Response Uml Objects V1"
+         "$ref": "#/components/schemas/DiagramBuiltOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/uml/{run_id}": {
+   "put": {
+    "tags": [
+     "v1",
+     "uml"
+    ],
+    "summary": "Rebuild a UML diagram that is already in the project",
+    "description": "Builds the diagram again, from new sources or with a new palette, and replaces what the journal entry points at. The entry itself stays: its name and its number do not change, because this is the same diagram drawn again, not a second one. The kind of diagram is the one it was built as. Editor role. 400 invalid_id, 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "operationId": "uml_rebuild_v1",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UmlIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DiagramBuiltOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "v1",
+     "uml"
+    ],
+    "summary": "One kept UML diagram, with its sources and its XML",
+    "description": "The diagram as it was built: the drawio XML, the sources in the order they were given and the settings. This is what opens the diagram back up for editing. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "uml_one_v1",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DiagramFullOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/uml": {
+   "get": {
+    "tags": [
+     "v1",
+     "uml"
+    ],
+    "summary": "UML diagrams kept in this project",
+    "description": "Every UML diagram built in this project, newest first: what it is called, when it was built, which kind it is and which artifact holds its XML. Flowcharts are not in this list: they have their own. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "uml_list_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/DiagramOut"
+         },
+         "title": "Response Uml List V1"
         }
        }
       }
@@ -6812,6 +8358,11 @@
       "title": "Name",
       "default": ""
      },
+     "module": {
+      "type": "string",
+      "title": "Module",
+      "default": ""
+     },
      "template": {
       "anyOf": [
        {
@@ -6851,6 +8402,11 @@
      "name": {
       "type": "string",
       "title": "Name",
+      "default": ""
+     },
+     "module": {
+      "type": "string",
+      "title": "Module",
       "default": ""
      },
      "template": {
@@ -6911,6 +8467,315 @@
      "token"
     ],
     "title": "ConfirmIn"
+   },
+   "DiagramBuiltOut": {
+    "properties": {
+     "run_id": {
+      "type": "string",
+      "title": "Run Id",
+      "description": "Journal entry of this diagram; delete it to delete the diagram"
+     },
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "module": {
+      "type": "string",
+      "title": "Module",
+      "description": "flowcharts or uml"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind",
+      "description": "flowchart, classes or objects"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Which diagram of this module in this project"
+     },
+     "artifact": {
+      "type": "string",
+      "title": "Artifact",
+      "description": "Artifact id of the drawio XML"
+     },
+     "lang": {
+      "type": "string",
+      "title": "Lang"
+     },
+     "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "Drawing mode, flowcharts only",
+      "default": ""
+     },
+     "theme": {
+      "type": "string",
+      "title": "Theme",
+      "description": "Palette, uml only",
+      "default": ""
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "xml": {
+      "type": "string",
+      "title": "Xml",
+      "description": "The drawio XML itself"
+     },
+     "sources": {
+      "items": {
+       "$ref": "#/components/schemas/DiagramSource"
+      },
+      "type": "array",
+      "title": "Sources",
+      "description": "Sources the diagram was built from, in order"
+     },
+     "notices": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Notices",
+      "description": "What the builder had to say"
+     },
+     "items": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Items",
+      "description": "What got drawn: class names, instance names"
+     }
+    },
+    "type": "object",
+    "required": [
+     "run_id",
+     "project_id",
+     "module",
+     "kind",
+     "name",
+     "n",
+     "artifact",
+     "lang",
+     "xml"
+    ],
+    "title": "DiagramBuiltOut",
+    "description": "Только что построенная схема: к сохранённому добавлено `items`.\n\n`items` — что строитель нарисовал: имена классов, имена экземпляров. Это\nответ строителя, а не свойство схемы, и в базе его нет: по нему человек\nвидит, что диаграмма про его код, **до** того, как откроет картинку, — а\nоткрыв сохранённую, он видит это на самой картинке."
+   },
+   "DiagramFullOut": {
+    "properties": {
+     "run_id": {
+      "type": "string",
+      "title": "Run Id",
+      "description": "Journal entry of this diagram; delete it to delete the diagram"
+     },
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "module": {
+      "type": "string",
+      "title": "Module",
+      "description": "flowcharts or uml"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind",
+      "description": "flowchart, classes or objects"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Which diagram of this module in this project"
+     },
+     "artifact": {
+      "type": "string",
+      "title": "Artifact",
+      "description": "Artifact id of the drawio XML"
+     },
+     "lang": {
+      "type": "string",
+      "title": "Lang"
+     },
+     "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "Drawing mode, flowcharts only",
+      "default": ""
+     },
+     "theme": {
+      "type": "string",
+      "title": "Theme",
+      "description": "Palette, uml only",
+      "default": ""
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "xml": {
+      "type": "string",
+      "title": "Xml",
+      "description": "The drawio XML itself"
+     },
+     "sources": {
+      "items": {
+       "$ref": "#/components/schemas/DiagramSource"
+      },
+      "type": "array",
+      "title": "Sources",
+      "description": "Sources the diagram was built from, in order"
+     },
+     "notices": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Notices",
+      "description": "What the builder had to say"
+     }
+    },
+    "type": "object",
+    "required": [
+     "run_id",
+     "project_id",
+     "module",
+     "kind",
+     "name",
+     "n",
+     "artifact",
+     "lang",
+     "xml"
+    ],
+    "title": "DiagramFullOut",
+    "description": "Схема целиком: XML, исходники и замечания строителя.\n\nОтдаётся при построении и при открытии сохранённой схемы — то есть ровно\nтогда, когда её собираются показать в редакторе и править дальше. XML здесь\nже, а не отдельным запросом за артефактом: экран без картинки бесполезен, и\nвторой поход за ней означал бы, что схема появляется рывком."
+   },
+   "DiagramOut": {
+    "properties": {
+     "run_id": {
+      "type": "string",
+      "title": "Run Id",
+      "description": "Journal entry of this diagram; delete it to delete the diagram"
+     },
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "module": {
+      "type": "string",
+      "title": "Module",
+      "description": "flowcharts or uml"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind",
+      "description": "flowchart, classes or objects"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Which diagram of this module in this project"
+     },
+     "artifact": {
+      "type": "string",
+      "title": "Artifact",
+      "description": "Artifact id of the drawio XML"
+     },
+     "lang": {
+      "type": "string",
+      "title": "Lang"
+     },
+     "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "Drawing mode, flowcharts only",
+      "default": ""
+     },
+     "theme": {
+      "type": "string",
+      "title": "Theme",
+      "description": "Palette, uml only",
+      "default": ""
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "run_id",
+     "project_id",
+     "module",
+     "kind",
+     "name",
+     "n",
+     "artifact",
+     "lang"
+    ],
+    "title": "DiagramOut",
+    "description": "Строка списка сохранённых схем. Исходников в ней нет намеренно.\n\nСписок читают, чтобы выбрать схему, а не чтобы её перестроить: класть в\nкаждую строку по мегабайту кода значило бы вычитывать с тома всю работу\nради одного экрана."
+   },
+   "DiagramSource": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "File name, for messages only"
+     },
+     "source": {
+      "type": "string",
+      "title": "Source",
+      "description": "Source code the diagram was built from"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name",
+     "source"
+    ],
+    "title": "DiagramSource",
+    "description": "Один исходник схемы: как назывался файл и что в нём было."
    },
    "ErrorBody": {
     "properties": {
@@ -7100,7 +8965,7 @@
      "kind"
     ],
     "title": "JobIn",
-    "description": "Тело постановки задания.\n\nИмя по-английски, как у соседей (`ProjectNameIn`, `ModelKeyIn`): оно уезжает\nв OpenAPI и становится именем типа в клиенте сайта."
+    "description": "Тело постановки задания.\n\nИмя по-английски, как у соседей (`ProjectPatchIn`, `ModelKeyIn`): оно уезжает\nв OpenAPI и становится именем типа в клиенте сайта."
    },
    "LoginIn": {
     "properties": {
@@ -7224,21 +9089,144 @@
     "title": "ProfileIn",
     "description": "Правка своего профиля: `PATCH /auth/me`.\n\n**Все поля необязательные, и это договор, а не удобство.** Тело правки\nописывает изменение, а не человека целиком: пропущенное поле означает «не\nтрогать», а не «стереть». Поэтому же тут `None` — «поле не пришло», и ни\nодно поле не имеет `None` осмысленным значением.\n\nФорма нарочно расширяемая: сюда же дописываются настройки агента и модели\nпо умолчанию (`default_endpoint`, `agent_overwrite`). Новое поле добавляется\nстрокой здесь и строкой в `правка_профиля` — второго маршрута «поменять ещё\nодну мелочь профиля» заводить не надо."
    },
-   "ProjectNameIn": {
+   "ProjectPatchIn": {
     "properties": {
+     "name": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "module": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 32
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Module",
+      "description": "Module this work is done with, from GET /api/modules. An empty string clears it."
+     }
+    },
+    "type": "object",
+    "title": "ProjectPatchIn",
+    "description": "Тело правки работы: имя и модуль, оба необязательные.\n\nИмя по-английски, как у соседей: оно уезжает в OpenAPI и становится именем\nтипа в клиенте сайта.\n\nОба поля необязательны, и это не «сойдёт и так»: правок у работы две и\nделаются они из разных мест — имя правит диалог переименования, модуль\nвыбирается на карточке. Требовать оба сразу значило бы, что смена модуля\nперепишет имя тем, что было в форме на момент открытия.\n\nПустое тело — не отказ, а «ничего не менять»: отвечать `422` на просьбу\nничего не делать незачем, а состояние работы от неё то же самое."
+   },
+   "ProjectRunIn": {
+    "properties": {
+     "module": {
+      "type": "string",
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Module",
+      "description": "Module id from GET /api/modules: reports, kadai, …"
+     },
      "name": {
       "type": "string",
       "maxLength": 200,
-      "minLength": 1,
-      "title": "Name"
+      "title": "Name",
+      "description": "What to call this run. Empty is fine: the interface draws a default name from the module and n.",
+      "default": ""
+     },
+     "artifact_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Artifact Id",
+      "description": "Artifact this run produced, when it produced one"
      }
     },
     "type": "object",
     "required": [
-     "name"
+     "module"
     ],
-    "title": "ProjectNameIn",
-    "description": "Тело переименования. Имя по-английски, как у соседей: оно уезжает в\nOpenAPI и становится именем типа в клиенте сайта."
+    "title": "ProjectRunIn",
+    "description": "Запись о запуске. Имя по-английски: оно уезжает типом в клиент сайта."
+   },
+   "ProjectRunOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "module": {
+      "type": "string",
+      "title": "Module"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Which run of this module in this project, from 1"
+     },
+     "artifact_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Artifact Id"
+     },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id",
+      "description": "Who started it"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "project_id",
+     "module",
+     "name",
+     "n"
+    ],
+    "title": "ProjectRunOut",
+    "description": "Запись журнала наружу. Путей на томе в ней нет и быть не может."
    },
    "RegisterIn": {
     "properties": {
@@ -7318,6 +9306,22 @@
     "title": "RollbackIn",
     "description": "Тело возврата: номер версии, к которой возвращаемся.\n\nТело, а не путь, потому что возврат — действие над тегом, а не обращение к\nверсии: `POST …/values/{key}/versions/{n}` читалось бы как «создать версию\nномер n», чего служба не умеет и не должна."
    },
+   "TagPromptIn": {
+    "properties": {
+     "prompt": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Prompt",
+      "description": "What the model is told to write into this tag. Stored in the manifest of the work, so it outlives a single run."
+     }
+    },
+    "type": "object",
+    "required": [
+     "prompt"
+    ],
+    "title": "TagPromptIn",
+    "description": "Тело правки задания на тег. Пустая строка — «задания нет»."
+   },
    "TemplateOut": {
     "properties": {
      "id": {
@@ -7345,6 +9349,18 @@
       "title": "Sha256",
       "description": "First characters of the content hash"
      },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id",
+      "description": "Whose template this is. A project may carry a template uploaded by another member of the workspace."
+     },
      "created_at": {
       "anyOf": [
        {
@@ -7356,6 +9372,18 @@
       ],
       "title": "Created At",
       "description": "When it was uploaded"
+     },
+     "active": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Active",
+      "description": "Whether this is the template the work is built from. Only listed for templates attached to a project: on the personal shelf the question has no meaning."
      }
     },
     "type": "object",

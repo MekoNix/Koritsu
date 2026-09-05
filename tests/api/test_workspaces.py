@@ -7,7 +7,9 @@
 1. **личное заводится само** — при регистрации, хуком, а не отдельной кнопкой;
 2. **чужое — 404, своё без прав — 403**:
    первое не выдаёт существования, второе не притворяется пропажей;
-3. **личное не удаляется** — иначе человек остаётся без места под проекты.
+3. **личное не удаляется** — иначе человек остаётся без места под проекты;
+4. **приглашение не зачисляет** — позванный видит уведомление с двумя кнопками,
+   а пространство остаётся для него несуществующим, пока он не ответил.
 """
 from __future__ import annotations
 
@@ -20,10 +22,11 @@ from api.accounts import User, on_user_created
 from api.workspaces import (EDITOR, OWNER, VIEWER, Workspace,
                                   WorkspaceMember, create_personal,
                                   register_hooks, require_role)
-from api.workspaces.service import personal_workspace
+from api.workspaces.service import (ACTIVE, PENDING, personal_name,
+                                          personal_workspace)
 
 from .c_fixtures import (войти, завести, клиент, личное_id,  # noqa: F401
-                         сосед, хозяин)
+                         позвать, сосед, хозяин)
 
 
 # ── личное пространство ──────────────────────────────────────────────────────
@@ -60,6 +63,17 @@ def test_хук_ставится_на_каждой_сборке_приложен
 def test_хук_стоит_в_настоящих_аккаунтах(app):
     """У живого приложения хук стоит в настоящем списке `accounts`."""
     assert create_personal in on_user_created
+
+
+def test_личное_зовётся_ником_владельца(клиент, хозяин):
+    """Имя по умолчанию — `<ник>-workspace`, а не «Личное».
+
+    Переключатель пространств показывает имя как есть, и «Личное» рядом с
+    «кафедрой» не отвечало на вопрос, чьё оно.
+    """
+    ответ = клиент.get("/api/workspaces/personal").json()
+    assert ответ["name"] == f"{хозяин.nickname}-workspace"
+    assert ответ["name"] == personal_name(хозяин.nickname)
 
 
 def test_личное_не_удаляется(клиент, хозяин):
@@ -115,8 +129,7 @@ def test_чужое_пространство_это_404(app, клиент, хо�
 def test_viewer_читает_но_не_меняет(app, клиент, хозяин, сосед):
     """Участник с малой ролью получает 403: он и так видит объект."""
     ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()
-    добавлен = клиент.post(f"/api/workspaces/{ws['id']}/members",
-                           json={"email": сосед.email, "role": VIEWER})
+    добавлен = позвать(app, клиент, ws["id"], сосед, VIEWER)
     assert добавлен.status_code == 201
 
     войти(app, сосед)
@@ -129,8 +142,7 @@ def test_viewer_читает_но_не_меняет(app, клиент, хозя�
 def test_editor_не_трогает_участников(app, клиент, хозяин, сосед):
     """Участники — дело владельца: `editor` меняет проекты, а не людей."""
     ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()
-    клиент.post(f"/api/workspaces/{ws['id']}/members",
-                json={"email": сосед.email, "role": EDITOR})
+    позвать(app, клиент, ws["id"], сосед, EDITOR)
     войти(app, сосед)
     ответ = клиент.post(f"/api/workspaces/{ws['id']}/members",
                         json={"email": "кто-то@пример.рф", "role": VIEWER})
@@ -156,7 +168,8 @@ def test_участник_по_почте_и_смена_роли(клиент, �
     добавлен = клиент.post(f"/api/workspaces/{ws['id']}/members",
                            json={"email": сосед.email.upper(), "role": VIEWER})
     assert добавлен.status_code == 201, "почта сравнивается с учётом регистра"
-    assert добавлен.json() == {"user_id": сосед.id, "role": VIEWER}
+    assert добавлен.json() == {"user_id": сосед.id, "role": VIEWER,
+                               "status": PENDING}
 
     ещё_раз = клиент.post(f"/api/workspaces/{ws['id']}/members",
                           json={"email": сосед.email, "role": EDITOR})
@@ -173,19 +186,19 @@ def test_участник_по_почте_и_смена_роли(клиент, �
     assert [m["user_id"] for m in остались] == [хозяин.id]
 
 
-def test_список_участников_называет_почты(клиент, хозяин, сосед):
+def test_список_участников_называет_почты(app, клиент, хозяин, сосед):
     """Список участников — это список людей, а не идентификаторов.
 
     Почта в ответе нужна интерфейсу: своего имени у аккаунта нет, и решение
     «кого убрать» человек принимает по почте, а не по uuid.
     """
     ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()
-    клиент.post(f"/api/workspaces/{ws['id']}/members",
-                json={"email": сосед.email, "role": EDITOR})
+    позвать(app, клиент, ws["id"], сосед, EDITOR)
     участники = клиент.get(f"/api/workspaces/{ws['id']}/members").json()["members"]
     почты = {m["user_id"]: m["email"] for m in участники}
     assert почты == {хозяин.id: хозяин.email, сосед.id: сосед.email}
     assert all(m["created_at"] for m in участники), "даты вступления нет"
+    assert {m["status"] for m in участники} == {ACTIVE}
 
 
 def test_неизвестная_почта_и_неизвестная_роль(клиент, хозяин, сосед):
@@ -209,6 +222,111 @@ def test_последнего_владельца_не_убрать(клиент,
     понизить = клиент.patch(f"/api/workspaces/{ws['id']}/members/{хозяин.id}",
                             json={"role": EDITOR})
     assert понизить.status_code == 409
+
+
+# ── приглашения ──────────────────────────────────────────────────────────────
+
+def приглашения(клиент) -> list[dict]:
+    """Строки колокольчика про приглашение — то, что видит позванный."""
+    тело = клиент.get("/api/notifications").json()
+    return [n for n in тело["notifications"] if n["kind"] == "workspace_invite"]
+
+
+def test_приглашение_не_зачисляет(app, клиент, хозяин, сосед):
+    """Позванный ещё не участник: пространства для него нет, а в колокольчике
+    лежит приглашение с именем пространства и предложенной ролью."""
+    ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()
+    позван = клиент.post(f"/api/workspaces/{ws['id']}/members",
+                         json={"email": сосед.email, "role": EDITOR})
+    assert позван.status_code == 201 and позван.json()["status"] == PENDING
+
+    войти(app, сосед)
+    assert клиент.get(f"/api/workspaces/{ws['id']}").status_code == 404, (
+        "позванный видит чужое пространство до того, как ответил")
+    assert [w["id"] for w in клиент.get("/api/workspaces").json()["workspaces"]
+            if w["id"] == ws["id"]] == [], "не принятое участие попало в список"
+
+    строки = приглашения(клиент)
+    assert len(строки) == 1, строки
+    данные = строки[0]["data"]
+    assert данные["workspace_id"] == ws["id"]
+    assert данные["workspace_name"] == "кафедра"
+    assert данные["role"] == EDITOR
+    assert данные["from_nickname"] == хозяин.nickname
+
+
+def test_принять_приглашение(app, клиент, хозяин, сосед):
+    """«Принять» делает участником и уносит строку колокольчика: отвечать на
+    приглашение дважды нельзя, и кнопок, которые ничего не сделают, не будет."""
+    ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()
+    клиент.post(f"/api/workspaces/{ws['id']}/members",
+                json={"email": сосед.email, "role": EDITOR})
+
+    войти(app, сосед)
+    ответ = клиент.post(f"/api/workspaces/{ws['id']}/members/{сосед.id}/accept")
+    assert ответ.status_code == 200, ответ.text
+    assert ответ.json()["id"] == ws["id"] and ответ.json()["role"] == EDITOR
+
+    assert клиент.get(f"/api/workspaces/{ws['id']}").status_code == 200
+    assert ws["id"] in [w["id"] for w in
+                        клиент.get("/api/workspaces").json()["workspaces"]]
+    assert приглашения(клиент) == [], "приглашение осталось после ответа"
+
+    ещё = клиент.post(f"/api/workspaces/{ws['id']}/members/{сосед.id}/accept")
+    assert ещё.status_code == 404
+    assert ещё.json()["error"]["code"] == "no_invite"
+
+
+def test_отклонить_приглашение(app, клиент, хозяин, сосед):
+    """«Отклонить» убирает и строку участия: позвать человека можно снова."""
+    ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()
+    клиент.post(f"/api/workspaces/{ws['id']}/members",
+                json={"email": сосед.email, "role": EDITOR})
+
+    войти(app, сосед)
+    отказ = клиент.post(f"/api/workspaces/{ws['id']}/members/{сосед.id}/decline")
+    assert отказ.status_code == 200 and отказ.json() == {"declined": ws["id"]}
+    assert приглашения(клиент) == []
+    assert клиент.get(f"/api/workspaces/{ws['id']}").status_code == 404
+
+    войти(app, хозяин)
+    участники = клиент.get(f"/api/workspaces/{ws['id']}/members").json()["members"]
+    assert [m["user_id"] for m in участники] == [хозяин.id]
+    снова = клиент.post(f"/api/workspaces/{ws['id']}/members",
+                        json={"email": сосед.email, "role": VIEWER})
+    assert снова.status_code == 201, "после отказа позвать нельзя второй раз"
+
+
+def test_за_другого_приглашение_не_принять(app, клиент, хозяин, сосед):
+    """Владелец не соглашается за приглашённого: чужой ответ — те же 404."""
+    ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()
+    клиент.post(f"/api/workspaces/{ws['id']}/members",
+                json={"email": сосед.email, "role": EDITOR})
+    ответ = клиент.post(f"/api/workspaces/{ws['id']}/members/{сосед.id}/accept")
+    assert ответ.status_code == 404
+    assert ответ.json()["error"]["code"] == "no_invite"
+
+
+def test_позванный_виден_владельцу_как_pending(app, клиент, хозяин, сосед):
+    """Список участников показывает состояние: иначе «позвал, а его нет»."""
+    ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()
+    клиент.post(f"/api/workspaces/{ws['id']}/members",
+                json={"email": сосед.email, "role": VIEWER})
+    участники = клиент.get(f"/api/workspaces/{ws['id']}/members").json()["members"]
+    состояния = {m["user_id"]: m["status"] for m in участники}
+    assert состояния == {хозяин.id: ACTIVE, сосед.id: PENDING}
+
+
+def test_убранный_позванный_теряет_приглашение(app, клиент, хозяин, сосед):
+    """Владелец передумал до ответа — кнопки в чужом колокольчике не живут."""
+    ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()
+    клиент.post(f"/api/workspaces/{ws['id']}/members",
+                json={"email": сосед.email, "role": VIEWER})
+    assert клиент.delete(
+        f"/api/workspaces/{ws['id']}/members/{сосед.id}").status_code == 200
+
+    войти(app, сосед)
+    assert приглашения(клиент) == []
 
 
 # ── корзина ──────────────────────────────────────────────────────────────────

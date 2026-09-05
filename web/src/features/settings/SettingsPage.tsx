@@ -1,7 +1,7 @@
 /**
  * SettingsPage — оболочка настроек: слева список разделов, справа раздел.
  *
- * Раздел — это адрес (`/settings/keys`), а не состояние компонента: настройки
+ * Раздел — это адрес (`/settings/agent`), а не состояние компонента: настройки
  * тем и ссылкой на нужное место, и кнопка «назад» в браузере обязана работать.
  * Дерево маршрутов — в `routes.tsx`, здесь только рамка и навигация.
  *
@@ -17,14 +17,19 @@ import { Icon, type IconName } from '@/ui'
 
 type Section = { to: string; key: string; icon: IconName }
 
+/**
+ * Разделы по порядку. Чем работает агент и чем за это платится — один раздел
+ * («Конфигурация агентов»), а не два: пресет по умолчанию и ключ поставщика,
+ * которым он оплачивается, — одна настройка, разложенная по двум экранам, и
+ * выбрать пресет, не видя ключей, было нельзя.
+ */
 const SECTIONS: readonly Section[] = [
   { to: 'profile', key: 'profile', icon: 'user' },
   { to: 'appearance', key: 'appearance', icon: 'palette' },
   { to: 'templates', key: 'templates', icon: 'file' },
   { to: 'hotkeys', key: 'hotkeys', icon: 'search' },
   { to: 'agent', key: 'agent', icon: 'agent' },
-  { to: 'keys', key: 'keys', icon: 'key' },
-  { to: 'tokens', key: 'tokens', icon: 'file' },
+  { to: 'tokens', key: 'tokens', icon: 'key' },
   { to: 'usage', key: 'usage', icon: 'dashboard' },
   { to: 'security', key: 'security', icon: 'shield' },
 ]

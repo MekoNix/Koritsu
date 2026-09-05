@@ -42,7 +42,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 class JobIn(BaseModel):
     """Тело постановки задания.
 
-    Имя по-английски, как у соседей (`ProjectNameIn`, `ModelKeyIn`): оно уезжает
+    Имя по-английски, как у соседей (`ProjectPatchIn`, `ModelKeyIn`): оно уезжает
     в OpenAPI и становится именем типа в клиенте сайта.
     """
 

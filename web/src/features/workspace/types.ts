@@ -22,6 +22,12 @@ export type Member = {
   email: string | null
   /** `owner` | `editor` | `viewer`. */
   role: string
+  /**
+   * `active` — участник, `pending` — позван и ещё не ответил на приглашение.
+   * Приглашение не зачисляет: пока человек не нажал «принять», пространства он
+   * не видит, а владелец видит его строку помеченной.
+   */
+  status: string
   created_at: string
 }
 
@@ -29,7 +35,13 @@ export type Member = {
 export type MemberChanged = {
   user_id: string
   role: string
+  /** У приглашения — `pending`; смена роли состояния не трогает. */
+  status?: string
 }
+
+/** Состояния участия (`packages/api/workspaces/service.py: STATUSES`). */
+export const MEMBER_ACTIVE = 'active'
+export const MEMBER_PENDING = 'pending'
 
 /** Роли по убыванию прав (`packages/api/workspaces/service.py: ROLES`). */
 export const ROLES = ['owner', 'editor', 'viewer'] as const
@@ -41,10 +53,11 @@ export function canManageMembers(role: string | undefined): boolean {
 }
 
 /**
- * Имя личного пространства, которое даёт служба
- * (`workspaces/service.py: PERSONAL_NAME`). По-английски намеренно: «наружу
- * служба говорит по-английски, а перевод „Личное“ сделает интерфейс — он же
- * знает флаг `personal`». Вот он и делает.
+ * Запасное имя личного пространства, которое даёт служба
+ * строкам, заведённым до того, как у аккаунта появился ник
+ * (`workspaces/service.py: PERSONAL_NAME`). Обычное имя личного пространства —
+ * `<ник>-workspace`, и его показывают как есть; сюда попадают только старые
+ * строки, и вместо этого слова экран пишет ник хозяина.
  */
 const PERSONAL_NAME = 'Personal'
 

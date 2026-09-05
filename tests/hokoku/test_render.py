@@ -354,3 +354,60 @@ def test_table_outside_list_has_no_indent(template, tmp_path):
     render(template(lambda d: d.add_paragraph("{{t}}")), {"t": Table([["a", "b"]])}, out)
     tbl = Document(out).element.body.find(".//" + qn("w:tbl"))
     assert tbl.find(qn("w:tblPr") + "/" + qn("w:tblInd")) is None
+
+
+# ── разметка чужого бланка ────────────────────────────────────────────────────
+
+def test_комментарий_вырезается_из_документа(template, tmp_path):
+    """Комментарий docxtpl печатался в готовом отчёте обычным текстом: его пишут
+    для того, кто заполняет бланк, а не для читателя."""
+    def build(d):
+        d.add_paragraph("{# 4–6 предложений: итог квартала #}")
+        d.add_paragraph("Цель: {{цель}}")
+    out = str(tmp_path / "out.docx")
+    render(template(build), {"цель": Text("Разобрать сортировки")}, out)
+    assert texts(out) == ["Цель: Разобрать сортировки"]
+
+
+def test_комментарий_в_строке_с_тегом(template, tmp_path):
+    def build(d):
+        d.add_paragraph("Цель: {# одним абзацем #}{{цель}}")
+    out = str(tmp_path / "out.docx")
+    render(template(build), {"цель": Text("Разобрать сортировки")}, out)
+    assert texts(out) == ["Цель: Разобрать сортировки"]
+
+
+def test_комментарий_разорванный_между_runs(template, tmp_path):
+    """Word рвёт текст на runs где угодно — по проверке правописания в том числе."""
+    def build(d):
+        p = d.add_paragraph()
+        p.add_run("{# одним ")
+        p.add_run("абзацем #}")
+        p.add_run("Цель: {{цель}}")
+    out = str(tmp_path / "out.docx")
+    render(template(build), {"цель": Text("Разобрать")}, out)
+    assert texts(out) == ["Цель: Разобрать"]
+
+
+def test_комментарий_отдельным_абзацем_в_ячейке(template, tmp_path):
+    """Единственный абзац ячейки не удаляется: ячейка без абзаца — сломанный DOCX."""
+    def build(d):
+        t = d.add_table(rows=1, cols=1)
+        t.cell(0, 0).text = "{# только пояснение #}"
+        d.add_paragraph("{{цель}}")
+    out = str(tmp_path / "out.docx")
+    render(template(build), {"цель": Text("Разобрать")}, out)
+    doc = Document(out)
+    assert ptext(doc.tables[0].cell(0, 0).paragraphs[0]) == ""
+
+
+def test_конструкция_остаётся_текстом_и_не_ломает_сборку(template, tmp_path):
+    """Цикл Jinja пока не поддержан: сборка идёт, конструкция видна как есть."""
+    def build(d):
+        d.add_paragraph("{% for k in kpis %}")
+        d.add_paragraph("{{цель}}")
+        d.add_paragraph("{% endfor %}")
+    out = str(tmp_path / "out.docx")
+    res = render(template(build), {"цель": Text("Разобрать")}, out)
+    assert texts(out) == ["{% for k in kpis %}", "Разобрать", "{% endfor %}"]
+    assert res.errors == []

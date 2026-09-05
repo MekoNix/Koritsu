@@ -12,12 +12,20 @@
  *   человек воспринял бы как две разные записи.
  *
  * Строка — кнопка, а не `div` с обработчиком: список открывается и с
- * клавиатуры.
+ * клавиатуры. Убрать строку можно и отсюда: колокольчик — не архив, и правило
+ * «два разных поведения у одной записи человек прочитает как две разные записи»
+ * действует и здесь.
+ *
+ * Приглашение в пространство отвечать на себя отсюда не даёт: кнопки «принять»
+ * и «отклонить» стоят в колокольчике, а виджет — обзор на пять строк, и
+ * действие, спрятанное в обзоре, человек находит случайно. Строка приглашения
+ * поэтому просто открывает колокольчик.
  */
 import { useNavigate } from 'react-router-dom'
 
-import { useMarkNotificationRead, useNotifications } from '@/api/hooks'
+import { useDeleteNotification, useMarkNotificationRead, useNotifications } from '@/api/hooks'
 import { openBell } from '@/features/notifications/bell'
+import { inviteOf } from '@/features/notifications/invite'
 import { notificationLink } from '@/features/notifications/link'
 import { TITLE_KEY, lookOf, when } from '@/features/notifications/present'
 import { useT } from '@/i18n'
@@ -34,12 +42,12 @@ export function NotificationsWidget() {
   const navigate = useNavigate()
   const { data, isLoading, error, refetch } = useNotifications(20)
   const markOne = useMarkNotificationRead()
+  const drop = useDeleteNotification()
 
   const items = (data?.notifications ?? []).slice(0, СКОЛЬКО)
 
   return (
     <Widget
-      className="sm:col-span-6 lg:col-span-6"
       title={t('notifications.widget.title')}
       note={
         data && data.unread_count > 0
@@ -67,13 +75,20 @@ export function NotificationsWidget() {
           {items.map((item) => {
             const look = lookOf(item.kind)
             const key = TITLE_KEY[item.kind]
-            const to = notificationLink(item.data)
+            const приглашение = inviteOf(item)
+            const to = приглашение ? null : notificationLink(item.data)
             return (
-              <li key={item.id}>
+              <li key={item.id} className="flex items-start gap-s1">
                 <button
                   type="button"
-                  className="flex w-full items-start gap-s2 rounded-sm px-2 py-1.5 text-left hover:bg-surface-2"
+                  className="flex min-w-0 flex-1 items-start gap-s2 rounded-sm px-2 py-1.5 text-left hover:bg-surface-2"
                   onClick={() => {
+                    // На приглашение отвечают кнопками в колокольчике — туда и
+                    // ведём, вместо того чтобы прятать ответ в обзоре.
+                    if (приглашение) {
+                      openBell()
+                      return
+                    }
                     if (!item.read_at) markOne.mutate(item.id)
                     if (to) navigate(to)
                   }}
@@ -86,10 +101,23 @@ export function NotificationsWidget() {
                         item.read_at ? 'text-muted' : 'font-semibold text-ink-strong',
                       )}
                     >
-                      {key ? t(key) : item.kind}
+                      {приглашение
+                        ? t('notifications.invite.title', { name: приглашение.workspaceName })
+                        : key
+                          ? t(key)
+                          : item.kind}
                     </span>
                     <span className="block text-xs text-muted">{when(item.created_at)}</span>
                   </span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={t('notifications.delete')}
+                  title={t('notifications.delete')}
+                  className="mt-1.5 shrink-0 rounded-sm p-1 text-muted hover:bg-surface-2 hover:text-err"
+                  onClick={() => drop.mutate(item.id)}
+                >
+                  <Icon name="close" size={14} />
                 </button>
               </li>
             )

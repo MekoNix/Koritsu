@@ -13,11 +13,12 @@ import {
   APP_ORIGIN,
   EMBED_ORIGIN,
   EMPTY_XML,
-  OPEN_URL_MAX,
-  drawioOpenUrl,
+  VIEWER_ORIGIN,
+  drawioWindowUrl,
   embedUrl,
   loadMessage,
   parseEmbedEvent,
+  windowOrigin,
 } from './drawio'
 
 describe('embedUrl', () => {
@@ -71,16 +72,33 @@ describe('parseEmbedEvent', () => {
   })
 })
 
-describe('drawioOpenUrl', () => {
-  it('кладёт схему в адрес после #R', () => {
-    const url = drawioOpenUrl('<mxfile/>', 'Лабораторная 4')
-    expect(url).not.toBeNull()
-    expect(url!.startsWith(`${APP_ORIGIN}/?title=`)).toBe(true)
-    expect(url).toContain(`#R${encodeURIComponent('<mxfile/>')}`)
+describe('drawioWindowUrl', () => {
+  it('правки — на app.diagrams.net, просмотр — на viewer.diagrams.net', () => {
+    expect(new URL(drawioWindowUrl('edit', { dark: true })).origin).toBe(APP_ORIGIN)
+    expect(new URL(drawioWindowUrl('view', { dark: true })).origin).toBe(VIEWER_ORIGIN)
+    expect(windowOrigin('edit')).toBe(APP_ORIGIN)
+    expect(windowOrigin('view')).toBe(VIEWER_ORIGIN)
   })
 
-  it('слишком длинная схема ссылкой не отдаётся вовсе', () => {
-    expect(drawioOpenUrl('я'.repeat(OPEN_URL_MAX))).toBeNull()
-    expect(drawioOpenUrl('')).toBeNull()
+  it('окно говорит тем же протоколом, что и кадр: схема приедет сообщением', () => {
+    const url = new URL(drawioWindowUrl('edit', { dark: false, title: 'Лабораторная 4' }))
+    expect(url.searchParams.get('embed')).toBe('1')
+    expect(url.searchParams.get('proto')).toBe('json')
+    expect(url.searchParams.get('title')).toBe('Лабораторная 4')
+    expect(url.searchParams.get('dark')).toBe('0')
+  })
+
+  it('просмотр открывается лупой, а не редактором', () => {
+    const url = new URL(drawioWindowUrl('view', { dark: false }))
+    expect(url.searchParams.get('lightbox')).toBe('1')
+    expect(url.searchParams.get('libraries')).toBeNull()
+  })
+
+  it('длина схемы на адрес не влияет — её в адресе нет вовсе', () => {
+    // Прежде XML уезжал в `#R…`, и длинная схема гасила кнопку. Теперь адрес
+    // не несёт ни куска схемы: ни решётки, ни данных.
+    const адрес = drawioWindowUrl('edit', { dark: false })
+    expect(адрес).not.toContain('#')
+    expect(адрес.length).toBeLessThan(200)
   })
 })

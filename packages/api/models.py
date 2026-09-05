@@ -30,6 +30,7 @@ from .admin.models import *       # noqa: F401,F403  — события безо
 from .jobs.models import *       # noqa: F401,F403  — очередь и события
 from .tokens.models import *      # noqa: F401,F403  — внешние ключи
 from .keys.models import *        # noqa: F401,F403  — ключи моделей
+from .modules.models import *     # noqa: F401,F403  — сохранённые схемы
 from .notifications.models import *  # noqa: F401,F403  — колокольчик
 from .projects.models import *    # noqa: F401,F403  — проекты и корзина
 from .templates.models import *   # noqa: F401,F403  — шаблоны отчётов

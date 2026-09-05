@@ -522,7 +522,8 @@ def validate_work(work: Work, *, limits: dict | None = None) -> list[Problem]:
         out.append(_p("error", "limit_exceeded", None,
                       f"блоков {len(work.blocks)}, потолок {limits['max_values']} (max_values)",
                       expected=limits["max_values"], got=len(work.blocks)))
-    out += _refs(work_values(work), ref_targets(work), what="блока", level="error")
+    out += _refs(work_values(work), ref_targets(work), what="блока", level="error",
+                 labels={b.key: b.label for b in work.blocks})
     return out
 
 
@@ -963,17 +964,18 @@ def _text_of(v) -> str:
     return ""
 
 
-def _rewrite_refs(v, old: str, new: str):
-    """`{ref:старый}` → `{ref:новый}` в текстах, подписях и `ref=` значения.
+def _map_refs(v, sub, *, own=None):
+    """Пройти по всем местам значения, где `render` читает `{ref:}`, и переписать их.
 
-    Разбор тот же (`markdown.REF_RE`), которым ссылку читает `render`: своя регулярка
-    разошлась бы с ним, и переименование чинило бы не все ссылки — а какие именно,
-    выяснялось бы по «?» в готовом документе.
+    Мест этих четыре с половиной (текст, подпись, ячейки таблицы, заголовок
+    оглавления и `ref=` самого значения), и перечислены они один раз: и
+    переименование, и снятие ссылки обязаны знать один и тот же список — иначе
+    одно из двух починит не все ссылки, а какие именно, выяснится по «?» в
+    готовом документе.
+
+    `own` — что сделать с именем, которое значение назначило себе само (`ref=`).
+    Оно не ссылка, а цель, и трогать его вправе только переименование.
     """
-    def sub(text: str) -> str:
-        return REF_RE.sub(lambda m: "{ref:" + (new if m.group(1) == old else m.group(1)) + "}",
-                          text)
-
     changed = {}
     # текст листинга не трогаем: `{ref:x}` в коде программы — текст программы, и render
     # его не разбирает; подпись листинга — разбирает, и она ниже вместе с прочими
@@ -988,13 +990,64 @@ def _rewrite_refs(v, old: str, new: str):
             changed["rows"] = rows
     if isinstance(v, Toc) and isinstance(v.title, str) and sub(v.title) != v.title:
         changed["title"] = sub(v.title)
-    if getattr(v, "ref", None) == old:
-        changed["ref"] = new
+    if own is not None:
+        имя = getattr(v, "ref", None)
+        if isinstance(имя, str) and own(имя) != имя:
+            changed["ref"] = own(имя)
     if isinstance(v, Blocks):
-        items = [_rewrite_refs(i, old, new) for i in v.items]
+        items = [_map_refs(i, sub, own=own) for i in v.items]
         if any(a is not b for a, b in zip(items, v.items)):
             changed["items"] = items
     return _replace(v, **changed) if changed else v
+
+
+def _rewrite_refs(v, old: str, new: str):
+    """`{ref:старый}` → `{ref:новый}` в текстах, подписях и `ref=` значения.
+
+    Разбор тот же (`markdown.REF_RE`), которым ссылку читает `render`: своя регулярка
+    разошлась бы с ним, и переименование чинило бы не все ссылки — а какие именно,
+    выяснялось бы по «?» в готовом документе.
+    """
+    return _map_refs(
+        v,
+        lambda text: REF_RE.sub(
+            lambda m: "{ref:" + (new if m.group(1) == old else m.group(1)) + "}", text),
+        own=lambda имя: new if имя == old else имя)
+
+
+# Ссылка вместе с пробелами перед ней: «см. рисунок {ref:x} и таблицу» без них
+# оставило бы двойной пробел, а «Замеры {ref:x}» — висящий хвост. Пробелы после
+# ссылки не трогаются: за ней обычно стоит знак препинания, и съеденный пробел
+# склеил бы слова.
+_ССЫЛКА_С_ОТСТУПОМ = re.compile(r"[ \t]*" + REF_RE.pattern)
+
+
+def strip_refs(work: Work, names) -> Work:
+    """Убрать из текстов и подписей ссылки на названные имена. → новый список блоков.
+
+    Нужно это ровно там, где ссылка ведёт в никуда, а документ всё равно обязан
+    собраться: блок остаётся с текстом, но без ссылки. Выбор между «не собрать
+    работу вовсе» и «оставить абзац без номера рисунка» решён в пользу второго —
+    отказ собрать стоит человеку всего прогона, а пропавшая ссылка видна и
+    чинится правкой одного блока.
+
+    Убирается только сама ссылка. Ни текст вокруг, ни `ref=` самого значения
+    (это цель, а не ссылка) не трогаются: снятие ссылки не должно менять смысл
+    соседнего предложения.
+    """
+    имена = {str(n) for n in names or ()}
+    if not имена:
+        return work
+
+    def sub(text: str) -> str:
+        return _ССЫЛКА_С_ОТСТУПОМ.sub(
+            lambda m: "" if m.group(1) in имена else m.group(0), text)
+
+    blocks = []
+    for b in work.blocks:
+        value = _map_refs(b.value, sub)
+        blocks.append(b if value is b.value else _replace(b, value=value))
+    return Work(tuple(blocks))
 
 
 def _p(level: str, code: str, key: str | None, message: str, *, expected=None, got=None) -> Problem:
@@ -1014,7 +1067,7 @@ __all__ = [
     "block", "check_key", "new_key", "heading", "heading_level", "kind_of", "draft",
     "insert", "replace", "remove", "move", "rename", "outline",
     "work_values", "work_template", "render_work", "assemble",
-    "validate_work", "unresolved_refs",
+    "validate_work", "unresolved_refs", "strip_refs",
     "live_tools", "call_tool", "list_blocks", "any_block_value_schema",
     "text_slots", "texts_schema", "fill_texts",
 ]

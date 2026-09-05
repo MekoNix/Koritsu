@@ -9,9 +9,6 @@
  * Работа остаётся в списке — это не мусор, а тот же файл, к которому можно
  * вернуться; ссылка на неё показывается рядом с готовым PDF.
  *
- * Цена задания видна до нажатия: она приезжает в
- * `GET /api/usage` полем `prices.build`.
- *
  * Тоста на конец здесь нет: завершение фоновой задачи тостит оболочка
  * (`useUserEvents`), и второй был бы дублем. Свой тост — только на отказ.
  */
@@ -19,7 +16,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { errorText } from '@/api'
-import { useJobStream, useUsage } from '@/api/hooks'
+import { useJobStream } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { Button, Icon, Spinner, useToast } from '@/ui'
 import { FileDrop } from '@/features/projects/FileDrop'
@@ -44,7 +41,6 @@ export function WordToPdfWidget() {
   const t = useT()
   const toast = useToast()
   const workspace = useCurrentWorkspace()
-  const usage = useUsage()
   const create = useCreateProject()
   const enqueue = useEnqueueJob()
   const [работа, setРаботу] = useState<Работа | null>(null)
@@ -73,21 +69,14 @@ export function WordToPdfWidget() {
     }
   }
 
-  const price = usage.data?.prices?.[BUILD]
-
   return (
-    <Widget className="lg:col-span-3">
+    <Widget>
       <div className="flex h-full flex-col gap-s2">
         <div className="flex items-center gap-s2">
           <Icon name="file" size={18} className="text-muted" />
           <h2 className="flex-1 truncate font-display text-md font-semibold text-ink-strong">
             {t('dashboard.wordToPdf.title')}
           </h2>
-          {price !== undefined && (
-            <span className="shrink-0 text-xs text-muted">
-              {t('dashboard.wordToPdf.price', { n: price })}
-            </span>
-          )}
         </div>
 
         {artifact && работа ? (

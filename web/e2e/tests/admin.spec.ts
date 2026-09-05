@@ -7,8 +7,9 @@
  * весь `/api/admin` закрыт `require_admin`.
  *
  * Проверяется ровно то, что нельзя проверить ни в службе, ни в vitest: сайт
- * узнаёт право из `is_admin` в `GET /api/auth/me`, показывает `/admin` и
- * по-прежнему не показывает ссылку на него ни в меню, ни на дашборде.
+ * узнаёт право из `is_admin` в `GET /api/auth/me` и показывает `/admin`. В
+ * сайдбаре пункта админки нет ни у кого — попасть в неё можно ссылкой из меню
+ * пользователя (она есть только у владельца службы) или прямым адресом.
  */
 import { execFileSync } from 'node:child_process'
 
@@ -47,7 +48,7 @@ function сделатьАдмином(email: string): void {
   )
 }
 
-test('право администратора открывает /admin и не появляется в меню', async ({ page }) => {
+test('право администратора открывает /admin и в сайдбар не выводится', async ({ page }) => {
   const email = await signUpAndLogin(page, 'admin')
 
   // Пока права нет — честный отказ, а не пустой экран и не «не найдено».
@@ -70,8 +71,8 @@ test('право администратора открывает /admin и не 
   await page.getByRole('link', { name: t('admin.tab.users') }).click()
   await expect(page.getByText(email)).toBeVisible()
 
-  // И главное: ссылки на админку в оболочке нет ни у кого — попасть сюда можно
-  // только прямым адресом.
+  // И главное: пункта админки в сайдбаре нет ни у кого — она вынесена на своё
+  // имя, и в списке модулей ей не место.
   await page.goto('/')
   await expect(page.locator('aside').getByRole('link', { name: t('shell.nav.admin') })).toHaveCount(
     0,

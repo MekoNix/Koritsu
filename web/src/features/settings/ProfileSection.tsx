@@ -17,7 +17,8 @@
  *
  * Аватар генеративный и другим быть не может: загрузки картинки служба не
  * умеет, а ходить за ней к постороннему сервису — утечка почты на чужой домен
- * (`ui/Avatar.tsx`).
+ * (`ui/Avatar.tsx`). Подписи об этом на экране нет: человек видит свой аватар
+ * и не спрашивал, откуда он взялся.
  */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useState } from 'react'
@@ -118,7 +119,6 @@ export function ProfileSection() {
               {user.totp_enabled ? t('settings.profile.totpOn') : t('settings.profile.totpOff')}
             </Chip>
           </div>
-          <p className="max-w-[52ch] text-xs text-muted">{t('settings.profile.avatarHint')}</p>
         </div>
       </div>
 

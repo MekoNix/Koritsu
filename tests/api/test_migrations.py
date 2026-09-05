@@ -51,6 +51,9 @@ from api.db import Db, alembic_config, current_revision
     "a1c47b30f5e2",              # users.blocked_at (блокировка аккаунта)
     "f5872fd9890d",              # users.nickname, users.nickname_key
     "b2d7c1a54e39",              # templates, users.default_endpoint/overwrite
+    "c8f1a2b46d73",              # projects.module, project_runs, project_templates
+    "e7a4c19b3d02",              # workspace_members.status (приглашения)
+    "f3d6a08b5c14",              # project_diagrams (код и параметры схем)
 )
 
 ГОЛОВА = ЦЕПОЧКА[-1]
@@ -175,6 +178,9 @@ def test_каждая_ступень_по_одной(том, cfg):
         {"eef3027c39f2"},
         {"a1c47b30f5e2"},
         {"f5872fd9890d"},
+        {"b2d7c1a54e39"},
+        {"c8f1a2b46d73"},
+        {"e7a4c19b3d02"},
         {ГОЛОВА},
     ]
     for ревизия, головы in zip(ЦЕПОЧКА, ожидаемые):

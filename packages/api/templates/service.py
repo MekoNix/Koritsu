@@ -30,11 +30,16 @@ service — жизнь шаблона отчёта: принять DOCX, пок�
 что-либо значить. Шаблоны в этот счёт входят — `projects.service.bytes_used`
 обходит и их каталог.
 
-**Тот же файл дважды — два шаблона.** Дедупликации по `sha256` здесь нет
-намеренно, в отличие от материалов: материал адресуется содержимым и один и тот
-же PDF в проекте — один материал, а шаблон человек называет сам, и два имени у
-одних байтов («ГОСТ 2024» и «ГОСТ 2024 без приложения») — это две разные вещи в
-его списке. Цена — вторые те же байты в квоте, и она честно видна.
+**Один DOCX — один шаблон.** Повторная загрузка тех же байтов не заводит
+второй шаблон: находится прежний и возвращается он же (маршрут отвечает на это
+`200`, а не `201`). Дедупликация — по `sha256` содержимого и в пределах одного
+человека: чужие шаблоны не видны и не сличаются, иначе по ответу «этот файл у
+вас уже есть» можно было бы узнать про чужой список.
+
+Довод против («два имени у одних байтов — две разные вещи в списке») не
+выдержал первого же живого прогона: два одинаковых пункта в списке человек
+читает как сбой, а не как замысел, и вторые те же байты он всё равно оплачивает
+квотой. Переименовать шаблон, если нужно другое имя, дешевле, чем держать копию.
 """
 from __future__ import annotations
 
@@ -51,7 +56,7 @@ from ..materials.service import проверить_квоту
 from ..projects.service import templates_dir
 from ..settings import Settings
 from ..workspaces.service import iso
-from .models import NAME_LEN, SHA_LEN, ReportTemplate
+from .models import NAME_LEN, SHA_LEN, ProjectTemplate, ReportTemplate
 
 BAD_TEMPLATE = "bad_template"
 INVALID_NAME = "invalid_name"
@@ -122,13 +127,18 @@ def имя_шаблона(сырое: str, имя_файла: str) -> str:
 
 
 def добавить(s: Session, settings: Settings, user_id: str, *, имя: str,
-             имя_файла: str, данные: bytes) -> ReportTemplate:
-    """Принять DOCX человека: разбор, квота, байты на том, строка в базе.
+             имя_файла: str, данные: bytes) -> tuple[ReportTemplate, bool]:
+    """Принять DOCX человека: разбор, поиск того же файла, квота, том, строка.
+
+    → `(шаблон, новый ли он)`. Второе значение нужно маршруту, чтобы ответить
+    `201` на заведённый и `200` на найденный: «создано» и «уже было» — разные
+    события, и различать их клиент обязан не по совпадению имён.
 
     Порядок шагов — он же порядок отказов, и он не случаен: сначала дешёвое имя,
-    потом разбор (он же проверка, что это вообще DOCX), потом обход тома ради
-    квоты и только в конце запись. Обратный порядок оставлял бы на томе файлы,
-    отвергнутые следующей же проверкой.
+    потом разбор (он же проверка, что это вообще DOCX), потом поиск тех же
+    байтов, потом обход тома ради квоты и только в конце запись. Обратный
+    порядок оставлял бы на томе файлы, отвергнутые следующей же проверкой, а
+    квота считалась бы за файл, который и не собирались класть.
 
     Строка заводится до записи файла, чтобы имя файла взялось из её `id`: при
     беде на диске сессия откатится сама (сессия на запрос, `db.session`), а
@@ -136,6 +146,14 @@ def добавить(s: Session, settings: Settings, user_id: str, *, имя: st
     """
     название = имя_шаблона(имя, имя_файла)
     тегов = число_тегов(данные)
+
+    # Тот же файл — тот же шаблон. Имя при этом остаётся прежним: человек
+    # называл этот файл сам, и переписать имя загрузкой-двойником значило бы
+    # переименовать шаблон, о котором он в эту минуту не думал.
+    прежний = по_содержимому(s, user_id, orchestrator.artifact_id(данные)[:SHA_LEN])
+    if прежний is not None:
+        return прежний, False
+
     проверить_квоту(s, settings, user_id, len(данные))
 
     шаблон = ReportTemplate(user_id=user_id, name=название, bytes=len(данные),
@@ -148,7 +166,21 @@ def добавить(s: Session, settings: Settings, user_id: str, *, имя: st
     os.makedirs(os.path.dirname(цель), exist_ok=True)
     with open(цель, "wb") as f:
         f.write(данные)
-    return шаблон
+    return шаблон, True
+
+
+def по_содержимому(s: Session, user_id: str,
+                   sha256: str) -> ReportTemplate | None:
+    """Свой шаблон с такими байтами — или `None`.
+
+    Ищется **среди своих**: сличать с чужими значило бы отвечать «этот файл уже
+    есть» про чужой список, то есть рассказывать о нём.
+    """
+    return s.scalars(
+        select(ReportTemplate)
+        .where(ReportTemplate.user_id == user_id,
+               ReportTemplate.sha256 == sha256)
+        .order_by(ReportTemplate.created_at)).first()
 
 
 # ── чтение и уборка ──────────────────────────────────────────────────────────
@@ -201,13 +233,150 @@ def удалить(s: Session, settings: Settings, user_id: str,
     s.flush()
 
 
-def карточка(шаблон: ReportTemplate) -> dict:
-    """Шаблон наружу. Путей здесь нет и быть не может."""
-    return {"id": шаблон.id, "name": шаблон.name, "bytes": int(шаблон.bytes),
-            "tags": int(шаблон.tags), "sha256": шаблон.sha256,
-            "created_at": iso(шаблон.created_at)}
+# ── шаблоны работы ───────────────────────────────────────────────────────────
+
+def приложить(s: Session, project_id: str,
+              шаблон: ReportTemplate) -> tuple[ProjectTemplate, bool]:
+    """Приложить шаблон к работе. → `(связка, новая ли она)`.
+
+    Приложить тот же шаблон второй раз — то же состояние, а не второй пункт
+    списка: пара уникальна (`ProjectTemplate`), и повторная просьба возвращает
+    прежнюю связку. Отказывать было бы хуже: человек, нажавший «добавить» второй
+    раз, добивается ровно того, что уже есть.
+    """
+    прежняя = s.scalars(
+        select(ProjectTemplate)
+        .where(ProjectTemplate.project_id == project_id,
+               ProjectTemplate.template_id == шаблон.id)).first()
+    if прежняя is not None:
+        return прежняя, False
+    связка = ProjectTemplate(project_id=project_id, template_id=шаблон.id)
+    s.add(связка)
+    s.flush()
+    return связка, True
 
 
-__all__ = ["путь", "байты", "добавить", "мои", "найти", "удалить", "карточка",
-           "число_тегов", "имя_шаблона", "BAD_TEMPLATE", "INVALID_NAME",
-           "NOT_FOUND", "РАСШИРЕНИЕ"]
+def шаблоны_проекта(s: Session, project_id: str) -> list[ReportTemplate]:
+    """Шаблоны, приложенные к работе, в порядке добавления.
+
+    В порядке добавления, а не по дате загрузки файла: список читается как
+    «что мы сюда положили», и файл трёхмесячной давности, приложенный сегодня,
+    стоит последним — там, где его и оставили.
+    """
+    запрос = (select(ReportTemplate)
+              .join(ProjectTemplate,
+                    ProjectTemplate.template_id == ReportTemplate.id)
+              .where(ProjectTemplate.project_id == project_id)
+              .order_by(ProjectTemplate.created_at))
+    return list(s.scalars(запрос))
+
+
+def отвязать(s: Session, project_id: str, template_id: str) -> None:
+    """Убрать шаблон из списка работы. Сам файл остаётся у человека.
+
+    Убирается связка, а не шаблон: тот же DOCX приложен к трём работам, и
+    «убрать отсюда» не может означать «стереть у себя с полки». Стирает файл
+    отдельное действие — `DELETE /api/templates/{id}`.
+    """
+    связка = s.scalars(
+        select(ProjectTemplate)
+        .where(ProjectTemplate.project_id == project_id,
+               ProjectTemplate.template_id == check_id(
+                   template_id, where="path.template_id"))).first()
+    if связка is None:
+        raise ApiError(NOT_FOUND, "Template is not attached to this project",
+                       404, where="path.template_id")
+    s.delete(связка)
+    s.flush()
+
+
+def текущий_шаблон(проект) -> str:
+    """Идентификатор артефакта бланка, по которому работа собирается сейчас.
+
+    Пустая строка — бланка нет вовсе (работа заведена «с нуля») или каталога
+    нет на томе: и то и другое значит «выбранного нет», а падать на чтении
+    списка нельзя.
+
+    Сличается он с `ReportTemplate.sha256` — те же 16 знаков хеша содержимого
+    (`models.SHA_LEN` объясняет, почему они те же). Отдельного поля «какой
+    выбран» в базе нет намеренно: правда о том, чем работа собирается, лежит в
+    её `project.json`, и вторая запись рядом разошлась бы с ней при первой же
+    смене бланка мимо службы.
+    """
+    try:
+        return orchestrator.Project(проект.dir).template_artifact()
+    except Exception:                                        # noqa: BLE001
+        return ""
+
+
+def выбрать(s: Session, settings: Settings, проект,
+            template_id: str) -> ReportTemplate:
+    """Собирать работу по этому приложенному бланку. → сам шаблон.
+
+    Только из приложенных: список приложенных и есть то, из чего выбирают, а
+    любой другой идентификатор означал бы работу по бланку, которого в ней
+    никто не видел.
+
+    Решения человека о тегах переносит `Project.update_template` — он строит
+    новый манифест поверх старого. Беда оттуда наружу идёт как `bad_template`
+    без подробностей: в её тексте бывает путь на томе.
+    """
+    связка = s.scalars(
+        select(ProjectTemplate)
+        .where(ProjectTemplate.project_id == проект.id,
+               ProjectTemplate.template_id == check_id(
+                   template_id, where="path.template_id"))).first()
+    if связка is None:
+        raise ApiError(NOT_FOUND, "Template is not attached to this project",
+                       404, where="path.template_id")
+    шаблон = по_ид(s, template_id, where="path.template_id")
+    данные = байты(settings, шаблон)
+    try:
+        orchestrator.Project(проект.dir).update_template(данные)
+    except ApiError:
+        raise
+    except Exception:                                        # noqa: BLE001
+        беды.exception("работа %s: бланк %s не встал", проект.id, шаблон.id)
+        raise ApiError(BAD_TEMPLATE, "Template cannot be used for this work",
+                       400, where="path.template_id") from None
+    return шаблон
+
+
+def по_ид(s: Session, template_id: str, *,
+          where: str = "body.template_id") -> ReportTemplate:
+    """Шаблон по идентификатору, без вопроса о владельце. Нет — `404`.
+
+    Владельца **не** спрашивает намеренно, в отличие от `найти`: список
+    шаблонов работы читают все участники пространства, и строку приложенного
+    чужого бланка нужно уметь показать. Прикладывать при этом можно только
+    своё — эту проверку делает маршрут, `найти`.
+    """
+    шаблон = s.get(ReportTemplate, check_id(template_id, where=where))
+    if шаблон is None:
+        raise ApiError(NOT_FOUND, "Template not found", 404, where=where)
+    return шаблон
+
+
+# ── наружу ───────────────────────────────────────────────────────────────────
+
+def карточка(шаблон: ReportTemplate, *, активный: bool | None = None) -> dict:
+    """Шаблон наружу. Путей здесь нет и быть не может.
+
+    `активный` ставится только там, где вопрос имеет смысл, — в списке шаблонов
+    работы. В личной полке его нет вовсе: шаблон лежит сам по себе и ни в какой
+    работе не «выбран», а `false` на каждой строке читался бы как «не выбран
+    нигде», что неправда.
+    """
+    карта = {"id": шаблон.id, "name": шаблон.name, "bytes": int(шаблон.bytes),
+             "tags": int(шаблон.tags), "sha256": шаблон.sha256,
+             "user_id": шаблон.user_id, "created_at": iso(шаблон.created_at)}
+    if активный is not None:
+        карта["active"] = bool(активный)
+    return карта
+
+
+__all__ = ["путь", "байты", "добавить", "мои", "найти", "по_ид", "удалить",
+           "карточка", "число_тегов", "имя_шаблона", "по_содержимому",
+           "приложить", "шаблоны_проекта", "отвязать", "текущий_шаблон",
+           "выбрать", "BAD_TEMPLATE", "INVALID_NAME", "NOT_FOUND",
+           "РАСШИРЕНИЕ"]

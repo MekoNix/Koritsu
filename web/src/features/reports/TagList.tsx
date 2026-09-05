@@ -40,6 +40,8 @@ export type TagListProps = {
   current: string | null
   /** Низ колонки: файлы проекта. */
   footer?: ReactNode
+  /** Конструкции бланка, которых сборщик не понимает (`{% for %}` и подобные). */
+  constructs?: string[]
 }
 
 export function TagList({
@@ -55,12 +57,17 @@ export function TagList({
   busy,
   current,
   footer,
+  constructs,
 }: TagListProps) {
   const t = useT()
   const сводка = summarize(tags)
 
+  // `h-full` обязателен, а не украшение: колонка лежит блоком внутри секции
+  // сетки, и без заданной высоты `flex-1 overflow-auto` ниже считает высоту по
+  // содержимому — список растёт вниз за край экрана, и до нижних тегов
+  // домотать нельзя ничем.
   return (
-    <div className="flex min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-line p-s3">
         <div className="flex items-baseline justify-between text-sm">
           <span className="font-semibold text-ink-strong">{t('reports.tags.title')}</span>
@@ -119,6 +126,23 @@ export function TagList({
           ))}
         </div>
       </div>
+
+      {/* Конструкции бланка, которых сборщик не понимает. Показаны здесь, над
+          списком тегов, потому что вопрос у человека один и тот же: «почему в
+          отчёте не то, что в бланке». Сборку они не ломают и остаются в
+          документе текстом — так и написано. */}
+      {constructs && constructs.length > 0 && (
+        <div className="border-b border-line bg-warn-bg p-s3 text-xs text-warn">
+          <p>{t('reports.tags.unknownConstructs', { n: constructs.length })}</p>
+          <ul className="mt-s2 flex flex-col gap-1">
+            {constructs.map((текст) => (
+              <li key={текст} className="truncate font-mono" title={текст}>
+                {текст}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-auto">
         {loading ? (

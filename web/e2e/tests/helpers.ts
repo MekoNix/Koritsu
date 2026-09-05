@@ -55,6 +55,23 @@ export function t(key: string, vars?: Record<string, string | number>): string {
   )
 }
 
+// ── переходы ─────────────────────────────────────────────────────────────────
+
+/**
+ * Переход по адресу сайта — с учётом того, что сайт может жить под префиксом
+ * пути.
+ *
+ * `page.goto('/что-то')` Playwright склеивает через `new URL`, а абсолютный
+ * путь стирает из адреса всё, что стояло до него: под `baseURL`
+ * `…:4173/проба/` такой переход уходит на `…:4173/что-то`, то есть мимо сайта.
+ * На дев-сервере это незаметно (префикса нет), а на боевой сборке — ровно та
+ * беда, которую ищет `dist.spec.ts`. Поэтому путь приклеивается относительным.
+ */
+export async function перейти(page: Page, путь: string): Promise<void> {
+  const относительный = путь.replace(/^\/+/, '')
+  await page.goto(относительный === '' ? './' : относительный)
+}
+
 // ── человек ──────────────────────────────────────────────────────────────────
 
 /** Пароль стенда: длиннее десяти знаков, как требует служба. */
@@ -103,7 +120,7 @@ export async function signUpAndLogin(page: Page, prefix: string): Promise<string
   const email = uniqueEmail(prefix)
   const было = linksInLog().length
 
-  await page.goto('/auth/register')
+  await перейти(page, '/auth/register')
   await page.getByLabel(t('auth.field.email')).fill(email)
   await page.getByLabel(t('auth.field.nickname')).fill(nicknameFor(email))
   await page.getByLabel(t('auth.field.password'), { exact: true }).fill(PASSWORD)
@@ -115,10 +132,10 @@ export async function signUpAndLogin(page: Page, prefix: string): Promise<string
 
   // Открывается путь из письма, а не выдуманный нами: имя сайта на стенде
   // другое (служба на своём порту, сайт на своём), а путь и токен — те самые.
-  await page.goto(`${ссылка.pathname}${ссылка.search}`)
+  await перейти(page, `${ссылка.pathname}${ссылка.search}`)
   await expect(page.getByText(t('auth.confirm.okTitle'))).toBeVisible()
 
-  await page.goto('/auth/login')
+  await перейти(page, '/auth/login')
   await page.getByLabel(t('auth.field.email')).fill(email)
   await page.getByLabel(t('auth.field.password'), { exact: true }).fill(PASSWORD)
   await page.getByRole('button', { name: t('auth.login.submit') }).click()
@@ -136,7 +153,7 @@ export async function signUpAndLogin(page: Page, prefix: string): Promise<string
  * закрытые экраны закрыты.
  */
 export async function logout(page: Page): Promise<void> {
-  await page.goto('/')
+  await перейти(page, '/')
   await page.getByRole('button', { name: t('shell.user.menu') }).click()
   await page.getByRole('menuitem', { name: t('shell.user.logout') }).click()
   await expect(page).toHaveURL(/\/auth\/login$/)
@@ -144,7 +161,7 @@ export async function logout(page: Page): Promise<void> {
 
 /** Вход уже заведённым человеком. Пароль стенда один на всех. */
 export async function login(page: Page, email: string, password = PASSWORD): Promise<void> {
-  await page.goto('/auth/login')
+  await перейти(page, '/auth/login')
   await page.getByLabel(t('auth.field.email')).fill(email)
   await page.getByLabel(t('auth.field.password'), { exact: true }).fill(password)
   await page.getByRole('button', { name: t('auth.login.submit') }).click()

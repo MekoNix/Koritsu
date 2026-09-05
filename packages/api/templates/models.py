@@ -1,5 +1,6 @@
 """
-models — одна таблица: `templates`, шаблоны отчётов человека.
+models — шаблоны отчётов: `templates` (файлы человека) и `project_templates`
+(какие из них приложены к работе).
 
 Шаблон здесь — **DOCX человека, лежащий вне проектов**: тот самый файл с
 `{{тегами}}`, который на кафедре один на все работы, а в службе до сегодня
@@ -25,10 +26,17 @@ models — одна таблица: `templates`, шаблоны отчётов �
 **Внешний ключ на `users.id` с `ON DELETE CASCADE`** — то же, что у
 ключей моделей: удалили аккаунт, значит и его файлов нет. Каталог с байтами
 сносится отдельно: базе про том знать нечего.
+
+**Шаблоны работы — связка, а не копия строки.** У работы шаблонов бывает много
+(их добавляют на её странице отчётов), и один и тот же DOCX человека прикладывают
+к нескольким работам. Поэтому `project_templates` держит только пару
+«работа — шаблон»: второй список файлов рядом с первым разошёлся бы с ним на
+первом же удалении, а копия байтов на каждую работу стоила бы места в квоте за
+то, что и так лежит.
 """
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Index, Integer, String
+from sqlalchemy import ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Row
@@ -82,4 +90,38 @@ class ReportTemplate(Row):
     )
 
 
-__all__ = ["ReportTemplate", "NAME_LEN", "SHA_LEN"]
+class ProjectTemplate(Row):
+    """Шаблон, приложенный к работе. Только пара идентификаторов и дата.
+
+    **Зачем шаблоны у работы, если они есть у человека.** Шаблон в настройках —
+    это личная полка: «мои бланки». Работа же собирается по одному
+    определённому, и бланков у неё бывает несколько (титул кафедры, приложение,
+    ГОСТ). Добавляют их там, где и пользуются, — на странице отчётов работы, а
+    не в профиле; личный шаблон при этом остаётся **источником**: приложить
+    можно и его, по `template_id`.
+
+    Пара уникальна: приложить тот же шаблон второй раз — то же состояние, а не
+    второй пункт списка. Оба ключа с `CASCADE`: не стало работы или файла —
+    связке не на чем держаться.
+
+    **Строка о работе, а не о человеке.** Кто приложил, здесь не хранится
+    намеренно: список шаблонов работы читают все участники пространства, и
+    вопрос «чей это бланк» решается владением самим шаблоном
+    (`ReportTemplate.user_id`), а не второй пометкой, которая с ним разошлась бы.
+    """
+
+    __tablename__ = "project_templates"
+
+    project_id: Mapped[str] = mapped_column(
+        String(ID_LEN), ForeignKey("projects.id", ondelete="CASCADE"))
+    template_id: Mapped[str] = mapped_column(
+        String(ID_LEN), ForeignKey("templates.id", ondelete="CASCADE"))
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "template_id",
+                         name="uq_project_templates_pair"),
+        Index("ix_project_templates_project", "project_id", "created_at"),
+    )
+
+
+__all__ = ["ReportTemplate", "ProjectTemplate", "NAME_LEN", "SHA_LEN"]

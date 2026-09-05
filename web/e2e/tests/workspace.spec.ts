@@ -3,10 +3,13 @@
  * роль, переключатель — и палитра `Ctrl+K`.
  *
  * Второй человек здесь настоящий: заводится своей регистрацией и своим
- * подтверждением почты, потому что приглашение — это участие сразу, а по
- * несуществующей почте служба отказывает (`no_such_user`, писем она не шлёт).
- * Подделать это нечем и незачем: весь смысл проверки в том, что двое видят одно
- * пространство.
+ * подтверждением почты, потому что по несуществующей почте служба отказывает
+ * (`no_such_user`, писем она не шлёт). Подделать это нечем и незачем: весь
+ * смысл проверки в том, что двое видят одно пространство.
+ *
+ * Приглашение не зачисляет: позванный сперва отвечает «принять» в колокольчике.
+ * Сам обмен приглашениями разобран в `invites.spec.ts`; здесь он проходится
+ * один раз затем, чтобы второй человек оказался в пространстве.
  *
  * Прогонов модели ни одного: ни участники, ни поиск её не зовут.
  */
@@ -54,10 +57,12 @@ test('пространство: второй человек, приглашен�
   await приглашение.getByLabel(t('workspace.invite.role')).selectOption('editor')
   await приглашение.getByRole('button', { name: t('workspace.invite.submit') }).click()
 
-  // Окно закрывается само, строка появляется в таблице: писем нет, участие есть.
+  // Окно закрывается само, строка появляется в таблице — с пометкой «приглашён»:
+  // писем нет, а участие начнётся с ответа позванного.
   await expect(приглашение).toHaveCount(0)
   const строка = page.getByRole('row').filter({ hasText: второй })
   await expect(строка).toBeVisible({ timeout: 30_000 })
+  await expect(строка).toContainText(t('workspace.members.pending'))
   await expect(строка.getByRole('combobox')).toHaveValue('editor')
 
   // ── роль меняется и переживает перезагрузку ───────────────────────────────
@@ -88,10 +93,27 @@ test('пространство: второй человек, приглашен�
   await меню.getByRole('menuitem', { name: nicknameFor(первый) }).click()
   await expect(переключатель).toContainText(nicknameFor(первый))
 
-  // ── второй человек видит то же пространство ───────────────────────────────
+  // ── второй человек: приглашение, ответ, и только потом пространство ───────
   await выйти(page)
   await войти(page, второй)
   const чужой = page.getByRole('button', { name: t('workspace.switcher.label') })
+
+  // До ответа пространства в переключателе нет вовсе.
+  await чужой.click()
+  await expect(page.getByRole('menuitem', { name: ПРОСТРАНСТВО })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+
+  await page
+    .getByRole('banner')
+    .getByRole('button', { name: t('shell.notifications.label') })
+    .click()
+  const колокольчик = page.getByRole('menu')
+  await expect(
+    колокольчик.getByText(t('notifications.invite.title', { name: ПРОСТРАНСТВО })),
+  ).toBeVisible({ timeout: 30_000 })
+  await колокольчик.getByRole('button', { name: t('notifications.invite.accept') }).click()
+  await page.keyboard.press('Escape')
+
   await чужой.click()
   await expect(page.getByRole('menuitem', { name: ПРОСТРАНСТВО })).toBeVisible({ timeout: 30_000 })
   await page.getByRole('menuitem', { name: ПРОСТРАНСТВО }).click()
