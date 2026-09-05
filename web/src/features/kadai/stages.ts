@@ -92,6 +92,19 @@ export function reached(stages: StageState[], name: string): boolean {
 
 export type Wishes = { text: string; show_task: boolean; show_structure: boolean }
 
+/**
+ * Пожелания, которых ещё нет.
+ *
+ * Одним значением на область, а не литералом по месту: три поля, написанные в
+ * трёх файлах, разъедутся на первом же четвёртом поле, и разъедутся молча —
+ * лишний ключ в теле службе не помеха, а недостающий превращается в `false`.
+ */
+export const ПУСТЫЕ_ПОЖЕЛАНИЯ: Wishes = {
+  text: '',
+  show_task: false,
+  show_structure: false,
+}
+
 export type RunPayload = {
   endpoint: string
   until?: string

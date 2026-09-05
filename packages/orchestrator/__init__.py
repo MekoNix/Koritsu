@@ -8,13 +8,13 @@ orchestrator — единственный, кто знает про все па�
 про всех сразу, — им и работает этот пакет. Импортировать соседей можно только
 ему; из него не импортирует никто.
 
-**Почему отдельный пакет, а не модуль внутри hokoku** (решение владельца
-2026-08-31). Служба обязана знать про хранилище (материалы, версии значений,
-артефакты) и про модель. `hokoku` объявил про себя обратное в двух местах:
-манифест — «хранение за службой», `build_report` — «готовые файлы наружу
-байтами не отдаём». Положить склейку туда значит завести в движке отчётов
-импорт `llm` и `materials`, то есть притащить сетевой код всюду, где нужны
-просто отчёты, и отменить оба решения, ради которых писался `wire.py`.
+**Почему отдельный пакет, а не модуль внутри hokoku.** Служба обязана знать
+про хранилище (материалы, версии значений, артефакты) и про модель.
+`hokoku` объявил про себя обратное в двух местах: манифест — «хранение за
+службой», `build_report` — «готовые файлы наружу байтами не отдаём».
+Положить склейку туда значит завести в движке отчётов импорт `llm` и
+`materials`, то есть притащить сетевой код всюду, где нужны просто отчёты,
+и отменить оба решения, ради которых писался `wire.py`.
 
 Разрыв, ради которого пакет и заведён: **никто не собирал `[llm.Part]`**. В
 `packages/` `Part` создавался только с ролями `rules` и `request`; роли `files`,
@@ -66,16 +66,16 @@ orchestrator — единственный, кто знает про все па�
 вовсе) и любого выполнения пользовательского кода — схемы строятся разбором
 tree-sitter'ом, ни `exec`, ни подпроцесса, ни поиска в сети.
 
-Уровень 3 на endpoint'е без операторского канала — открытый вопрос владельца;
-решение 2026-08-31 «заглушка, идём дальше» стоит одним переключателем
+Уровень 3 на endpoint'е без операторского канала — открытый вопрос; ответ
+«заглушка, идём дальше» стоит одним переключателем
 `tools.WITHOUT_OPERATOR_CHANNEL` (`allow` | `flag` | `deny`) и работает через
 единственные ворота `tools.operator_channel_gate`.
 """
 from .errors import OrchestratorError
 from . import diagrams
 from .diagrams import DiagramError, DiagramResult
-from .project import BLOCK_FIELDS, BlockVersion, Project, Run, SOURCES, Version, \
-    artifact_id
+from .project import BLOCK_FIELDS, VALUE_TYPES, BlockVersion, Project, Run, SOURCES, \
+    Version, artifact_id, template_tags
 from .prompt import RULES, build_parts, prompt_hash, render, seal_mark
 from .schema import any_value_schema, fillable, report_schema, tag_schema
 from .stream import TagStream
@@ -89,6 +89,7 @@ from .doors import Answer, ask, check_code, kadai_services, make_template
 
 __all__ = [
     "Project", "Version", "BlockVersion", "Run", "SOURCES", "artifact_id",
+    "template_tags", "VALUE_TYPES",
     "BLOCK_FIELDS",
     "fill_tag", "fill_report", "TagFill", "RunResult",
     "fill_agent", "AgentResult", "ToolBox", "ToolError", "operator_channel_gate",

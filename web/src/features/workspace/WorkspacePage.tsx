@@ -1,13 +1,12 @@
 /**
  * WorkspacePage — рабочее пространство: имя, участники, корзина.
  *
- * Решение владельца (третий круг): «участники workspace — своя страница,
- * приглашение по email, роли». Отсюда состав экрана и три вещи, которые он
- * держит:
+ * Правило: участники workspace — своя страница, приглашение по email, роли.
+ * Отсюда состав экрана и три вещи, которые он держит:
  *
  * 1. **имя и роль спрашивающего** — по роли решается всё остальное: кнопки
- *    правки видит только владелец (§7 решений по API: участники — дело
- *    владельца, `editor` меняет проекты, а не людей);
+ *    правки видит только владелец (участники — дело владельца, `editor` меняет
+ *    проекты, а не людей);
  * 2. **участники** — почта, аватар, роль, дата вступления; пригласить по
  *    почте, сменить роль, убрать (с подтверждением);
  * 3. **корзина пространств** — своя, а не общая с корзиной проектов: у службы
@@ -17,7 +16,7 @@
  * `/workspace/:id` — названное. Второй нужен затем, чтобы в чужое пространство
  * можно было заглянуть по ссылке, не переключая своё рабочее место.
  *
- * Обязательные состояния §7 — все четыре: скелетон, пусто (у участников его не
+ * Обязательные состояния — все четыре: скелетон, пусто (у участников его не
  * бывает: владелец всегда есть), ошибка с повтором, «нет прав» на 403/404.
  * Тосты — только на отказ службы: успешную смену роли человек видит в строке.
  */
@@ -57,6 +56,7 @@ import {
   useWorkspaces,
 } from './data'
 import { ROLES, canManageMembers, workspaceLabel, type Member } from './types'
+import { usePersonalName } from './usePersonalName'
 
 const TH =
   'whitespace-nowrap border-b border-line px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted'
@@ -68,6 +68,9 @@ export function WorkspacePage() {
   const { id: fromUrl } = useParams<{ id: string }>()
   const текущее = useCurrentWorkspaceId()
   const личное = useWorkspaces()
+  // Хук — до всех досрочных возвратов: порядок хуков в React обязан совпадать
+  // от отрисовки к отрисовке.
+  const имяЛичного = usePersonalName()
 
   // Какое пространство открыто: названное в адресе, выбранное переключателем
   // или личное. Личное ищется в списке, а не спрашивается отдельно: список тут
@@ -88,7 +91,8 @@ export function WorkspacePage() {
 
   const ws = карточка.data
   const хозяин = canManageMembers(ws.role)
-  const имя = workspaceLabel(ws, t('workspace.personalName'))
+  // Личное пространство на экране зовётся ником хозяина.
+  const имя = workspaceLabel(ws, имяЛичного)
 
   return (
     <div className="flex flex-col gap-s4">
@@ -239,9 +243,13 @@ function MembersCard({ workspaceId, canManage }: { workspaceId: string; canManag
                     <span className="flex items-center gap-s2">
                       <Avatar id={m.user_id} size={28} />
                       <span className="min-w-0">
+                        {/* Ник крупно, почта мелко:
+                            зовут человека ником, а почта — то, по чему его
+                            приглашали и чем различают тёзок. */}
                         <span className="block break-all font-medium text-ink-strong">
-                          {m.email ?? m.user_id}
+                          {m.nickname ?? m.email ?? m.user_id}
                         </span>
+                        {m.email && <span className="block text-xs text-muted">{m.email}</span>}
                         {m.user_id === me.data?.id && (
                           <span className="block text-xs text-muted">
                             {t('workspace.members.you')}
@@ -306,7 +314,7 @@ function MembersCard({ workspaceId, canManage }: { workspaceId: string; canManag
         onOpenChange={(open) => !open && setRemoving(null)}
         title={t('workspace.members.remove')}
         description={t('workspace.members.removeAsk', {
-          who: removing?.email ?? removing?.user_id ?? '',
+          who: removing?.nickname ?? removing?.email ?? removing?.user_id ?? '',
         })}
         footer={
           <>
@@ -387,6 +395,7 @@ function DangerCard({ id, name }: { id: string; name: string }) {
 /** Корзина пространств: что удалено и до какого числа лежит. */
 function TrashCard() {
   const t = useT()
+  const имяЛичного = usePersonalName()
   const toast = useToast()
   const trashed = useWorkspaces(true)
   const restore = useRestoreWorkspace()
@@ -404,7 +413,7 @@ function TrashCard() {
           >
             <span className="min-w-0">
               <span className="block truncate font-medium text-ink-strong">
-                {workspaceLabel(ws, t('workspace.personalName'))}
+                {workspaceLabel(ws, имяЛичного)}
               </span>
               <span className="block text-xs text-muted">
                 {t('workspace.bin.until', { date: formatDate(ws.purge_after) })}

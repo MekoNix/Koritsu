@@ -4,9 +4,9 @@
  *     Почему панель, а не страница и не модалка
  *     -----------------------------------------
  *
- * Бриф: «не отдельная страница, а всплывающее окно поверх текущего экрана, где
- * пишешь, что поменять». Решение владельца (§3 третьего круга) уточняет форму:
- * выдвижная панель справа, **не модальная**. Отсюда всё устройство:
+ * Правило интерфейса: «не отдельная страница, а всплывающее окно поверх
+ * текущего экрана, где пишешь, что поменять»; форма — выдвижная панель справа,
+ * **не модальная**. Отсюда всё устройство:
  *
  * * `Radix Dialog` с `modal={false}` и без затемнения: экран под панелью
  *   остаётся живым — по нему можно листать теги и смотреть, что изменилось,
@@ -28,12 +28,12 @@ import * as RadixDialog from '@radix-ui/react-dialog'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
-import { useCurrentWorkspace, useUsage } from '@/api/hooks'
+import { useCurrentWorkspace, useMe, useUsage } from '@/api/hooks'
 import { useT } from '@/i18n'
-import { useHotkey } from '@/lib/hotkeys'
+import { hotkeyLabel, useActionHotkey, useHotkeyBinding } from '@/lib/hotkeys'
 import { Button, EmptyState, Icon, Select, Textarea } from '@/ui'
 import { useProject, useProjects } from '@/features/projects/data'
-import { defaultProvider, useProviders } from '@/features/reports/data'
+import { useDefaultEndpoint, useProviders } from '@/features/reports/data'
 import { ModelPicker, PriceHint } from '@/features/reports/runControls'
 
 import { AgentHistory } from './AgentHistory'
@@ -50,7 +50,8 @@ export function AgentPanel() {
 
   // Горячая клавиша живёт здесь, а не в шапке: панель монтирована всегда, а
   // шапка — только внутри оболочки, и на экранах входа её нет вовсе.
-  useHotkey('ctrl+j', toggleAgentPanel)
+  useActionHotkey('agent', toggleAgentPanel)
+  const сочетание = useHotkeyBinding('agent')
 
   const изАдреса = projectFromPath(location.pathname)
   const [выбранный, setВыбранный] = useState<string | null>(null)
@@ -58,10 +59,16 @@ export function AgentPanel() {
 
   const [endpoint, setEndpoint] = useState<string | null>(null)
   const [task, setTask] = useState('')
-  const [overwrite, setOverwrite] = useState(false)
+  // Умолчание «переписывать ли ручные правки» — из профиля (раздел настроек
+  // «Агент и модели»). `null` — профиль ещё не приехал; до тех пор галка стоит
+  // так, как её поставили в настройках, а не «выключено на всякий случай»:
+  // человек, включивший переписывание, ждёт его и на первом прогоне.
+  const me = useMe()
+  const [overwrite, setOverwrite] = useState<boolean | null>(null)
+  const переписывать = overwrite ?? me.data?.agent_overwrite ?? false
 
   // Прогон — на верхнем уровне: он обязан пережить закрытие панели.
-  const run = useAgentRun(projectId, endpoint, overwrite)
+  const run = useAgentRun(projectId, endpoint, переписывать)
 
   return (
     <RadixDialog.Root
@@ -84,7 +91,7 @@ export function AgentPanel() {
               {t('agent.title')}
             </RadixDialog.Title>
             <kbd className="rounded-sm border border-line-strong bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted">
-              Ctrl J
+              {hotkeyLabel(сочетание)}
             </kbd>
             <RadixDialog.Close asChild>
               <Button variant="ghost" size="sm" iconOnly aria-label={t('agent.close')}>
@@ -101,7 +108,7 @@ export function AgentPanel() {
             onEndpoint={setEndpoint}
             task={task}
             onTask={setTask}
-            overwrite={overwrite}
+            overwrite={переписывать}
             onOverwrite={setOverwrite}
             run={run}
           />
@@ -148,12 +155,13 @@ function PanelBody({
   const usage = useUsage()
   const поле = useRef<HTMLTextAreaElement>(null)
 
-  // Пресет по умолчанию: сначала свой ключ, потом общий (`defaultProvider`).
+  // Пресет по умолчанию: выбор человека из профиля, а если его нет — правило
+  // сайта «сначала свой ключ, потом общий» (`useDefaultEndpoint`).
+  const умолчание = useDefaultEndpoint()
   useEffect(() => {
     if (endpoint !== null) return
-    const умолчание = defaultProvider(providers.data)
     if (умолчание) onEndpoint(умолчание)
-  }, [providers.data, endpoint, onEndpoint])
+  }, [умолчание, endpoint, onEndpoint])
 
   // Фокус в поле при открытии: панель открывают, чтобы писать в неё.
   useEffect(() => {

@@ -20,6 +20,9 @@ type Section = { to: string; key: string; icon: IconName }
 const SECTIONS: readonly Section[] = [
   { to: 'profile', key: 'profile', icon: 'user' },
   { to: 'appearance', key: 'appearance', icon: 'palette' },
+  { to: 'templates', key: 'templates', icon: 'file' },
+  { to: 'hotkeys', key: 'hotkeys', icon: 'search' },
+  { to: 'agent', key: 'agent', icon: 'agent' },
   { to: 'keys', key: 'keys', icon: 'key' },
   { to: 'tokens', key: 'tokens', icon: 'file' },
   { to: 'usage', key: 'usage', icon: 'dashboard' },

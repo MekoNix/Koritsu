@@ -1,7 +1,7 @@
 /**
  * Topbar — шапка.
  *
- * Правка 2 макетов, дословно: «шапка без собственного фона: полупрозрачная
+ * Правило макетов, дословно: «шапка без собственного фона: полупрозрачная
  * подложка с размытием, а поиск / агент / фоновые задачи / колокольчик /
  * профиль собраны в отдельную „таблетку“». Отсюда две вещи в разметке:
  * у самой шапки заливки нет (фон страницы виден насквозь, содержимое под ней
@@ -21,7 +21,7 @@ import { useState } from 'react'
 import { useT } from '@/i18n'
 import { toggleAgentPanel, useAgentPanelOpen } from '@/features/agent'
 import { SearchPalette } from '@/features/search/SearchPalette'
-import { useHotkey } from '@/lib/hotkeys'
+import { hotkeyLabel, useActionHotkey, useHotkeyBinding } from '@/lib/hotkeys'
 import { Button, Icon } from '@/ui'
 
 import { Breadcrumbs } from './breadcrumbs'
@@ -34,7 +34,13 @@ export function Topbar() {
   const agentOpen = useAgentPanelOpen()
   const [searchOpen, setSearchOpen] = useState(false)
 
-  useHotkey('ctrl+k', () => setSearchOpen((open) => !open))
+  // Сочетания — по действию, а не буквой: человек вправе переназначить их в
+  // настройках (`/settings/hotkeys`), и подсказка на кнопке обязана показывать
+  // то, что и правда сработает.
+  const поиск = useHotkeyBinding('search')
+  const агент = useHotkeyBinding('agent')
+
+  useActionHotkey('search', () => setSearchOpen((open) => !open))
 
   return (
     <header className="sticky top-0 z-20 flex h-topbar items-center gap-s3 bg-[color-mix(in_srgb,var(--bg)_68%,transparent)] px-s4 backdrop-blur-theme">
@@ -54,7 +60,7 @@ export function Topbar() {
           <Icon name="search" size={16} />
           {t('shell.search.label')}
           <kbd className="rounded-sm border border-line-strong bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted">
-            Ctrl K
+            {hotkeyLabel(поиск)}
           </kbd>
         </Button>
 
@@ -68,7 +74,7 @@ export function Topbar() {
           <Icon name="agent" size={16} />
           {t('shell.agent.label')}
           <kbd className="rounded-sm border border-line-strong bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted">
-            Ctrl J
+            {hotkeyLabel(агент)}
           </kbd>
         </Button>
 

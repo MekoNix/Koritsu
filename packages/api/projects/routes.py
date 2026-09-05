@@ -10,24 +10,39 @@ routes — `/api/projects`: создание, список, карточка, к
     in_trash         409  пространство в корзине / проект уже в корзине
     not_in_trash     409  восстанавливать нечего
     bad_template     400  принесённый DOCX не читается
-    invalid_value    400  значение тега не объект JSON
+    invalid_value    400  значение тега не объект JSON или не по форме своего типа
     project_exists   409  каталог по этим uuid уже занят
 
 **Проверка доступа идёт через пространство, а не через проект.** Проект своей
-роли не имеет: он принадлежит пространству (§1), и вторая таблица прав на
+роли не имеет: он принадлежит пространству, и вторая таблица прав на
 проекте разошлась бы с первой на первом же переносе проекта между
 пространствами. Отсюда порядок в каждом обработчике: найти строку проекта →
 `require_role` на его `workspace_id` → работать.
 
 **Пути наружу не уезжают.** Карточка отдаёт `bytes_used`, а не путь; беда от
 оркестратора (в её тексте бывает путь на томе) наружу идёт как `bad_template`
-без подробностей, а настоящая — в журнал (§3, `log.py`).
+без подробностей, а настоящая — в журнал (`log.py`).
+
+**Форму значения проверяет оркестратор, а не этот файл.** До сих пор
+`PUT` спрашивал одно — объект ли это, — и таблица без `rows`, картинка без
+`artifact` и формула без `latex` ложились на том как есть; обнаруживалось это
+сборкой отчёта, то есть через задание, деньги и пять минут. Теперь значение
+разбирает `Project.check_value` — дверь к тому же разбору, которым значение
+прочтёт сборщик, — и отказ приходит сразу, с `where` на поле, которое не так.
+Второго описания «годного значения» при этом не заводится ни строки, и движок
+отчётов в службу не тянется: правило разреза запрещает ей знать про него вовсе.
+
+**Объявленный тип тега здесь не сверяется** — намеренно. Тип в манифесте часто
+угадан по метке (его предлагает движок отчётов по слову в метке), и отказать
+человеку, поставившему картинку в тег, который служба сочла схемой, значило бы
+защищать догадку от правды. Расхождение видно там, где оно чем-то грозит: перед
+сборкой (проверка значений против манифеста), и там же его показывают.
 
 Значения тегов — тонкая обёртка над `orchestrator.Project`: `GET` отдаёт
 `project.values()`, `PUT` зовёт `set_value(..., source="manual")`. Своей модели
-у службы для них нет и не будет — решение владельца §7 третьего круга: значения
-остаются файлами, база держит индекс. История версий, откат и `source` живут в
-оркестраторе; ночь 2 добавит сюда маршруты поверх них, но не второе описание.
+у службы для них нет и не будет: значения остаются файлами, база держит индекс.
+История версий, откат и `source` живут в оркестраторе; маршруты службы ложатся
+поверх них, но второго описания не заводят.
 """
 from __future__ import annotations
 
@@ -61,7 +76,7 @@ IN_TRASH = "in_trash"
 
 class ProjectNameIn(BaseModel):
     """Тело переименования. Имя по-английски, как у соседей: оно уезжает в
-    OpenAPI и становится именем типа в клиенте сайта (§5)."""
+    OpenAPI и становится именем типа в клиенте сайта."""
 
     name: str = Field(min_length=1, max_length=NAME_MAX)
 
@@ -133,19 +148,32 @@ def открыть(p: Project, settings: Settings) -> orchestrator.Project:
              summary="Create a project in a workspace",
              description=(
                  "Creates a project and its directory on the volume. Multipart: "
-                 "the name and an optional DOCX template; without a template "
+                 "the name and, optionally, either a DOCX template or the id of "
+                 "one of your saved templates (`template_id`); without either "
                  "the report is built from scratch. Editor role in the "
                  "workspace. 400 bad_template, 403 forbidden, 404 not_found, "
                  "409 project_exists."))
 def создать(request: Request, s: SessionDep, user: CurrentUser,
             workspace_id: str = Form(...), name: str = Form(""),
-            template: UploadFile | None = File(None)) -> dict:
+            template: UploadFile | None = File(None),
+            template_id: str | None = Form(None)) -> dict:
     """Новый проект: строка в базе и каталог на томе.
 
     Форма `multipart`, а не JSON, потому что вместе с именем приходит файл
-    шаблона (§2: загрузка телом запроса). Шаблон **необязателен**: без него
+    шаблона (загрузка телом запроса). Шаблон **необязателен**: без него
     оркестратор строит документ с нуля (`Project.create(template=None)`), и
     человек, у которого образца под рукой нет, всё равно заводит проект.
+
+    Шаблон приходит одним из двух способов: файлом (как раньше) или
+    идентификатором своего сохранённого шаблона (`template_id`, подпакет
+    `api.templates`). Второй способ **копирует** байты в проект, а не ссылается
+    на строку: работа не должна ломаться оттого, что человек убрал шаблон из
+    своего списка через месяц.
+
+    Оба сразу — отказ, а не «файл главнее»: молча выбранный за человека шаблон
+    — это чужой ГОСТ в готовой работе, и заметят его на кафедре. Отказ идёт
+    кодом `bad_template`, а не своим новым: с точки зрения клиента беда одна —
+    «шаблон не принят», и разбирать её по двум кодам ему незачем.
 
     Порядок — сначала база, потом диск, и это не случайность: `id` каталога
     берётся из строки, а строка при беде на диске откатится сама
@@ -158,6 +186,19 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
     байты = None
     if template is not None and template.filename:
         байты = template.file.read()
+    if (template_id or "").strip():
+        if байты is not None:
+            raise ApiError(BAD_TEMPLATE,
+                           "Send either a template file or template_id, not both",
+                           400, where="body.template_id")
+        # Импорт внутри обработчика: подпакет шаблонов тянет оркестратор и
+        # приёмник материалов, а этот модуль читает `api.models` при сборке
+        # приложения — на уровне модуля вышел бы круг импортов.
+        from ..templates import service as шаблоны              # noqa: PLC0415
+
+        байты = шаблоны.байты(
+            settings, шаблоны.найти(s, user.id, template_id.strip(),
+                                    where="body.template_id"))
     p = Project(workspace_id=ws.id, owner_id=user.id, name=name.strip() or "Project")
     s.add(p)
     s.flush()
@@ -172,7 +213,7 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
         orchestrator.Project.create(каталог, template=байты, name=p.name)
     except Exception:                                   # noqa: BLE001
         # Подробности — в журнал: в тексте беды оркестратора стоит путь на томе,
-        # а клиенту про раскладку тома знать нечего (§3).
+        # а клиенту про раскладку тома знать нечего.
         беды.exception("проект %s: шаблон не принят", p.id)
         shutil.rmtree(каталог, ignore_errors=True)
         raise ApiError(BAD_TEMPLATE, "Template is not a readable DOCX file", 400,
@@ -242,7 +283,7 @@ def переименовать(project_id: str, тело: ProjectNameIn, request
                    "404 not_found, 409 in_trash."))
 def удалить(project_id: str, request: Request, s: SessionDep,
             user: CurrentUser) -> dict:
-    """В корзину. Каталог остаётся на томе до `purge_after` (§2: десять дней)."""
+    """В корзину. Каталог остаётся на томе до `purge_after` (десять дней)."""
     settings = настройки(request)
     p = доступный(s, user, project_id, EDITOR)
     в_корзину(s, p, settings)
@@ -315,7 +356,7 @@ def теги_проекта(project_id: str, request: Request, s: SessionDep,
                 "409 in_trash."))
 def значения(project_id: str, request: Request, s: SessionDep,
              user: CurrentUser) -> dict:
-    """Текущие значения всех тегов. Форма — та же, что у `hokoku.wire`."""
+    """Текущие значения всех тегов. Форма — та же, что читает сборщик отчёта."""
     settings = настройки(request)
     p = доступный(s, user, project_id, VIEWER)
     return {"values": открыть(p, settings).values()}
@@ -326,8 +367,13 @@ def значения(project_id: str, request: Request, s: SessionDep,
             description=(
                 "Writes one tag value as a new version marked source=manual; "
                 "previous versions are kept. The body is the value itself, a "
-                "JSON object. Editor role. 400 invalid_value, 403 forbidden, "
-                "404 not_found, 409 in_trash."))
+                "JSON object shaped by its own type field: text and markdown "
+                "carry text, a table carries rows, an image or a diagram "
+                "carries the id of an artifact, a formula carries latex. A "
+                "value that does not fit its type is refused with "
+                "invalid_value and where pointing at the field. Editor role. "
+                "400 invalid_value, 403 forbidden, 404 not_found, "
+                "409 in_trash."))
 def поставить(project_id: str, key: str, value: dict, request: Request,
               s: SessionDep, user: CurrentUser) -> dict:
     """Значение тега рукой человека: `source="manual"`.
@@ -344,13 +390,48 @@ def поставить(project_id: str, key: str, value: dict, request: Request,
     """
     settings = настройки(request)
     p = доступный(s, user, project_id, EDITOR)
+    проект = открыть(p, settings)
+    проверить_форму(проект, value)
     try:
-        версия = открыть(p, settings).set_value(key, value, source="manual")
+        версия = проект.set_value(key, value, source="manual")
     except orchestrator.OrchestratorError:
         raise ApiError(INVALID_VALUE, "Tag value must be a JSON object", 400,
                        where="body") from None
     return {"key": версия.key, "version": версия.n, "source": версия.source,
             "at": версия.at}
+
+
+def проверить_форму(проект: orchestrator.Project, value: dict) -> None:
+    """Значение по форме своего типа — или `400 invalid_value` с местом.
+
+    Проверяет `Project.check_value` — дверь оркестратора к тому самому разбору,
+    которым значение прочтёт сборщик отчёта.
+    Своей проверки («у таблицы есть `rows`, у формулы `latex`») служба заводить
+    не имеет права: она разошлась бы с настоящей на первом же новом поле, и
+    разошлась бы молча — в сторону «приняли то, что потом не соберётся».
+
+    **Зовётся дверь, а не движок отчётов.** Импортировать его службе запрещено
+    ни одной строкой (`tests/api/test_e2e.py`), и запрет этот не формальный:
+    служба, потянувшая движок, перестанет собираться без python-docx. Поэтому
+    знание о форме значения живёт там, где ему положено, а сюда приезжает
+    запись «что не так»: `stage`, `path`, `field`.
+    """
+    беда = проект.check_value(value)
+    if беда is None:
+        return
+    if беда["field"] == "type" and not беда["path"]:
+        raise ApiError(INVALID_VALUE,
+                       "Tag value must name a known type: "
+                       + ", ".join(orchestrator.VALUE_TYPES), 400,
+                       where="body.type")
+    куски = ["body", *(x for x in (беда["path"], беда["field"]) if x)]
+    if беда["stage"] == "artifact":
+        текст = "Artifact referenced by the tag value is not available"
+    elif беда["field"]:
+        текст = f'Tag value does not fit its type: field "{беда["field"]}"'
+    else:
+        текст = "Tag value does not fit its type"
+    raise ApiError(INVALID_VALUE, текст, 400, where=".".join(куски))
 
 
 # ── общее ────────────────────────────────────────────────────────────────────
@@ -362,7 +443,7 @@ def доступный(s, user, project_id: str, min_role: str, *,
     Порядок проверок важен и такой: сначала строка (её нет — 404), потом роль в
     её пространстве (не участник — тоже 404, роли мало — 403), и только потом
     корзина. Обратный порядок отвечал бы «в корзине» на чужой проект, то есть
-    рассказывал бы о существовании чужого (§3).
+    рассказывал бы о существовании чужого.
     """
     p = get_row(s, project_id)
     require_role(s, user.id, p.workspace_id, min_role, where="path.project_id",

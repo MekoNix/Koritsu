@@ -1,7 +1,7 @@
 /**
  * Проверка ленты дашборда на подменённых ответах службы.
  *
- * Смысл — в составе и порядке ленты: она фиксированная (решение владельца),
+ * Смысл — в составе и порядке ленты: она фиксированная,
  * значит проверять её надо не «нарисовалось хоть что-то», а тем, что все
  * заявленные виджеты на месте и стоят в заданном порядке. Заодно ловится то,
  * что не поймают ни типы, ни линтер: пропавший ключ перевода и виджет,
@@ -56,7 +56,18 @@ function служба(модули: { id: string; title: string; routes: string 
     const url = new URL(request.url)
     switch (url.pathname) {
       case '/api/auth/me':
-        return Promise.resolve(json({ id: 'u-1', email: 'человек@example.org', plan: 'free' }))
+        // Обёртка `{user: …}` — как у службы (`accounts/routes.py: whoami`);
+        // без неё `useMe` честно отдаёт `null`, и приветствия нет вовсе.
+        return Promise.resolve(
+          json({
+            user: {
+              id: 'u-1',
+              email: 'человек@example.org',
+              nickname: 'курису',
+              plan: 'free',
+            },
+          }),
+        )
       case '/api/workspaces/personal':
         return Promise.resolve(json(ПРОСТРАНСТВО))
       case '/api/projects':
@@ -122,6 +133,17 @@ describe('лента дашборда', () => {
     expect(within(статистика as HTMLElement).getByText('2,0 МБ')).toBeVisible()
 
     expect(await screen.findByText('Лабораторная 4 — сортировки')).toBeVisible()
+  })
+
+  it('здоровается ником, а почту показывает частично', async () => {
+    vi.stubGlobal('fetch', служба(ВСЕ_МОДУЛИ))
+    нарисовать()
+
+    // Приветствие зависит от времени суток, поэтому проверяется ник в нём, а
+    // не весь текст: иначе тест падал бы дважды в сутки.
+    expect(await screen.findByText(/курису/)).toBeVisible()
+    expect(screen.getByText('ч***@example.org')).toBeVisible()
+    expect(screen.queryByText('человек@example.org')).toBeNull()
   })
 
   it('модуля, которого служба не отдала, на дашборде нет вовсе', async () => {

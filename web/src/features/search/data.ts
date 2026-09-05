@@ -1,105 +1,128 @@
 /**
  * data — что палитра ищет.
  *
- * Поиска у службы нет: `GET /api/projects` берёт одно пространство и не знает
- * слова «запрос», а материалы отдаются описью работы. Поэтому палитра ищет по
- * тому, что уже загружено:
+ * Ищет служба: `GET /api/search?q=` ходит по проектам всех пространств
+ * человека и по материалам внутри них (`packages/api/search`). Раньше поиска не
+ * было вовсе, и палитра отбирала по загруженному: проекты всех пространств она
+ * дозагружала сама, а материалы видела только у открытой работы — то есть файл
+ * в соседней работе не находился никогда.
  *
- * * **проекты всех пространств** — список пространств, затем список проектов
- *   каждого (тот же приём, что у главной страницы схем);
- * * **материалы открытой работы** — по описи того проекта, чей адрес открыт.
+ *     Почему запрос откладывается на 200 мс
+ *     -------------------------------------
  *
- * Материалы всех работ сразу не берутся намеренно: это по запросу на работу, то
- * есть десятки запросов ради подсказки. Правильное лекарство — поиск на стороне
- * службы; пока его нет, честнее искать по тому, что человек и так видит.
+ * Каждая буква — это запрос, а запрос считает совпадения по именам и, если
+ * ищут файл, читает каталоги материалов. «Сортировки» набирается за десять
+ * нажатий, и без задержки это десять таких обходов ради одного ответа. Двести
+ * миллисекунд человек не замечает (это меньше, чем пауза между буквами при
+ * обычном наборе), а служба перестаёт считать выдачу, которую никто не увидит.
  *
- * Запросы ленивые: пока палитра закрыта, ни одного обращения к службе нет.
+ * Задержка живёт здесь, а не в компоненте: она часть договора о том, как
+ * спрашивают службу, и написанная по месту разошлась бы с ключом кэша — тот
+ * тоже строится по отложенной строке, иначе выдача мигала бы пустотой на каждую
+ * букву.
  */
-import { useQuery } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
 
 import { api, keys, unwrap } from '@/api'
-import type { Workspace } from '@/api/hooks'
-import type { Material, Project } from '@/features/projects/types'
-import { workspaceLabel } from '@/features/workspace/types'
+import { projectModuleLink } from '@/features/projects/moduleRoutes'
 
-import type { Hit } from './filter'
+import type { Hit, SearchBody } from './types'
 
-type ПроектСПространством = Project & { workspaceName: string }
+/** Сколько ждём после последнего нажатия, прежде чем спросить службу. */
+export const ЗАДЕРЖКА_МС = 200
 
-async function всеПроекты(personalText: string): Promise<ПроектСПространством[]> {
-  const { workspaces } = await unwrap<{ workspaces: Workspace[] }>(api.GET('/api/workspaces'))
-  const пачки = await Promise.all(
-    workspaces.map((ws) =>
-      unwrap<{ projects: Project[] }>(
-        api.GET('/api/projects', { params: { query: { workspace_id: ws.id } } }),
-      ).then((тело) =>
-        тело.projects.map((p) => ({ ...p, workspaceName: workspaceLabel(ws, personalText) })),
-      ),
-    ),
-  )
-  return пачки.flat()
+/** Отложенное значение строки: меняется не раньше, чем через `ms` после ввода. */
+export function useDebounced<T>(value: T, ms: number): T {
+  const [отложенное, setОтложенное] = useState(value)
+  useEffect(() => {
+    const таймер = setTimeout(() => setОтложенное(value), ms)
+    return () => clearTimeout(таймер)
+  }, [value, ms])
+  return отложенное
 }
 
 /**
- * Всё, по чему палитра ищет, одним списком.
+ * Выдача службы по набранному, приведённая к строкам палитры.
  *
- * `enabled` — это открыта ли палитра: закрытая палитра службу не беспокоит.
+ * `enabled` — открыта ли палитра и есть ли что искать: закрытая палитра службу
+ * не беспокоит, а пустой запрос службе и не нужен — она на него отвечает
+ * пустотой, и спрашивать об этом по сети незачем.
  */
-export function useSearchIndex(
-  enabled: boolean,
-  projectId: string | null,
+export function useSearch(
+  open: boolean,
+  query: string,
   /** Как назвать личное пространство: перевод знает экран, не этот файл. */
   personalText: string,
 ): {
   hits: Hit[]
+  /** Отложенная строка: по ней и показывается «ничего не нашлось». */
+  asked: string
   isLoading: boolean
   error: unknown
 } {
-  const проекты = useQuery({
-    queryKey: keys.search.projects,
-    enabled,
-    queryFn: () => всеПроекты(personalText),
-    staleTime: 30_000,
-  })
+  const отложенный = useDebounced(query.trim(), ЗАДЕРЖКА_МС)
 
-  const материалы = useQuery({
-    queryKey: keys.search.materials(projectId ?? ''),
-    enabled: enabled && !!projectId,
+  const выдача = useQuery({
+    queryKey: keys.search.query(отложенный),
+    enabled: open && !!отложенный,
     queryFn: () =>
-      unwrap<Material[]>(
-        api.GET('/api/projects/{project_id}/materials', {
-          params: { path: { project_id: projectId as string } },
-        }),
-      ),
+      unwrap<SearchBody>(api.GET('/api/search', { params: { query: { q: отложенный } } })),
+    // Прежняя выдача остаётся на экране, пока едет новая: иначе список мигает
+    // пустотой между двумя буквами, и человек читает это как «ничего не нашлось».
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
 
   const hits = useMemo<Hit[]>(() => {
-    const проектные: Hit[] = (проекты.data ?? []).map((p) => ({
+    const тело = выдача.data
+    // Поле опустошили — выдача гаснет сразу, не дожидаясь задержки: иначе рядом
+    // с подсказкой «наберите часть имени» ещё двести миллисекунд висели бы
+    // строки по прошлому запросу.
+    if (!тело || !query.trim()) return []
+    const работы: Hit[] = тело.projects.map((p) => ({
       kind: 'project',
       id: p.id,
       name: p.name,
-      workspace: p.workspaceName,
-      to: `/projects/${p.id}`,
+      workspace:
+        p.workspace_personal && p.workspace_name === 'Personal' ? personalText : p.workspace_name,
+      to: адрес(p.module, p.id),
     }))
-    const имяРаботы = (проекты.data ?? []).find((p) => p.id === projectId)?.name ?? ''
-    const файлы: Hit[] = projectId
-      ? (материалы.data ?? []).map((m) => ({
-          kind: 'material',
-          id: m.id,
-          name: m.name,
-          project: имяРаботы,
-          // Материалы живут в описи работы — туда и ведём.
-          to: `/projects/${projectId}`,
-        }))
-      : []
-    return [...проектные, ...файлы]
-  }, [проекты.data, материалы.data, projectId])
+    const файлы: Hit[] = тело.materials.map((m) => ({
+      kind: 'material',
+      id: m.id,
+      name: m.name,
+      project: m.project_name,
+      // Материалы живут в описи работы — туда и ведём.
+      to: `/projects/${m.project_id}`,
+    }))
+    return [...работы, ...файлы]
+  }, [выдача.data, personalText, query])
 
   return {
     hits,
-    isLoading: проекты.isLoading || материалы.isLoading,
-    error: проекты.error ?? материалы.error,
+    asked: отложенный,
+    isLoading: выдача.isLoading,
+    error: выдача.error,
   }
+}
+
+/**
+ * Куда ведёт найденная работа.
+ *
+ * Прямо в модуль — только там, где служба это **знает**: запись о работе `kadai`
+ * лежит на томе, и она либо есть, либо нет. Всё остальное служба не знает, а
+ * предполагает («записи `kadai` нет — значит отчёт»), и вести человека по
+ * предположению на экран отчёта нельзя: у проекта без шаблона там нечего
+ * показывать. Такие ведут на карточку проекта — она есть у любой работы и сама
+ * называет модули, которыми её можно открыть.
+ *
+ * Адрес экрана модуля берётся у `features/projects/moduleRoutes`: своей таблицы
+ * здесь не заводится — вторая разошлась бы с первой на первом же новом модуле.
+ */
+export const ПРЯМО_В_МОДУЛЬ = new Set(['kadai'])
+
+export function адрес(module: string | undefined, projectId: string): string {
+  const ссылка = module && ПРЯМО_В_МОДУЛЬ.has(module) ? projectModuleLink(module) : undefined
+  return ссылка ? ссылка.href(projectId) : `/projects/${projectId}`
 }

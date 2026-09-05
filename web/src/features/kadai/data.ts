@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tan
 
 import { api, keys, unwrap } from '@/api'
 
+import type { Wishes } from './stages'
 import type {
   BlockRecordBody,
   BlockVersionBody,
@@ -64,7 +65,7 @@ export function useKadaiStatus(projectId: string | undefined): UseQueryResult<Ka
  * Назвать материал условием задачи.
  *
  * Без этого прогон отказывает «условие задачи не приложено»: до подтверждения
- * условие — обычный материал (решение владельца 2026-08-31).
+ * условие — обычный материал.
  */
 export function useSetCondition() {
   const qc = useQueryClient()
@@ -78,6 +79,75 @@ export function useSetCondition() {
       ),
     onSuccess: (_answer, { projectId }) => {
       void qc.invalidateQueries({ queryKey: keys.kadai.status(projectId) })
+    },
+  })
+}
+
+/**
+ * Пожелания к работе — из проекта, а не из браузера.
+ *
+ * Раньше они лежали в `sessionStorage`: службе негде было их держать до
+ * первого прогона, потому что записи о работе тогда ещё нет. Теперь у них своя
+ * запись на томе (`PUT …/kadai/wishes`), и они переживают и вкладку, и второе
+ * устройство. Читает их прогон сам, когда в задании пожеланий нет.
+ */
+export function useKadaiWishes(projectId: string | undefined): UseQueryResult<Wishes> {
+  return useQuery({
+    queryKey: keys.kadai.wishes(projectId ?? ''),
+    enabled: !!projectId,
+    queryFn: () =>
+      unwrap<Wishes>(
+        api.GET('/api/projects/{project_id}/kadai/wishes', {
+          params: { path: { project_id: projectId as string } },
+        }),
+      ),
+  })
+}
+
+/**
+ * Записать пожелания. Заменяются целиком: половины у них не бывает.
+ *
+ * Проект называется в самом вызове, а не при заведении хука (как у
+ * `useSetCondition`): форма заведения работы записывает пожелания в проект,
+ * который только что создала, и её `useState` к этой секунде ещё не обновился —
+ * замыкание на прежнее значение положило бы их в никуда.
+ */
+export function useSetKadaiWishes() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ projectId, wishes }: { projectId: string; wishes: Wishes }) =>
+      unwrap<Wishes>(
+        api.PUT('/api/projects/{project_id}/kadai/wishes', {
+          params: { path: { project_id: projectId } },
+          body: wishes,
+        }),
+      ),
+    onSuccess: (_ответ, { projectId }) => {
+      void qc.invalidateQueries({ queryKey: keys.kadai.wishes(projectId) })
+    },
+  })
+}
+
+/**
+ * «Начать стадию заново» у вставшей работы.
+ *
+ * Ничего не стоит и модель не зовёт: маршрут только возвращает ход работы к
+ * названной стадии. Прогон после него ставится обычным `kadai_run` — тем же,
+ * которым работа запускалась в первый раз, и это единственное место, где
+ * начинается платный прогон.
+ */
+export function useRestartKadai(projectId: string | undefined) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (stage?: string) =>
+      unwrap<KadaiStatus & { restarted: string }>(
+        api.POST('/api/projects/{project_id}/kadai/restart', {
+          params: { path: { project_id: projectId as string } },
+          body: { stage: stage ?? '' },
+        }),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.kadai.status(projectId ?? '') })
     },
   })
 }

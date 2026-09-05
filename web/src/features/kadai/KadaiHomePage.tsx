@@ -1,7 +1,7 @@
 /**
  * KadaiHomePage — главная модуля «Задания»: список работ и заведение новой.
  *
- * Своя страница в сайдбаре, а не вкладка отчётов (решение владельца): здесь
+ * Своя страница в сайдбаре, а не вкладка отчётов: здесь
  * другой вход — не шаблон с тегами, а одна задача условием, — и другой путь
  * дальше.
  *
@@ -20,7 +20,7 @@
  *    отказал бы «условие задачи не приложено».
  *
  * Прогон отсюда НЕ запускается. Между приёмом условия и решением стоит шаг
- * «условие распознано» (решение владельца), и он живёт на экране работы: жать
+ * «условие распознано», и он живёт на экране работы: жать
  * «Завести» и сразу платить за решение по неверно прочитанному скану — ровно
  * та ошибка, ради которой шаг и заведён.
  *
@@ -37,9 +37,9 @@ import { useT } from '@/i18n'
 import { Button, EmptyState, ErrorState, Field, Icon, Input, SkeletonLines, Textarea } from '@/ui'
 import { useCreateProject, useProjects, useUploadMaterial } from '@/features/projects/data'
 import { ModelPicker, PriceHint } from '@/features/reports/runControls'
-import { useProviders, defaultProvider } from '@/features/reports/data'
+import { useProviders, useDefaultEndpoint } from '@/features/reports/data'
 
-import { useSetCondition } from './data'
+import { useSetCondition, useSetKadaiWishes } from './data'
 import { KADAI_RUN } from './types'
 
 /** Что принимает разбор материалов: те же виды, что и опись проекта. */
@@ -52,6 +52,8 @@ export function KadaiHomePage() {
   const projects = useProjects(workspace.data?.id)
   const usage = useUsage()
   const providers = useProviders()
+  // Умолчание пресета: выбор человека из профиля, иначе правило сайта.
+  const умолчание = useDefaultEndpoint()
 
   const [query, setQuery] = useState('')
   const [открыта, setОткрыта] = useState(false)
@@ -83,7 +85,7 @@ export function KadaiHomePage() {
           onDone={(projectId) => navigate(`/kadai/${projectId}`)}
           providers={providers.data}
           priceHint={<PriceHint kind={KADAI_RUN} usage={usage.data} />}
-          defaultEndpoint={defaultProvider(providers.data)}
+          defaultEndpoint={умолчание}
         />
       )}
 
@@ -140,7 +142,7 @@ export function KadaiHomePage() {
  * Форма заведения работы: имя, условие файлом или текстом, пожелания, пресет.
  *
  * Условие текстом заворачивается в `.txt` и уезжает тем же маршрутом, что
- * файл: у службы один путь приёма (§11, «один путь, через очередь»), и второй
+ * файл: у службы один путь приёма — через очередь, — и второй
  * — «а текст положите значением» — означал бы, что условие бывает двух видов и
  * прочитаны они будут по-разному.
  */
@@ -161,6 +163,7 @@ function NewWork({
   const create = useCreateProject()
   const upload = useUploadMaterial()
   const setCondition = useSetCondition()
+  const saveWishes = useSetKadaiWishes()
 
   const [name, setName] = useState('')
   const [файлом, setФайлом] = useState(true)
@@ -194,12 +197,14 @@ function NewWork({
       } catch {
         /* материал ещё разбирается — назовёт экран работы */
       }
-      // Пожелания в задание кладёт экран работы: между условием и решением
-      // стоит шаг подтверждения, и до него прогон не начинается.
-      sessionStorage.setItem(
-        `kadai.wishes.${проект.id}`,
-        JSON.stringify({ text: wishes, show_task: showTask, show_structure: showStructure }),
-      )
+      // Пожелания ложатся в проект, а не в браузер: прогон начнётся позже —
+      // после того, как человек подтвердит распознанное условие, — и до тех пор
+      // хранить их в `sessionStorage` значило бы терять их вместе с вкладкой.
+      // Читает их потом сам прогон, если в задании пожеланий нет.
+      await saveWishes.mutateAsync({
+        projectId: проект.id,
+        wishes: { text: wishes, show_task: showTask, show_structure: showStructure },
+      })
       if (пресет) sessionStorage.setItem(`kadai.endpoint.${проект.id}`, пресет)
       onDone(проект.id)
     } catch (е) {

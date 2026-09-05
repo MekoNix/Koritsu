@@ -1,9 +1,16 @@
 /**
  * SearchPalette — поиск по Ctrl+K.
  *
- * Решение владельца: «поиск Ctrl+K — по проектам и материалам». Палитра, а не
+ * Правило: поиск Ctrl+K — по проектам и материалам. Палитра, а не
  * страница результатов: ищут, чтобы уйти отсюда куда-то, и лишний экран между
  * вопросом и ответом здесь только мешает.
+ *
+ * Ищет служба (`GET /api/search`), а не браузер: раньше палитра отбирала по
+ * загруженному — проекты всех пространств она дозагружала сама, а материалы
+ * видела только у открытой работы, то есть файл в соседней работе не находился
+ * никогда. Запрос откладывается на 200 мс после последнего нажатия
+ * (`data.ЗАДЕРЖКА_МС`): без этого «сортировки» стоило бы службе десяти обходов
+ * тома ради одного ответа.
  *
  * Вид — из макета `01-shell` (`.palette` в `assets/base.css`): окно шириной
  * 640, прижатое к верху, поле ввода вместо заголовка, список под ним. Окно
@@ -19,15 +26,17 @@
  * не набрано) и «ничего не нашлось» (набрано, но не совпало).
  */
 import * as RadixDialog from '@radix-ui/react-dialog'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { ErrorState, Icon, SkeletonLines } from '@/ui'
 
-import { useSearchIndex } from './data'
-import { currentProjectId, filterHits, type Hit } from './filter'
+import { usePersonalName } from '@/features/workspace/usePersonalName'
+
+import { useSearch } from './data'
+import type { Hit } from './types'
 
 export function SearchPalette({
   open,
@@ -38,14 +47,11 @@ export function SearchPalette({
 }) {
   const t = useT()
   const navigate = useNavigate()
-  const { pathname } = useLocation()
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const списокRef = useRef<HTMLUListElement>(null)
 
-  const projectId = currentProjectId(pathname)
-  const { hits, isLoading, error } = useSearchIndex(open, projectId, t('workspace.personalName'))
-  const found = useMemo(() => filterHits(hits, query), [hits, query])
+  const { hits: found, asked, isLoading, error } = useSearch(open, query, usePersonalName())
 
   // Закрылась — забыть набранное: палитра открывается за ответом на новый
   // вопрос, а не за прошлым.
@@ -127,9 +133,13 @@ export function SearchPalette({
             {!isLoading && !error && !query.trim() && (
               <p className="px-3 py-s4 text-center text-sm text-muted">{t('search.hint')}</p>
             )}
-            {!isLoading && !error && !!query.trim() && found.length === 0 && (
+            {/* «Ничего не нашлось» говорится про ту строку, которую спросили у
+                службы, а не про ту, что набрана прямо сейчас: между ними до
+                200 мс, и написать «по „сорт“ ничего нет», пока едет ответ про
+                «сорти», значило бы соврать дважды. */}
+            {!isLoading && !error && !!query.trim() && !!asked && found.length === 0 && (
               <p className="px-3 py-s4 text-center text-sm text-muted">
-                {t('search.nothing', { query: query.trim() })}
+                {t('search.nothing', { query: asked })}
               </p>
             )}
             <ul id="search-results" role="listbox" ref={списокRef} className="flex flex-col">
@@ -170,7 +180,6 @@ export function SearchPalette({
             <span>{t('search.keys.move')}</span>
             <span>{t('search.keys.open')}</span>
             <span>{t('search.keys.close')}</span>
-            {projectId === null && <span className="ml-auto">{t('search.materialsHint')}</span>}
           </div>
         </RadixDialog.Content>
       </RadixDialog.Portal>

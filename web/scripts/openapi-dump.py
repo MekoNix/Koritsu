@@ -17,7 +17,7 @@ FastAPI (`app.openapi()`) и кладётся рядом — `web/openapi.json`.
 будут, приложение только строит маршруты.
 
 Запуск:  python3 web/scripts/openapi-dump.py  [--out web/openapi.json]
-Питон — общий venv репозитория (3.12), см. памятку прогона.
+Питон — venv репозитория (3.12).
 """
 from __future__ import annotations
 

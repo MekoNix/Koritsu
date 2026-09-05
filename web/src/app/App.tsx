@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, useLocation, useNavigate, useRoutes } from 'react-router-dom'
 
 import { setUnauthorizedHandler } from '@/api'
+import { ROUTER_BASENAME } from '@/lib/basePath'
 import { ThemeProvider } from '@/theme'
 import { ToastProvider } from '@/ui'
 
@@ -55,7 +56,16 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <ToastProvider>
-          <BrowserRouter>
+          {/*
+            `basename` — префикс пути, под которым живёт сайт (адрес без
+            домена — IP плюс случайная строка). Приходит от Vite
+            (`import.meta.env.BASE_URL`), то есть из той же строки `.env`, что
+            и `base` сборки; в `pnpm dev` и в проверках это `/`, и роутер
+            ведёт себя ровно как раньше. С ним все `Link` и `navigate` внутри
+            сайта продолжают писаться от корня (`/projects`), а браузер видит
+            `/k7f3x9/projects`.
+          */}
+          <BrowserRouter basename={ROUTER_BASENAME}>
             <UnauthorizedRedirect />
             <Routed />
           </BrowserRouter>

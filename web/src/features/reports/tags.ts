@@ -75,7 +75,12 @@ export function filterTags(
   })
 }
 
-/** Правится ли значение этого типа как текст. Остальные — ночь 2 (таблицы, картинки). */
+/**
+ * Правится ли значение этого типа как текст.
+ *
+ * Прочие (таблица, картинка, схема, формула, оглавление) правятся JSON'ом в
+ * `JsonEditor` с проверкой формы `values.validateValue`.
+ */
 export function isTextual(type: string | undefined): boolean {
   return ТЕКСТОВЫЕ.has(String(type ?? ''))
 }

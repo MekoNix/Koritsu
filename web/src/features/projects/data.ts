@@ -15,6 +15,7 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 
 import { api, keys, unwrap } from '@/api'
+import { withBase } from '@/lib/basePath'
 
 import type {
   Material,
@@ -33,11 +34,7 @@ export const BUILD = 'build'
 
 // ── пространства ─────────────────────────────────────────────────────────────
 
-/**
- * Личное пространство человека. Ночь 1 работает только с ним: участники и
- * общие пространства — ночь 2 (решение владельца), и заводить переключатель
- * ради одного значения незачем.
- */
+/** Личное пространство человека (`GET /api/workspaces/personal`). */
 export function usePersonalWorkspace(): UseQueryResult<Workspace> {
   return useQuery({
     queryKey: keys.workspaces.personal,
@@ -108,18 +105,28 @@ export function useProject(projectId: string | undefined): UseQueryResult<Projec
 export type CreateProjectInput = {
   workspaceId: string
   name: string
-  /** Шаблон DOCX. Без него служба строит документ с нуля — это законный случай. */
+  /** Шаблон DOCX файлом. Без него служба строит документ с нуля — законный случай. */
   template?: File | null
+  /**
+   * Свой сохранённый шаблон (`/api/templates`) вместо файла. Служба копирует
+   * его байты в работу, поэтому удаление шаблона потом её не ломает.
+   *
+   * Оба сразу служба не принимает (`400 bad_template`): молча выбранный за
+   * человека шаблон — это чужой ГОСТ в готовой работе. Диалог поэтому даёт
+   * выбрать одно из двух, а не оба.
+   */
+  templateId?: string | null
 }
 
 export function useCreateProject() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ workspaceId, name, template }: CreateProjectInput) => {
+    mutationFn: ({ workspaceId, name, template, templateId }: CreateProjectInput) => {
       const form = new FormData()
       form.append('workspace_id', workspaceId)
       form.append('name', name)
       if (template) form.append('template', template, template.name)
+      else if (templateId) form.append('template_id', templateId)
       return unwrap<Project>(
         api.POST('/api/projects', {
           body: { workspace_id: workspaceId, name },
@@ -265,12 +272,29 @@ export function useDeleteMaterial() {
 
 /** Адрес скачивания оригинала. Ссылкой, а не `fetch`: качает браузер. */
 export function materialBlobUrl(projectId: string, materialId: string): string {
-  return `/api/projects/${encodeURIComponent(projectId)}/materials/${encodeURIComponent(materialId)}/blob`
+  return withBase(
+    `/api/projects/${encodeURIComponent(projectId)}/materials/${encodeURIComponent(materialId)}/blob`,
+  )
 }
 
-/** Адрес скачивания артефакта проекта (собранный PDF, DOCX, выгрузка). */
-export function artifactUrl(projectId: string, artifactId: string): string {
-  return `/api/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}`
+/**
+ * Адрес скачивания артефакта проекта (собранный PDF, DOCX, выгрузка).
+ *
+ * `inline` — просьба показать файл, а не скачать: служба меняет
+ * `Content-Disposition` на `inline` (`packages/api/modules/artifacts.py`), и
+ * только с ним браузер соглашается нарисовать PDF в `<embed>`. Показывать она
+ * умеет PDF и растровые картинки; всё остальное с этим параметром скачивается
+ * как обычно, поэтому ставить его на ссылку «скачать» бессмысленно и вредно.
+ */
+export function artifactUrl(
+  projectId: string,
+  artifactId: string,
+  { inline = false }: { inline?: boolean } = {},
+): string {
+  const адрес = withBase(
+    `/api/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}`,
+  )
+  return inline ? `${адрес}?inline=1` : адрес
 }
 
 // ── задания ──────────────────────────────────────────────────────────────────

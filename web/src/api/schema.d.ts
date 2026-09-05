@@ -121,7 +121,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update the signed-in user's profile
+         * @description Updates the profile of the signed-in user. Every field is optional; a missing field is left alone. Returns the whole profile. 401 unauthenticated, 409 nickname_taken, 422 invalid_nickname.
+         */
+        patch: operations["update_profile"];
         trace?: never;
     };
     "/api/auth/password/forgot": {
@@ -265,7 +269,7 @@ export interface paths {
         };
         /**
          * List workspace members
-         * @description Lists the members with their roles and email addresses. Any member may read it. 400 invalid_id, 404 not_found.
+         * @description Lists the members with their roles, nicknames and email addresses. Any member may read it. 400 invalid_id, 404 not_found.
          */
         get: operations["list_workspace_members"];
         put?: never;
@@ -319,7 +323,7 @@ export interface paths {
         put?: never;
         /**
          * Create a project in a workspace
-         * @description Creates a project and its directory on the volume. Multipart: the name and an optional DOCX template; without a template the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.
+         * @description Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.
          */
         post: operations["create_project"];
         delete?: never;
@@ -426,7 +430,7 @@ export interface paths {
         get?: never;
         /**
          * Set one tag value by hand
-         * @description Writes one tag value as a new version marked source=manual; previous versions are kept. The body is the value itself, a JSON object. Editor role. 400 invalid_value, 403 forbidden, 404 not_found, 409 in_trash.
+         * @description Writes one tag value as a new version marked source=manual; previous versions are kept. The body is the value itself, a JSON object shaped by its own type field: text and markdown carry text, a table carries rows, an image or a diagram carries the id of an artifact, a formula carries latex. A value that does not fit its type is refused with invalid_value and where pointing at the field. Editor role. 400 invalid_value, 403 forbidden, 404 not_found, 409 in_trash.
          */
         put: operations["set_project_value"];
         post?: never;
@@ -1009,7 +1013,11 @@ export interface paths {
          */
         get: operations["admin_list_users"];
         put?: never;
-        post?: never;
+        /**
+         * Create a person and issue a password reset link
+         * @description Creates a confirmed account with no password and returns a one-time password reset link (reset_url) next to the usual person card. The service sends no mail: the administrator passes the link on, and the person sets a password through the ordinary reset page. The link is shown once and is not stored in the clear. 409 email_taken, 409 nickname_taken, 400 unknown_plan, 422 validation_failed, 403 forbidden.
+         */
+        post: operations["admin_create_user"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1030,10 +1038,30 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Change plan, limits or administrator access
-         * @description Changes a person's plan, per-user limit overrides and administrator flag. Fields left out are left alone; limits are replaced as a whole. 404 not_found, 403 forbidden.
+         * Change plan, limits, administrator access or blocking
+         * @description Changes a person's plan, per-user limit overrides, administrator flag and blocking. Fields left out are left alone; limits are replaced as a whole. Blocking revokes every session of that person. 404 not_found, 400 unknown_plan, 403 forbidden.
          */
         patch: operations["admin_patch_user"];
+        trace?: never;
+    };
+    "/api/admin/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Plans with their monthly ceiling and storage quota
+         * @description The plans this service knows, in order: name, monthly ceiling in internal units and storage quota in bytes. The only values PATCH /api/admin/users accepts as a plan. 403 forbidden.
+         */
+        get: operations["admin_plans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/admin/queue": {
@@ -1136,6 +1164,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find a project or a material by name
+         * @description Searches the names of every project the caller can reach (both the workspaces they own and the ones they were invited to) and the names of the materials inside those projects. Matching is case-insensitive and by substring, and the trash is not searched. Answers two lists, at most 20 entries each; an empty query answers two empty lists rather than everything. Each project carries the module its work belongs to, so the caller knows which screen to open.
+         */
+        get: operations["search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your report templates
+         * @description Your templates, newest first: name, size, number of tags and the date they were uploaded. 401 unauthenticated.
+         */
+        get: operations["list_templates"];
+        put?: never;
+        /**
+         * Upload a report template
+         * @description Stores a DOCX template of your own (multipart field `file`, optional `name`) and answers with its card: size and how many tags it has. The file is parsed the same way a project template is, so a file rejected here would be rejected there too. 400 bad_template, 400 invalid_name, 400 no_file, 413 file_too_large, 413 quota_exceeded.
+         */
+        post: operations["upload_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a report template
+         * @description Removes one of your templates from the list and from the volume. Projects created from it keep their own copy and are not touched. A template that belongs to someone else and one that never existed answer alike. 400 invalid_id, 404 not_found.
+         */
+        delete: operations["delete_template"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/templates/{template_id}/blob": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a report template
+         * @description The DOCX of one of your templates, byte for byte, as an attachment. 400 invalid_id, 404 not_found.
+         */
+        get: operations["download_template"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules": {
         parameters: {
             query?: never;
@@ -1165,7 +1277,7 @@ export interface paths {
         };
         /**
          * Download a project artifact
-         * @description The bytes of an artifact produced in this project: a drawio XML diagram, a built report, an export. The content type follows the bytes; the answer is always an attachment and is never sniffed by the browser. Viewer role. 400 invalid_id, 404 not_found.
+         * @description The bytes of an artifact produced in this project: a drawio XML diagram, a built report, an export. The content type follows the bytes; the answer is an attachment and is never sniffed by the browser. With inline=1 a PDF or a raster image is served for display in the browser instead, so the page can embed it directly; anything else stays an attachment. Viewer role. 400 invalid_id, 404 not_found.
          */
         get: operations["download_artifact"];
         put?: never;
@@ -1250,6 +1362,50 @@ export interface paths {
          */
         put: operations["kadai_set_condition"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/kadai/wishes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the person asked of this work
+         * @description The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. 400 invalid_id, 404 not_found.
+         */
+        get: operations["kadai_wishes"];
+        /**
+         * Store the wishes for this work
+         * @description Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        put: operations["kadai_set_wishes"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/kadai/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a stage over on a work that has stopped
+         * @description Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed.
+         */
+        post: operations["kadai_restart"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1451,7 +1607,7 @@ export interface paths {
         put?: never;
         /**
          * Create a project in a workspace
-         * @description Creates a project and its directory on the volume. Multipart: the name and an optional DOCX template; without a template the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.
+         * @description Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.
          */
         post: operations["create_project_v1"];
         delete?: never;
@@ -1558,7 +1714,7 @@ export interface paths {
         get?: never;
         /**
          * Set one tag value by hand
-         * @description Writes one tag value as a new version marked source=manual; previous versions are kept. The body is the value itself, a JSON object. Editor role. 400 invalid_value, 403 forbidden, 404 not_found, 409 in_trash.
+         * @description Writes one tag value as a new version marked source=manual; previous versions are kept. The body is the value itself, a JSON object shaped by its own type field: text and markdown carry text, a table carries rows, an image or a diagram carries the id of an artifact, a formula carries latex. A value that does not fit its type is refused with invalid_value and where pointing at the field. Editor role. 400 invalid_value, 403 forbidden, 404 not_found, 409 in_trash.
          */
         put: operations["set_project_value_v1"];
         post?: never;
@@ -1849,7 +2005,7 @@ export interface paths {
         };
         /**
          * Download a project artifact
-         * @description The bytes of an artifact produced in this project: a drawio XML diagram, a built report, an export. The content type follows the bytes; the answer is always an attachment and is never sniffed by the browser. Viewer role. 400 invalid_id, 404 not_found.
+         * @description The bytes of an artifact produced in this project: a drawio XML diagram, a built report, an export. The content type follows the bytes; the answer is an attachment and is never sniffed by the browser. With inline=1 a PDF or a raster image is served for display in the browser instead, so the page can embed it directly; anything else stays an attachment. Viewer role. 400 invalid_id, 404 not_found.
          */
         get: operations["download_artifact_v1"];
         put?: never;
@@ -1934,6 +2090,50 @@ export interface paths {
          */
         put: operations["kadai_set_condition_v1"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/kadai/wishes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the person asked of this work
+         * @description The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. 400 invalid_id, 404 not_found.
+         */
+        get: operations["kadai_wishes_v1"];
+        /**
+         * Store the wishes for this work
+         * @description Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        put: operations["kadai_set_wishes_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/kadai/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a stage over on a work that has stopped
+         * @description Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed.
+         */
+        post: operations["kadai_restart_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2238,6 +2438,8 @@ export interface components {
             name: string;
             /** Template */
             template?: string | null;
+            /** Template Id */
+            template_id?: string | null;
         };
         /** Body_create_project_v1 */
         Body_create_project_v1: {
@@ -2250,6 +2452,8 @@ export interface components {
             name: string;
             /** Template */
             template?: string | null;
+            /** Template Id */
+            template_id?: string | null;
         };
         /**
          * ConditionIn
@@ -2382,7 +2586,7 @@ export interface components {
          * @description Тело постановки задания.
          *
          *     Имя по-английски, как у соседей (`ProjectNameIn`, `ModelKeyIn`): оно уезжает
-         *     в OpenAPI и становится именем типа в клиенте сайта (§5).
+         *     в OpenAPI и становится именем типа в клиенте сайта.
          */
         JobIn: {
             /**
@@ -2454,9 +2658,37 @@ export interface components {
             key: string;
         };
         /**
+         * ProfileIn
+         * @description Правка своего профиля: `PATCH /auth/me`.
+         *
+         *     **Все поля необязательные, и это договор, а не удобство.** Тело правки
+         *     описывает изменение, а не человека целиком: пропущенное поле означает «не
+         *     трогать», а не «стереть». Поэтому же тут `None` — «поле не пришло», и ни
+         *     одно поле не имеет `None` осмысленным значением.
+         *
+         *     Форма нарочно расширяемая: сюда же дописываются настройки агента и модели
+         *     по умолчанию (`default_endpoint`, `agent_overwrite`). Новое поле добавляется
+         *     строкой здесь и строкой в `правка_профиля` — второго маршрута «поменять ещё
+         *     одну мелочь профиля» заводить не надо.
+         */
+        ProfileIn: {
+            /** Nickname */
+            nickname?: string | null;
+            /**
+             * Default Endpoint
+             * @description Model preset to preselect; empty string clears it
+             */
+            default_endpoint?: string | null;
+            /**
+             * Agent Overwrite
+             * @description Whether the agent may overwrite values edited by hand
+             */
+            agent_overwrite?: boolean | null;
+        };
+        /**
          * ProjectNameIn
          * @description Тело переименования. Имя по-английски, как у соседей: оно уезжает в
-         *     OpenAPI и становится именем типа в клиенте сайта (§5).
+         *     OpenAPI и становится именем типа в клиенте сайта.
          */
         ProjectNameIn: {
             /** Name */
@@ -2466,12 +2698,21 @@ export interface components {
          * RegisterIn
          * @description Регистрация. Длина пароля проверяется формой, а не обработчиком: беда
          *     формы уезжает клиенту с адресом поля (`where: body.password`).
+         *
+         *     Ник — обязательное поле: именно он показывается
+         *     вместо почты, и завести человека без него значит завести его безымянным.
+         *     Границы и знаки ника формой НЕ проверяются намеренно: `422
+         *     validation_failed` не отличить от беды в почте, а сайту нужен отдельный код
+         *     `invalid_nickname`, чтобы показать подсказку под нужным полем. Форма здесь
+         *     сторожит только длину строки — от тела запроса в мегабайт.
          */
         RegisterIn: {
             /** Email */
             email: string;
             /** Password */
             password: string;
+            /** Nickname */
+            nickname: string;
         };
         /** ResetIn */
         ResetIn: {
@@ -2479,6 +2720,18 @@ export interface components {
             token: string;
             /** Password */
             password: string;
+        };
+        /**
+         * RestartIn
+         * @description С какой стадии начинать заново. Пусто — с той, на которой встали.
+         */
+        RestartIn: {
+            /**
+             * Stage
+             * @description Stage to restart from; empty means the one that stumbled
+             * @default
+             */
+            stage: string;
         };
         /**
          * RollbackIn
@@ -2494,6 +2747,42 @@ export interface components {
              * @description Version number to bring back
              */
             n: number;
+        };
+        /**
+         * TemplateOut
+         * @description Карточка шаблона. Пути на томе в ней нет и быть не может.
+         */
+        TemplateOut: {
+            /**
+             * Id
+             * @description Template id, used when creating a project
+             */
+            id: string;
+            /**
+             * Name
+             * @description Human-readable name
+             */
+            name: string;
+            /**
+             * Bytes
+             * @description Size of the DOCX on the volume
+             */
+            bytes: number;
+            /**
+             * Tags
+             * @description How many tags the template has
+             */
+            tags: number;
+            /**
+             * Sha256
+             * @description First characters of the content hash
+             */
+            sha256: string;
+            /**
+             * Created At
+             * @description When it was uploaded
+             */
+            created_at?: string | null;
         };
         /**
          * UmlIn
@@ -2562,6 +2851,31 @@ export interface components {
             source: string;
         };
         /**
+         * UserCreateIn
+         * @description Тело `POST /api/admin/users`: кого заводит владелец.
+         *
+         *     Пароля здесь нет и быть не может: владелец не придумывает человеку пароль
+         *     и не пересылает его — он передаёт ссылку сброса, а пароль человек ставит
+         *     сам. Ник необязателен: не названный берётся из почты (`ник_из_почты`).
+         */
+        UserCreateIn: {
+            /**
+             * Email
+             * @description Email of the person to create
+             */
+            email: string;
+            /**
+             * Plan
+             * @description Plan from GET /api/admin/plans
+             */
+            plan?: string | null;
+            /**
+             * Nickname
+             * @description Nickname; derived from the email when left out
+             */
+            nickname?: string | null;
+        };
+        /**
          * UserPatchIn
          * @description Тело `PATCH /api/admin/users/{id}`: только то, что владелец и правит.
          *
@@ -2586,6 +2900,35 @@ export interface components {
             limits?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Blocked
+             * @description Block or unblock the account. Blocking revokes every session; the person is refused with account_blocked at sign-in, on the site and with an API token alike.
+             */
+            blocked?: boolean | null;
+        };
+        /**
+         * WishesIn
+         * @description Пожелания человека к работе — те же три поля, что у `kadai.plan.Wishes`.
+         */
+        WishesIn: {
+            /**
+             * Text
+             * @description What the person wants from the work, in prose
+             * @default
+             */
+            text: string;
+            /**
+             * Show Task
+             * @description Stop and show how the assignment was understood
+             * @default false
+             */
+            show_task: boolean;
+            /**
+             * Show Structure
+             * @description Stop and show the structure before writing
+             * @default false
+             */
+            show_structure: boolean;
         };
         /**
          * WorkspaceNameIn
@@ -2779,6 +3122,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    update_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -4672,6 +5050,41 @@ export interface operations {
             };
         };
     };
+    admin_create_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     admin_patch_user: {
         parameters: {
             query?: never;
@@ -4686,6 +5099,37 @@ export interface operations {
                 "application/json": components["schemas"]["UserPatchIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    admin_plans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -4871,6 +5315,166 @@ export interface operations {
             };
         };
     };
+    search: {
+        parameters: {
+            query?: {
+                /** @description What to look for, a substring of a name */
+                q?: string;
+                /** @description Max entries in each list */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_templates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    upload_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    name?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    delete_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    download_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     list_modules: {
         parameters: {
             query?: never;
@@ -4904,7 +5508,9 @@ export interface operations {
     };
     download_artifact: {
         parameters: {
-            query?: never;
+            query?: {
+                inline?: boolean;
+            };
             header?: never;
             path: {
                 artifact_id: string;
@@ -5042,6 +5648,113 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ConditionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_wishes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_set_wishes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WishesIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_restart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestartIn"];
             };
         };
         responses: {
@@ -6237,7 +6950,9 @@ export interface operations {
     };
     download_artifact_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                inline?: boolean;
+            };
             header?: never;
             path: {
                 artifact_id: string;
@@ -6375,6 +7090,113 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ConditionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_wishes_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_set_wishes_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WishesIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_restart_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestartIn"];
             };
         };
         responses: {

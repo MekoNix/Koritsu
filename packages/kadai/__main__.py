@@ -108,7 +108,7 @@ def _parser(prog: str = "python -m kadai") -> argparse.ArgumentParser:
     прогон.add_argument("--max-steps", type=int, default=None,
                         help="потолок ходов петли (он же знаменатель полоски)")
 
-    снимок = sub.add_parser("status", help="снимок работы в JSON (записка Е.4)")
+    снимок = sub.add_parser("status", help="снимок работы в JSON")
     снимок.add_argument("каталог")
     снимок.add_argument("--endpoint", default="")
     снимок.add_argument("--since", type=int, default=0,
@@ -157,7 +157,7 @@ def _run(args, factory) -> int:
 
 
 def _status(args, factory) -> int:
-    """Снимок в JSON — ключ в ключ по записке Е.4. Печатается как есть.
+    """Снимок в JSON — ключ в ключ по форме API. Печатается как есть.
 
     Как есть, а не «покрасивее»: этот же снимок будет отдавать API, и вторая
     форма для CLI означала бы две формы, которые расходятся молча.

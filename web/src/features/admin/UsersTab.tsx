@@ -16,12 +16,17 @@
  *
  * Строка кликабельна целиком и является кнопкой: карточка открывается и с
  * клавиатуры, а не только мышью.
+ *
+ * Ник — отдельным столбцом рядом с почтой, а не вместо неё: администратор
+ * знает людей по нику, но пишет им и заводит их по почте, и в админке нужны
+ * оба.
  */
 import { useMemo, useState } from 'react'
 
 import { useT } from '@/i18n'
 import {
   Avatar,
+  Button,
   Chip,
   EmptyState,
   ErrorState,
@@ -34,50 +39,72 @@ import {
 import { formatBytes, formatDate, formatUnits } from '@/features/settings/format'
 
 import { useAdminUsers } from './api'
+import { CreateUserDialog } from './CreateUserDialog'
 import { countAdmins, filterUsers, pageCount, pageOf } from './filter'
 import { CsvButton, SortHeader } from './parts'
-import { filterByPlan, nextSort, planCounts, sortRows, type SortState } from './table'
+import {
+  filterByPlan,
+  filterByStatus,
+  nextSort,
+  planCounts,
+  sortRows,
+  statusWeight,
+  userStatus,
+  type SortState,
+} from './table'
 import { UserDialog } from './UserDialog'
 import type { AdminUser } from './types'
 
 const TD = 'border-b border-line px-3 py-2 align-middle'
 
 /** Столбцы, по которым сортируют. Ключ = имя ключа перевода. */
-type Col = 'user' | 'plan' | 'spent' | 'storage' | 'status' | 'created'
+type Col = 'user' | 'nick' | 'plan' | 'spent' | 'storage' | 'status' | 'created'
 
 /** Чем меряется столбец при сортировке. Одно место, чтобы шапка и порядок
  *  строк не разошлись. */
 const ПО: Record<Col, (user: AdminUser) => string | number> = {
   user: (u) => u.email,
+  // Ник сортируется без учёта регистра: `Ivan` между `ivan` и `иван` — это
+  // алфавит таблицы ASCII, а не алфавит человека.
+  nick: (u) => (u.nickname ?? '').toLocaleLowerCase('ru'),
   plan: (u) => u.plan,
   spent: (u) => u.spent_units,
   storage: (u) => u.bytes_used,
   // Состояние — не строка, а очерёдность беды: удалённые, потом
-  // неподтверждённые, потом обычные. Сортировка по слову дала бы алфавит.
-  status: (u) => (u.deleted_at ? 0 : u.email_confirmed ? 2 : 1),
+  // заблокированные, потом неподтверждённые. Сортировка по слову дала бы
+  // алфавит, в котором «активен» стоит первым.
+  status: statusWeight,
   created: (u) => u.created_at ?? '',
 }
 
-function statusOf(user: AdminUser) {
-  if (user.deleted_at) return { tone: 'err', key: 'deleted' } as const
-  if (!user.email_confirmed) return { tone: 'warn', key: 'unconfirmed' } as const
-  return { tone: 'ok', key: 'active' } as const
-}
+/** Цвет метки состояния. Само состояние считает `table.userStatus` — там же,
+ *  где отбор по нему, чтобы столбец и фильтр не разошлись. */
+const ТОН = {
+  deleted: 'err',
+  blocked: 'err',
+  unconfirmed: 'warn',
+  active: 'ok',
+} as const
+
+/** Что предлагается в отборе по состоянию. Пустое значение — «все». */
+const СОСТОЯНИЯ = ['active', 'blocked', 'unconfirmed', 'deleted'] as const
 
 export function UsersTab() {
   const t = useT()
   const users = useAdminUsers()
   const [query, setQuery] = useState('')
   const [plan, setPlan] = useState('')
+  const [status, setStatus] = useState('')
   const [sort, setSort] = useState<SortState<Col>>(null)
   const [page, setPage] = useState(1)
   const [opened, setOpened] = useState<AdminUser | null>(null)
+  const [creating, setCreating] = useState(false)
 
   const all = useMemo(() => users.data ?? [], [users.data])
   const планы = useMemo(() => planCounts(all), [all])
   const found = useMemo(
-    () => sortOf(filterByPlan(filterUsers(all, query), plan), sort),
-    [all, query, plan, sort],
+    () => sortOf(filterByStatus(filterByPlan(filterUsers(all, query), plan), status), sort),
+    [all, query, plan, status, sort],
   )
   const pages = pageCount(found.length)
   const current = Math.min(page, pages)
@@ -121,16 +148,37 @@ export function UsersTab() {
             </option>
           ))}
         </Select>
+        <Select
+          aria-label={t('admin.users.statusFilter')}
+          value={status}
+          onChange={(e) => {
+            setStatus(e.target.value)
+            setPage(1)
+          }}
+          className="w-[200px]"
+        >
+          <option value="">{t('admin.users.statusAll')}</option>
+          {СОСТОЯНИЯ.map((имя) => (
+            <option key={имя} value={имя}>
+              {t(`admin.users.status.${имя}`)}
+            </option>
+          ))}
+        </Select>
         <span className="text-xs text-muted">
-          {query || plan
+          {query || plan || status
             ? t('admin.users.found', { found: found.length, total: all.length })
             : t('admin.users.total', { total: all.length, admins: countAdmins(all) })}
         </span>
         <span className="grow" />
+        <Button variant="secondary" size="sm" onClick={() => setCreating(true)}>
+          <Icon name="plus" size={16} />
+          {t('admin.users.create')}
+        </Button>
         <CsvButton
           name="koritsu-users.csv"
           disabled={found.length === 0}
           headers={[
+            t('admin.users.col.nick'),
             t('admin.users.col.user'),
             'id',
             t('admin.users.col.plan'),
@@ -145,13 +193,14 @@ export function UsersTab() {
           // строк из него.
           rows={() =>
             found.map((user) => [
+              user.nickname,
               user.email,
               user.id,
               user.plan,
               user.is_admin ? 1 : 0,
               user.spent_units,
               user.bytes_used,
-              t(`admin.users.status.${statusOf(user).key}`),
+              t(`admin.users.status.${userStatus(user)}`),
               user.created_at ?? '',
             ])
           }
@@ -167,6 +216,9 @@ export function UsersTab() {
               <tr>
                 <SortHeader col="user" state={sort} onSort={сортировать}>
                   {t('admin.users.col.user')}
+                </SortHeader>
+                <SortHeader col="nick" state={sort} onSort={сортировать}>
+                  {t('admin.users.col.nick')}
                 </SortHeader>
                 <SortHeader col="plan" state={sort} onSort={сортировать}>
                   {t('admin.users.col.plan')}
@@ -187,7 +239,7 @@ export function UsersTab() {
             </thead>
             <tbody>
               {rows.map((user) => {
-                const status = statusOf(user)
+                const состояние = userStatus(user)
                 const share = user.quota_bytes > 0 ? user.bytes_used / user.quota_bytes : 0
                 return (
                   <tr
@@ -216,6 +268,7 @@ export function UsersTab() {
                         </span>
                       </span>
                     </td>
+                    <td className={`${TD} font-medium text-ink-strong`}>{user.nickname}</td>
                     <td className={TD}>
                       <span className="flex flex-wrap items-center gap-1.5">
                         <span className="text-ink">{user.plan}</span>
@@ -239,7 +292,7 @@ export function UsersTab() {
                       </span>
                     </td>
                     <td className={TD}>
-                      <Chip tone={status.tone}>{t(`admin.users.status.${status.key}`)}</Chip>
+                      <Chip tone={ТОН[состояние]}>{t(`admin.users.status.${состояние}`)}</Chip>
                     </td>
                     <td className={`${TD} whitespace-nowrap text-muted`}>
                       {formatDate(user.created_at)}
@@ -285,6 +338,14 @@ export function UsersTab() {
         user={opened}
         onClose={() => {
           setOpened(null)
+          void users.refetch()
+        }}
+      />
+
+      <CreateUserDialog
+        open={creating}
+        onClose={() => {
+          setCreating(false)
           void users.refetch()
         }}
       />

@@ -46,7 +46,7 @@ export type FillState = {
   running: boolean
   /** Вид идущего задания или `null`. */
   kind: string | null
-  /** Ключи, поле которых на время прогона заблокировано (решение владельца). */
+  /** Ключи, поле которых на время прогона заблокировано. */
   busy: Set<string>
   /** Тег, который печатается прямо сейчас. */
   current: string | null
@@ -108,8 +108,7 @@ export function useFill(projectId: string, endpoint: string | null): FillState {
       void qc.invalidateQueries({ queryKey: keys.reports.versions(projectId, ключ) })
     }
     // Тоста на упавшее задание здесь нет: его показывает оболочка
-    // (`useUserEvents`) по коду из уведомления, и второй был бы дублем —
-    // решение сведения ночи 1.
+    // (`useUserEvents`) по коду из уведомления, и второй был бы дублем.
     setRunning(null)
   }, [running, stream.done, stream.job, projectId, qc])
 

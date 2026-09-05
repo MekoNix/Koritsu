@@ -17,12 +17,16 @@ import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tan
 import { api, keys as cacheKeys, unwrap } from '@/api'
 
 import type {
+  AdminPlan,
+  AdminPlansPage,
   AdminQueue,
   AdminStats,
   AdminUser,
   AdminUsersPage,
+  CreatedUser,
   SecurityEvent,
   SecurityEventsPage,
+  UserCreate,
   UserPatch,
 } from './types'
 
@@ -63,6 +67,43 @@ export function usePatchAdminUser() {
       // Себе же можно снять право админа — тогда `/admin` обязан закрыться
       // сразу, а не после перезагрузки страницы.
       void qc.invalidateQueries({ queryKey: cacheKeys.me })
+    },
+  })
+}
+
+/**
+ * Справочник планов — то, из чего выбирается план в карточке человека и из
+ * чего построена вкладка «Планы».
+ *
+ * Он и правда справочник: `PATCH /api/admin/users` принимает **только** эти
+ * имена и на любое другое отвечает `unknown_plan`. Поэтому план на сайте —
+ * выпадающий список, а не поле ввода: поле ввода предлагало бы человеку
+ * набрать то, за что служба откажет.
+ *
+ * `staleTime` большой намеренно: список планов меняется вместе с кодом службы,
+ * а не по ходу работы, и перезапрашивать его на каждое открытие карточки
+ * незачем.
+ */
+export function useAdminPlans(): UseQueryResult<AdminPlan[]> {
+  return useQuery({
+    queryKey: cacheKeys.admin.plans,
+    queryFn: async () => (await unwrap<AdminPlansPage>(api.GET('/api/admin/plans'))).plans,
+    staleTime: 10 * 60 * 1000,
+  })
+}
+
+/**
+ * Завести человека. В ответе — карточка и ссылка сброса пароля.
+ *
+ * Ссылку показывает вызывающий и один раз: открытой её служба не хранит
+ * (в базе sha256), второго способа увидеть её нет.
+ */
+export function useCreateAdminUser() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: UserCreate) => unwrap<CreatedUser>(api.POST('/api/admin/users', { body })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: cacheKeys.admin.all })
     },
   })
 }

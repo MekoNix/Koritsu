@@ -16,7 +16,7 @@
 # выкате, иначе служба и воркер мигрировали бы одну SQLite вдвоём.
 #
 # Каталог тома — временный и НЕ `/data`: стенд поднимается и сносится по многу
-# раз за ночь, и делать это на боевом томе нельзя. Не назвали каталог — берётся
+# раз подряд, и делать это на боевом томе нельзя. Не назвали каталог — берётся
 # `mktemp -d`, и путь запоминается в `/tmp/koritsu-e2e-last`, чтобы `stop` и
 # `wait` не требовали его повторять.
 #
@@ -36,7 +36,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 marker="/tmp/koritsu-e2e-last"
 
-PYTHON="${PYTHON:-/home/kurisu/koritsu2/.venv/bin/python}"
+PYTHON="${PYTHON:-$root/.venv/bin/python}"
 API_PORT="${API_PORT:-8006}"
 FAKE_PORT="${FAKE_PORT:-8016}"
 host="127.0.0.1"
@@ -80,8 +80,8 @@ export KORITSU_LLM_BASE_URL_DEEPSEEK="http://$host:$FAKE_PORT"
 # Очередь опрашивается чаще боевого: на стенде важна не экономия запросов к
 # базе, а то, что задание начинается сразу и проверка не ждёт секунду впустую.
 export KORITSU_WORKER_POLL_S="${KORITSU_WORKER_POLL_S:-0.2}"
-# Регистраций с одного адреса. Боевые пять в сутки (§7) кончаются на шестом
-# прогоне проверки — а за ночь их десятки, и все с петли. Поднято на стенде и
+# Регистраций с одного адреса. Боевые пять в сутки кончаются на шестом прогоне
+# проверки — а их бывают десятки подряд, и все с петли. Поднято на стенде и
 # только на стенде; вернуть боевое число — строкой в окружении:
 #   KORITSU_REGISTRATIONS_PER_IP_PER_DAY=5 web/e2e/stack.sh start
 export KORITSU_REGISTRATIONS_PER_IP_PER_DAY="${KORITSU_REGISTRATIONS_PER_IP_PER_DAY:-1000}"

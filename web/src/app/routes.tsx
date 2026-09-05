@@ -2,33 +2,29 @@
  * routes — всё дерево маршрутов сайта.
  *
  * **Как оно собрано и почему так.** Каждая область объявляет свои маршруты у
- * себя (`features/<область>/routes.tsx`), а здесь они перечислены по одной
- * строке на область. Причина простая: над сайтом работают пятеро сразу, и файл
- * с полусотней `<Route>` означал бы пять правок в одно место каждую ночь.
- * Добавить область — импорт и строка в `...spread`; больше здесь ничего не
- * трогается.
+ * себя (`features/<область>/routes.tsx`), а сюда они больше не импортируются
+ * напрямую: их подхватывает `areas.tsx` ленивой загрузкой, по одному куску
+ * сборки на область: резать сборку на части нужно максимально.
+ * Причина та же, по какой список областей когда-то и вынесли отсюда: файл с
+ * полусотней `<Route>` означал бы правку в одно место на каждое изменение
+ * любой области. Добавить область — строка в `ЗАГРУЗЧИКИ` (`areas.tsx`);
+ * здесь не трогается ничего.
  *
  * Два уровня:
  *
- * * `/auth/*` — без оболочки: до входа нечего показывать в сайдбаре;
- * * всё остальное — внутри `RequireAuth` и `AppShell`.
+ * * `/auth/*` — без оболочки и **без ленивой загрузки**: до входа показывать
+ *   нечего, а форма входа — первое, что человек видит, и ждать ради неё
+ *   второго запроса за куском JS незачем;
+ * * всё остальное — внутри `RequireAuth` и `AppShell`, и уже лениво.
  *
  * `/admin` живёт среди обычных маршрутов, но закрыт `RequireAdmin` (это делает
  * `features/admin/routes.tsx`) и в сайдбар не выводится никому.
  */
 import type { RouteObject } from 'react-router-dom'
 
-import { adminRoutes } from '@/features/admin/routes'
 import { authRoutes } from '@/features/auth/routes'
-import { dashboardRoutes } from '@/features/dashboard/routes'
-import { diagramsRoutes } from '@/features/diagrams/routes'
-import { kadaiRoutes } from '@/features/kadai/routes'
-import { projectsRoutes } from '@/features/projects/routes'
-import { reportsRoutes } from '@/features/reports/routes'
-import { settingsRoutes } from '@/features/settings/routes'
-import { workspaceRoutes } from '@/features/workspace/routes'
 
-import { NotFoundPage } from './NotFoundPage'
+import { AreaOutlet } from './areas'
 import { RequireAuth } from './guards'
 import { AppShell } from './shell/AppShell'
 
@@ -41,16 +37,24 @@ export const routes: RouteObject[] = [
         <AppShell />
       </RequireAuth>
     ),
+    // Один ребёнок на всё: `AreaOutlet` смотрит на первый отрезок адреса,
+    // подгружает кусок нужной области и отдаёт разбор её собственным
+    // маршрутам. Отдельная запись `index` — для самого корня, и она
+    // обязательна: `*` пустого остатка пути НЕ ловит (проверено — с одним `*`
+    // корень отдаёт оболочку без содержимого).
+    //
+    // Цена этой пары — предупреждение React Router на каждой загрузке
+    // страницы: «You rendered descendant <Routes> … under <Route path="">».
+    // Внутри `AreaOutlet` зовётся `useRoutes`, то есть маршруты разбираются
+    // второй раз, а у `index`-маршрута хвостового `*` нет по построению.
+    // Предупреждение ложное — глубже корня ходят через `*` ниже, и это
+    // проверено сквозными проверками, — но печатается и в боевой сборке
+    // (видно на собранной статике). Пробовали два способа убрать: один `*`
+    // без `index` ломает корень, `path: '/*'` у родителя — все вложенные
+    // адреса. Оставлено как есть.
     children: [
-      ...dashboardRoutes,
-      ...projectsRoutes,
-      ...reportsRoutes,
-      ...kadaiRoutes,
-      ...diagramsRoutes,
-      ...settingsRoutes,
-      ...workspaceRoutes,
-      ...adminRoutes,
-      { path: '*', element: <NotFoundPage /> },
+      { index: true, element: <AreaOutlet /> },
+      { path: '*', element: <AreaOutlet /> },
     ],
   },
 ]

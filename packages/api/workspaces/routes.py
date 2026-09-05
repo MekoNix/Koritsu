@@ -18,7 +18,7 @@ routes — `/api/workspaces`: список, создание, переимено
 Имена форм запроса (`WorkspaceNameIn`, `MemberIn`, `MemberRoleIn`) и имена
 операций (`operation_id`) — по-английски, как у аккаунтов и по той же причине:
 и те, и другие уезжают в OpenAPI и становятся именами типов и методов в клиенте
-сайта (§5). До сведения они были русскими, и генератор выписывал из них `____` —
+сайта. Когда они были русскими, генератор выписывал из них `____` —
 имя, которое ни набрать, ни отличить от соседнего. Имена самих обработчиков
 остались русскими: их наружу не видно, а читают их здесь.
 
@@ -37,7 +37,8 @@ from ..db import SessionDep
 from ..errors import ApiError
 from ..ids import check_id
 from ..settings import Settings
-from .deps import CurrentUser, emails_by_ids, user_id_by_email
+from .deps import (CurrentUser, emails_by_ids, nicknames_by_ids,
+                   user_id_by_email)
 from .models import NAME_MAX, Workspace, WorkspaceMember
 from .service import (ALREADY_MEMBER, EDITOR, LAST_OWNER, NO_SUCH_USER, OWNER,
                       check_role, create_personal, iso, personal_workspace,
@@ -188,15 +189,17 @@ def восстановить(workspace_id: str, s: SessionDep, user: CurrentUser
 @router.get("/{workspace_id}/members", summary="List workspace members",
             operation_id="list_workspace_members",
             description=(
-                "Lists the members with their roles and email addresses. Any "
-                "member may read it. 400 invalid_id, 404 not_found."))
+                "Lists the members with their roles, nicknames and email "
+                "addresses. Any member may read it. 400 invalid_id, "
+                "404 not_found."))
 def участники(workspace_id: str, s: SessionDep, user: CurrentUser) -> dict:
     """Видят все участники: список коллег — это чтение, и `viewer` его получает.
 
-    Почта в ответе, а не один идентификатор: показывать человеку строку из
-    двух десятков шестнадцатеричных знаков и спрашивать, кого из них убрать, —
-    это не список людей. Своего имени у аккаунта служба не хранит (§7), так что
-    почта и есть имя; берётся она одним запросом (`emails_by_ids`).
+    Ник и почта в ответе, а не один идентификатор: показывать человеку строку
+    из двух десятков шестнадцатеричных знаков и спрашивать, кого из них убрать,
+    — это не список людей. Имя на экране — ник, почта
+    осталась рядом: приглашают по ней, и без неё двух тёзок не различить.
+    Берутся оба одним запросом каждый (`nicknames_by_ids`, `emails_by_ids`).
 
     Чужих почт этим не выдаётся: список видят только участники того же
     пространства, а приглашали их по этой же почте.
@@ -204,8 +207,11 @@ def участники(workspace_id: str, s: SessionDep, user: CurrentUser) -> d
     ws = require_role(s, user.id, check_id(workspace_id, where="path.workspace_id"))
     строки = s.scalars(select(WorkspaceMember)
                        .where(WorkspaceMember.workspace_id == ws.id)).all()
-    почты = emails_by_ids(s, [m.user_id for m in строки])
-    return {"members": [{"user_id": m.user_id, "email": почты.get(m.user_id),
+    кто = [m.user_id for m in строки]
+    почты = emails_by_ids(s, кто)
+    ники = nicknames_by_ids(s, кто)
+    return {"members": [{"user_id": m.user_id, "nickname": ники.get(m.user_id),
+                         "email": почты.get(m.user_id),
                          "role": m.role, "created_at": iso(m.created_at)}
                         for m in строки]}
 
@@ -219,7 +225,7 @@ def участники(workspace_id: str, s: SessionDep, user: CurrentUser) -> d
                  "409 already_member."))
 def добавить(workspace_id: str, тело: MemberIn, s: SessionDep,
              user: CurrentUser) -> dict:
-    """Позвать человека по почте. Только владелец (§7)."""
+    """Позвать человека по почте. Только владелец."""
     ws = require_role(s, user.id, check_id(workspace_id, where="path.workspace_id"),
                       OWNER)
     роль = check_role(тело.role)

@@ -11,7 +11,7 @@
  *
  * **Между условием и решением стоит шаг.** «Всё верно» — это не кнопка
  * вежливости: ошибка распознавания в одной формуле даёт безупречно решённую
- * чужую задачу (решение владельца 2026-08-31). Пока условие не подтверждено,
+ * чужую задачу. Пока условие не подтверждено,
  * прогон не запускается вовсе.
  *
  * **Ход стадий склеивается из снимка и потока.** Снимок (`GET …/kadai`) знает
@@ -25,20 +25,20 @@
  * `сборка` кладёт DOCX и PDF артефактами; идентификаторы их приезжают в снимке
  * полем `made`.
  *
- * Тостов здесь нет: провал задания тостит оболочка по коду из уведомления
- * (решение сведения ночи 1), а беда остаётся на экране строкой.
+ * Тостов здесь нет: провал задания тостит оболочка по коду из уведомления, а
+ * беда остаётся на экране строкой.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 
-import { keys } from '@/api'
+import { errorText, keys } from '@/api'
 import { useUsage } from '@/api/hooks'
 import { useDocumentCrumb } from '@/app/shell/breadcrumbs'
 import { useT } from '@/i18n'
-import { Button, ErrorState, Icon, Input, Segmented, SkeletonLines } from '@/ui'
+import { Button, ErrorState, Icon, Segmented, SkeletonLines } from '@/ui'
 import { artifactUrl, useMaterials, useProject } from '@/features/projects/data'
-import { defaultProvider, useProviders } from '@/features/reports/data'
+import { useDefaultEndpoint, useProviders } from '@/features/reports/data'
 import { PdfPreview } from '@/features/reports/PdfPreview'
 import type { BuildState } from '@/features/reports/useBuild'
 import { ModelPicker, PriceHint } from '@/features/reports/runControls'
@@ -47,8 +47,17 @@ import { BlockList, type ReworkRequest } from './BlockList'
 import { BlockVersions } from './BlockVersions'
 import { ConditionStep } from './ConditionStep'
 import { StageStrip } from './StageStrip'
-import { useBlocks, useKadaiStatus, useSetCondition, useStageNames } from './data'
-import { STUMBLED, currentStage, mergeStages, reached, type Wishes } from './stages'
+import { WishesBox } from './WishesBox'
+import {
+  useBlocks,
+  useKadaiStatus,
+  useKadaiWishes,
+  useRestartKadai,
+  useSetCondition,
+  useSetKadaiWishes,
+  useStageNames,
+} from './data'
+import { STUMBLED, currentStage, mergeStages, reached, ПУСТЫЕ_ПОЖЕЛАНИЯ } from './stages'
 import { KADAI_REWORK, KADAI_RUN } from './types'
 import { useKadaiRun } from './useKadaiRun'
 
@@ -69,14 +78,18 @@ export function KadaiWorkPage() {
   const providers = useProviders()
   const usage = useUsage()
   const setCondition = useSetCondition()
+  const wishes = useKadaiWishes(projectId)
+  const saveWishes = useSetKadaiWishes()
+  const restart = useRestartKadai(projectId)
 
   useDocumentCrumb(project.data?.name)
 
   const [endpoint, setEndpoint] = useState<string | null>(null)
+  // Умолчание пресета: выбор человека из профиля, иначе правило сайта.
+  const умолчание = useDefaultEndpoint()
   const [confirmed, setConfirmed] = useState(false)
   const [вкладка, setВкладка] = useState<'preview' | 'versions'>('preview')
-  const [заново, setЗаново] = useState('')
-  const пресет = endpoint ?? запомненный(projectId) ?? defaultProvider(providers.data)
+  const пресет = endpoint ?? запомненный(projectId) ?? умолчание
 
   const run = useKadaiRun(projectId, пресет)
   const стадии = useMemo(
@@ -122,18 +135,17 @@ export function KadaiWorkPage() {
   // Работа, которая уже споткнулась, повторным прогоном не чинится: сценарий
   // проходит стадии, только пока работа `running` (`kadai.run.run`), а
   // споткнувшаяся — `failed`. Второе нажатие «продолжить» стоило бы цены
-  // задания и не сделало бы ничего. В работу её возвращает только замечание
-  // (`kadai.rework.apply` зовёт `reopen`), и оно же дешевле.
+  // задания и не сделало бы ничего. Возвращает её в ход «начать заново»
+  // (`POST …/kadai/restart`) — бесплатно и без модели.
   const встала = споткнулась || status.data?.state === 'failed'
 
   function запустить(until: string | null) {
     if (!условие) return
-    const пожелания = сохранённые_пожелания(projectId)
     const пуск = () =>
       run.start({
         until,
         stages: stageNames.data ?? [],
-        wishes: пожелания,
+        wishes: wishes.data ?? ПУСТЫЕ_ПОЖЕЛАНИЯ,
         first: !работа_заведена,
       })
     // Условие называется прямо перед прогоном, если проект ещё не знает своего:
@@ -149,6 +161,15 @@ export function KadaiWorkPage() {
     run.rework({ block, kind, note })
   }
 
+  // «Начать заново»: сброс стадии ничего не стоит и модель не зовёт, а вот
+  // прогон после него — обычное платное задание. Оба шага делаются одним
+  // нажатием намеренно: разорванные, они оставили бы работу в состоянии
+  // «сброшена, но никуда не идёт», и человек решал бы, что кнопка не сработала.
+  // Цена при этом названа рядом с кнопкой — до нажатия, как везде.
+  function начать_заново() {
+    restart.mutate(undefined, { onSuccess: () => запустить(null) })
+  }
+
   if (project.isError) return <ErrorState error={project.error} onRetry={() => project.refetch()} />
 
   const собрано = status.data?.made ?? {}
@@ -156,6 +177,9 @@ export function KadaiWorkPage() {
     running: run.running && run.kind === KADAI_RUN,
     artifacts: { docx: собрано.docx, pdf: собрано.pdf },
     pdfUrl: собрано.pdf ? artifactUrl(projectId, собрано.pdf) : null,
+    // Просмотрщику нужен тот же адрес с `?inline=1`: без него служба отдаёт
+    // файл вложением, и `<embed>` не рисует его, а скачивает (`PdfPreview`).
+    pdfInlineUrl: собрано.pdf ? artifactUrl(projectId, собрано.pdf, { inline: true }) : null,
     docxUrl: собрано.docx ? artifactUrl(projectId, собрано.docx) : null,
     error: run.error,
     unfilled: [],
@@ -185,6 +209,22 @@ export function KadaiWorkPage() {
         <StageStrip stages={стадии} running={run.running} note={run.note} />
       )}
 
+      {/* Архив стадии «архив». Кнопка появляется только когда он есть: стадия
+          кладёт ZIP артефактом (`orchestrator.kadai._положить_архив`), и до неё
+          скачивать нечего. Ссылка ведёт на адрес артефакта — тот же, по
+          которому приезжают DOCX и PDF. */}
+      {собрано.archive && (
+        <p className="flex flex-wrap items-center gap-s2 rounded-md border border-line bg-surface-2 px-s3 py-s2 text-sm text-ink">
+          <Icon name="download" size={15} className="text-muted" />
+          {t('kadai.archive.ready')}
+          <Button variant="secondary" size="sm" className="ml-auto" asChild>
+            <a href={artifactUrl(projectId, собрано.archive)} download>
+              {t('kadai.archive.download')}
+            </a>
+          </Button>
+        </p>
+      )}
+
       {остановка && (
         <p className="flex flex-wrap items-center gap-s2 rounded-md border border-warn bg-warn-bg px-s3 py-s2 text-sm text-ink">
           <Icon name="info" size={15} className="text-warn" />
@@ -211,23 +251,21 @@ export function KadaiWorkPage() {
             <>
               <p className="text-xs text-ink">{t('kadai.run.restartHint')}</p>
               <div className="flex flex-wrap items-center gap-s2">
-                <Input
-                  value={заново}
-                  onChange={(e) => setЗаново(e.target.value)}
-                  disabled={run.running}
-                  placeholder={t('kadai.run.restartPlaceholder')}
-                  aria-label={t('kadai.run.restart')}
-                  className="min-w-[240px] flex-1"
-                />
+                <span className="text-xs text-muted">
+                  <PriceHint kind={KADAI_RUN} usage={usage.data} />
+                </span>
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={run.running || !заново.trim() || !пресет}
-                  onClick={() => run.rework({ block: '', kind: 'условие', note: заново })}
+                  className="ml-auto"
+                  disabled={run.running || !пресет}
+                  loading={restart.isPending}
+                  onClick={начать_заново}
                 >
                   {t('kadai.run.restart')}
                 </Button>
               </div>
+              {restart.isError && <p className="text-xs text-err">{errorText(restart.error)}</p>}
             </>
           )}
         </section>
@@ -276,6 +314,16 @@ export function KadaiWorkPage() {
               </p>
             )}
           </section>
+
+          <WishesBox
+            wishes={wishes.data}
+            loading={wishes.isPending}
+            saving={saveWishes.isPending}
+            error={saveWishes.error}
+            started={работа_заведена}
+            disabled={run.running}
+            onSave={(это) => saveWishes.mutate({ projectId, wishes: это })}
+          />
 
           <h2 className="text-sm font-semibold text-ink-strong">{t('kadai.blocks.title')}</h2>
           <BlockList
@@ -327,29 +375,6 @@ export function KadaiWorkPage() {
 function заметка_споткнувшейся(стадии: { state: string; note?: string | null }[]): string | null {
   const беда = стадии.find((s) => s.state === STUMBLED)
   return беда?.note || null
-}
-
-/**
- * Пожелания, оставленные формой заведения.
- *
- * `sessionStorage`, а не служба: пожелания уезжают в первый прогон телом
- * задания, и хранить их до него службе негде — своей записи о работе до
- * первого прогона не существует. Не нашлись (открыли ссылку на чужой вкладке)
- * — пустые: это честно, а не пусто-по-ошибке.
- */
-function сохранённые_пожелания(projectId: string): Wishes {
-  try {
-    const сырое = sessionStorage.getItem(`kadai.wishes.${projectId}`)
-    if (!сырое) return { text: '', show_task: false, show_structure: false }
-    const это = JSON.parse(сырое) as Partial<Wishes>
-    return {
-      text: String(это.text ?? ''),
-      show_task: !!это.show_task,
-      show_structure: !!это.show_structure,
-    }
-  } catch {
-    return { text: '', show_task: false, show_structure: false }
-  }
 }
 
 /** Пресет, выбранный при заведении работы. */

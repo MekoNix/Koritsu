@@ -35,7 +35,7 @@ import { formatBytes } from './format'
 import { readUploadState, uploadName } from './uploadState'
 import type { Material } from './types'
 
-/** Потолок на файл в службе (`Settings.file_max_bytes`, §2). Здесь — для подсказки. */
+/** Потолок на файл в службе (`Settings.file_max_bytes`). Здесь — для подсказки. */
 const FILE_MAX_BYTES = 10 * 1024 * 1024
 
 /** Своя загрузка: пока запрос не ответил, задания ещё нет. */

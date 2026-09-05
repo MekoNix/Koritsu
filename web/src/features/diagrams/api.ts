@@ -12,6 +12,7 @@
  * `fetch` руками — с той же cookie-сессией и тем же origin.
  */
 import { api, unwrap } from '@/api'
+import { withBase } from '@/lib/basePath'
 
 import type {
   BuiltOut,
@@ -169,7 +170,9 @@ export function startBuildJob(projectId: string, name: string): Promise<string> 
 // ── артефакты ────────────────────────────────────────────────────────────────
 
 function artifactUrl(projectId: string, artifactId: string): string {
-  return `/api/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}`
+  return withBase(
+    `/api/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}`,
+  )
 }
 
 /**

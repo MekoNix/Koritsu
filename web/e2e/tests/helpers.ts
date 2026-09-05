@@ -21,7 +21,7 @@ import path from 'node:path'
 
 import { expect, type Page } from '@playwright/test'
 
-import { I18N_DIR, SERVE_LOG, STAND_DIR } from './stand'
+import { I18N_DIR, PYTHON, SERVE_LOG, STAND_DIR } from './stand'
 
 // ── словарь ──────────────────────────────────────────────────────────────────
 
@@ -66,11 +66,29 @@ export function uniqueEmail(prefix: string): string {
   return `web-${prefix}-${хвост}@example.org`
 }
 
-/** Все токены подтверждения, какие есть в журнале службы, по порядку. */
-function tokensInLog(): string[] {
+/**
+ * Ник по почте: имя до `@`, обрезанное до предела службы (32 знака).
+ *
+ * Ник обязателен при регистрации и уникален без учёта регистра, а том
+ * у проверок общий — значит выдумывать его нельзя, он должен быть таким же
+ * одноразовым, как почта. Из почты он и берётся.
+ */
+export function nicknameFor(email: string): string {
+  return (email.split('@')[0] as string).slice(0, 32)
+}
+
+/**
+ * Все ссылки подтверждения из журнала службы, по порядку и целиком.
+ *
+ * Целиком, а не одним токеном: ссылку человек получает такой, какой её собрала
+ * служба (`accounts/mail.py`), и открывает как есть. Собирать адрес страницы
+ * самим значило бы проверять свою же догадку о том, куда письмо ведёт, — и не
+ * заметить, что оно ведёт не туда.
+ */
+function linksInLog(): string[] {
   if (!fs.existsSync(SERVE_LOG)) return []
   const log = fs.readFileSync(SERVE_LOG, 'utf8')
-  return [...log.matchAll(/confirm\?token=([A-Za-z0-9._-]+)/g)].map((m) => m[1] as string)
+  return [...log.matchAll(/https?:\/\/\S*confirm\?token=[A-Za-z0-9._-]+/g)].map((m) => m[0])
 }
 
 /**
@@ -83,18 +101,21 @@ function tokensInLog(): string[] {
  */
 export async function signUpAndLogin(page: Page, prefix: string): Promise<string> {
   const email = uniqueEmail(prefix)
-  const было = tokensInLog().length
+  const было = linksInLog().length
 
   await page.goto('/auth/register')
   await page.getByLabel(t('auth.field.email')).fill(email)
+  await page.getByLabel(t('auth.field.nickname')).fill(nicknameFor(email))
   await page.getByLabel(t('auth.field.password'), { exact: true }).fill(PASSWORD)
   await page.getByRole('button', { name: t('auth.register.submit') }).click()
   await expect(page.getByText(t('auth.register.sentTitle'))).toBeVisible()
 
-  await expect.poll(() => tokensInLog().length, { timeout: 15_000 }).toBeGreaterThan(было)
-  const token = tokensInLog().at(-1) as string
+  await expect.poll(() => linksInLog().length, { timeout: 15_000 }).toBeGreaterThan(было)
+  const ссылка = new URL(linksInLog().at(-1) as string)
 
-  await page.goto(`/auth/confirm?token=${encodeURIComponent(token)}`)
+  // Открывается путь из письма, а не выдуманный нами: имя сайта на стенде
+  // другое (служба на своём порту, сайт на своём), а путь и токен — те самые.
+  await page.goto(`${ссылка.pathname}${ссылка.search}`)
   await expect(page.getByText(t('auth.confirm.okTitle'))).toBeVisible()
 
   await page.goto('/auth/login')
@@ -105,6 +126,29 @@ export async function signUpAndLogin(page: Page, prefix: string): Promise<string
   // Признак входа — оболочка: сайдбар с пунктом «Проекты» есть только внутри.
   await expect(page.getByRole('link', { name: t('shell.nav.projects') })).toBeVisible()
   return email
+}
+
+/**
+ * Выход — через меню человека, тем же путём, каким выходит человек.
+ *
+ * Не `context.clearCookies()`: очистка кук оставила бы в браузере кэш профиля и
+ * проверяла бы не выход, а забывчивость. Здесь же проверяется, что после выхода
+ * закрытые экраны закрыты.
+ */
+export async function logout(page: Page): Promise<void> {
+  await page.goto('/')
+  await page.getByRole('button', { name: t('shell.user.menu') }).click()
+  await page.getByRole('menuitem', { name: t('shell.user.logout') }).click()
+  await expect(page).toHaveURL(/\/auth\/login$/)
+}
+
+/** Вход уже заведённым человеком. Пароль стенда один на всех. */
+export async function login(page: Page, email: string, password = PASSWORD): Promise<void> {
+  await page.goto('/auth/login')
+  await page.getByLabel(t('auth.field.email')).fill(email)
+  await page.getByLabel(t('auth.field.password'), { exact: true }).fill(password)
+  await page.getByRole('button', { name: t('auth.login.submit') }).click()
+  await expect(page.getByRole('link', { name: t('shell.nav.projects') })).toBeVisible()
 }
 
 // ── шаблон DOCX ──────────────────────────────────────────────────────────────
@@ -124,9 +168,8 @@ export const TAG_TWO = 'выводы'
 export function templateDocx(): string {
   const файл = path.join(STAND_DIR, 'шаблон-проверки.docx')
   if (fs.existsSync(файл)) return файл
-  const python = process.env.PYTHON ?? '/home/kurisu/koritsu2/.venv/bin/python'
   execFileSync(
-    python,
+    PYTHON,
     [
       '-c',
       [

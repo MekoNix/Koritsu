@@ -1,8 +1,8 @@
 /**
  * ExportDialog — «Скачать работу»: выбор формата, цена, задание, файл.
  *
- * Решение владельца §3: «экспорт — кнопка в проекте, задание, скачивание из
- * уведомления». Все три части здесь и ровно в этом порядке.
+ * Правило: экспорт — кнопка в проекте, задание, скачивание из уведомления.
+ * Все три части здесь и ровно в этом порядке.
  *
  * **Цена и остаток — до нажатия** (то же правило, что у прогонов модели):
  * форматы стоят по-разному, потому что за ними разные задания (`export.ts`),
@@ -15,8 +15,8 @@
  * ссылка придёт в колокольчик (`data.artifacts`), она и есть главный путь.
  *
  * **Тоста на завершение здесь нет** — его показывает оболочка по уведомлению
- * (решение сведения ночи 1: один тост на одно событие). Свой тост остался
- * только на отказ постановки, то есть на обычный запрос, а не на задание.
+ * (один тост на одно событие). Свой тост остался только на отказ постановки,
+ * то есть на обычный запрос, а не на задание.
  */
 import { useEffect, useState } from 'react'
 
@@ -48,7 +48,7 @@ export function ExportDialog({
 
   // Проект без шаблона умеет только архив — им и открываемся, чтобы человек не
   // упирался в отключённую кнопку на первом же экране.
-  const [format, setFormat] = useState<ExportFormat>(hasTemplate ? 'docx' : 'archive')
+  const [format, setFormat] = useState<ExportFormat>(hasTemplate ? 'document' : 'archive')
   const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const stream = useJobStream(jobId)
@@ -71,9 +71,10 @@ export function ExportDialog({
   const готово = Object.entries(файлы)
   const провал = stream.done && stream.job?.status !== 'done'
 
+  // Пунктов два, по заданию на пункт: «Word» и «PDF» отдельными строками были
+  // выбором без разницы — за обоими стоял один прогон `build` и одна цена.
   const options: SegmentedOption<ExportFormat>[] = [
-    { value: 'docx', label: t('projects.export.format.docx'), icon: 'file' },
-    { value: 'pdf', label: t('projects.export.format.pdf'), icon: 'file' },
+    { value: 'document', label: t('projects.export.format.document'), icon: 'file' },
     { value: 'archive', label: t('projects.export.format.archive'), icon: 'folder' },
   ]
 
@@ -84,8 +85,9 @@ export function ExportDialog({
     if (выбран.job === EXPORT) {
       выгрузка.mutate(projectId, { onSuccess: принять, onError: отказ })
     } else {
-      // Пара DOCX+PDF одним прогоном: второй файл достаётся даром, а вторая
-      // сборка стоила бы второй цены за тот же документ (`useBuild`).
+      // Пара DOCX+PDF одним прогоном: PDF получается из собранного DOCX тем же
+      // вызовом LibreOffice, и второй прогон стоил бы второй цены за тот же
+      // документ (`useBuild`). Поэтому и пункт в списке один.
       enqueue.mutate(
         { kind: BUILD, projectId, payload: { outputs: ['docx', 'pdf'] } },
         { onSuccess: принять, onError: отказ },

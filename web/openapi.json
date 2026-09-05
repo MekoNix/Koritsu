@@ -3,7 +3,7 @@
  "info": {
   "title": "Koritsu API",
   "description": "Two entrances, one set of handlers: `/api` for the site (cookie session) and `/api/v1` for external clients (bearer token). Only `/api/v1` is versioned and documented.",
-  "version": "2.0.0a5"
+  "version": "2.0.0a5.4"
  },
  "paths": {
   "/api/auth/register": {
@@ -223,6 +223,48 @@
          "additionalProperties": true,
          "type": "object",
          "title": "Response Get Current User"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Update the signed-in user's profile",
+    "description": "Updates the profile of the signed-in user. Every field is optional; a missing field is left alone. Returns the whole profile. 401 unauthenticated, 409 nickname_taken, 422 invalid_nickname.",
+    "operationId": "update_profile",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProfileIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Update Profile"
         }
        }
       }
@@ -642,7 +684,7 @@
      "workspaces"
     ],
     "summary": "List workspace members",
-    "description": "Lists the members with their roles and email addresses. Any member may read it. 400 invalid_id, 404 not_found.",
+    "description": "Lists the members with their roles, nicknames and email addresses. Any member may read it. 400 invalid_id, 404 not_found.",
     "operationId": "list_workspace_members",
     "parameters": [
      {
@@ -856,7 +898,7 @@
      "projects"
     ],
     "summary": "Create a project in a workspace",
-    "description": "Creates a project and its directory on the volume. Multipart: the name and an optional DOCX template; without a template the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.",
+    "description": "Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.",
     "operationId": "create_project",
     "requestBody": {
      "required": true,
@@ -1229,7 +1271,7 @@
      "projects"
     ],
     "summary": "Set one tag value by hand",
-    "description": "Writes one tag value as a new version marked source=manual; previous versions are kept. The body is the value itself, a JSON object. Editor role. 400 invalid_value, 403 forbidden, 404 not_found, 409 in_trash.",
+    "description": "Writes one tag value as a new version marked source=manual; previous versions are kept. The body is the value itself, a JSON object shaped by its own type field: text and markdown carry text, a table carries rows, an image or a diagram carries the id of an artifact, a formula carries latex. A value that does not fit its type is refused with invalid_value and where pointing at the field. Editor role. 400 invalid_value, 403 forbidden, 404 not_found, 409 in_trash.",
     "operationId": "set_project_value",
     "parameters": [
      {
@@ -2980,6 +3022,48 @@
       }
      }
     }
+   },
+   "post": {
+    "tags": [
+     "admin"
+    ],
+    "summary": "Create a person and issue a password reset link",
+    "description": "Creates a confirmed account with no password and returns a one-time password reset link (reset_url) next to the usual person card. The service sends no mail: the administrator passes the link on, and the person sets a password through the ordinary reset page. The link is shown once and is not stored in the clear. 409 email_taken, 409 nickname_taken, 400 unknown_plan, 422 validation_failed, 403 forbidden.",
+    "operationId": "admin_create_user",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UserCreateIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Admin Create User"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/api/admin/users/{user_id}": {
@@ -2987,8 +3071,8 @@
     "tags": [
      "admin"
     ],
-    "summary": "Change plan, limits or administrator access",
-    "description": "Changes a person's plan, per-user limit overrides and administrator flag. Fields left out are left alone; limits are replaced as a whole. 404 not_found, 403 forbidden.",
+    "summary": "Change plan, limits, administrator access or blocking",
+    "description": "Changes a person's plan, per-user limit overrides, administrator flag and blocking. Fields left out are left alone; limits are replaced as a whole. Blocking revokes every session of that person. 404 not_found, 400 unknown_plan, 403 forbidden.",
     "operationId": "admin_patch_user",
     "parameters": [
      {
@@ -3020,6 +3104,40 @@
          "type": "object",
          "additionalProperties": true,
          "title": "Response Admin Patch User"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/admin/plans": {
+   "get": {
+    "tags": [
+     "admin"
+    ],
+    "summary": "Plans with their monthly ceiling and storage quota",
+    "description": "The plans this service knows, in order: name, monthly ceiling in internal units and storage quota in bytes. The only values PATCH /api/admin/users accepts as a plan. 403 forbidden.",
+    "operationId": "admin_plans",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Admin Plans"
         }
        }
       }
@@ -3263,6 +3381,229 @@
     }
    }
   },
+  "/api/search": {
+   "get": {
+    "tags": [
+     "search"
+    ],
+    "summary": "Find a project or a material by name",
+    "description": "Searches the names of every project the caller can reach (both the workspaces they own and the ones they were invited to) and the names of the materials inside those projects. Matching is case-insensitive and by substring, and the trash is not searched. Answers two lists, at most 20 entries each; an empty query answers two empty lists rather than everything. Each project carries the module its work belongs to, so the caller knows which screen to open.",
+    "operationId": "search",
+    "parameters": [
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 200,
+       "description": "What to look for, a substring of a name",
+       "default": "",
+       "title": "Q"
+      },
+      "description": "What to look for, a substring of a name"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 20,
+       "minimum": 1,
+       "description": "Max entries in each list",
+       "default": 20,
+       "title": "Limit"
+      },
+      "description": "Max entries in each list"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Search"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/templates": {
+   "get": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "List your report templates",
+    "description": "Your templates, newest first: name, size, number of tags and the date they were uploaded. 401 unauthenticated.",
+    "operationId": "list_templates",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/TemplateOut"
+         },
+         "type": "array",
+         "title": "Response List Templates"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Upload a report template",
+    "description": "Stores a DOCX template of your own (multipart field `file`, optional `name`) and answers with its card: size and how many tags it has. The file is parsed the same way a project template is, so a file rejected here would be rejected there too. 400 bad_template, 400 invalid_name, 400 no_file, 413 file_too_large, 413 quota_exceeded.",
+    "operationId": "upload_template",
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         },
+         "name": {
+          "type": "string"
+         }
+        },
+        "type": "object",
+        "required": [
+         "file"
+        ]
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TemplateOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/templates/{template_id}": {
+   "delete": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Delete a report template",
+    "description": "Removes one of your templates from the list and from the volume. Projects created from it keep their own copy and are not touched. A template that belongs to someone else and one that never existed answer alike. 400 invalid_id, 404 not_found.",
+    "operationId": "delete_template",
+    "parameters": [
+     {
+      "name": "template_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Template Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/templates/{template_id}/blob": {
+   "get": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Download a report template",
+    "description": "The DOCX of one of your templates, byte for byte, as an attachment. 400 invalid_id, 404 not_found.",
+    "operationId": "download_template",
+    "parameters": [
+     {
+      "name": "template_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Template Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/modules": {
    "get": {
     "tags": [
@@ -3306,7 +3647,7 @@
      "artifacts"
     ],
     "summary": "Download a project artifact",
-    "description": "The bytes of an artifact produced in this project: a drawio XML diagram, a built report, an export. The content type follows the bytes; the answer is always an attachment and is never sniffed by the browser. Viewer role. 400 invalid_id, 404 not_found.",
+    "description": "The bytes of an artifact produced in this project: a drawio XML diagram, a built report, an export. The content type follows the bytes; the answer is an attachment and is never sniffed by the browser. With inline=1 a PDF or a raster image is served for display in the browser instead, so the page can embed it directly; anything else stays an attachment. Viewer role. 400 invalid_id, 404 not_found.",
     "operationId": "download_artifact",
     "parameters": [
      {
@@ -3325,6 +3666,16 @@
       "schema": {
        "type": "string",
        "title": "Project Id"
+      }
+     },
+     {
+      "name": "inline",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Inline"
       }
      }
     ],
@@ -3519,6 +3870,159 @@
          "type": "object",
          "additionalProperties": true,
          "title": "Response Kadai Set Condition"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/kadai/wishes": {
+   "get": {
+    "tags": [
+     "kadai"
+    ],
+    "summary": "What the person asked of this work",
+    "description": "The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. 400 invalid_id, 404 not_found.",
+    "operationId": "kadai_wishes",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Kadai Wishes"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "kadai"
+    ],
+    "summary": "Store the wishes for this work",
+    "description": "Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "kadai_set_wishes",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WishesIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Kadai Set Wishes"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/kadai/restart": {
+   "post": {
+    "tags": [
+     "kadai"
+    ],
+    "summary": "Start a stage over on a work that has stopped",
+    "description": "Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed.",
+    "operationId": "kadai_restart",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RestartIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Kadai Restart"
         }
        }
       }
@@ -3948,7 +4452,7 @@
      "projects"
     ],
     "summary": "Create a project in a workspace",
-    "description": "Creates a project and its directory on the volume. Multipart: the name and an optional DOCX template; without a template the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.",
+    "description": "Creates a project and its directory on the volume. Multipart: the name and, optionally, either a DOCX template or the id of one of your saved templates (`template_id`); without either the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.",
     "operationId": "create_project_v1",
     "requestBody": {
      "required": true,
@@ -4329,7 +4833,7 @@
      "projects"
     ],
     "summary": "Set one tag value by hand",
-    "description": "Writes one tag value as a new version marked source=manual; previous versions are kept. The body is the value itself, a JSON object. Editor role. 400 invalid_value, 403 forbidden, 404 not_found, 409 in_trash.",
+    "description": "Writes one tag value as a new version marked source=manual; previous versions are kept. The body is the value itself, a JSON object shaped by its own type field: text and markdown carry text, a table carries rows, an image or a diagram carries the id of an artifact, a formula carries latex. A value that does not fit its type is refused with invalid_value and where pointing at the field. Editor role. 400 invalid_value, 403 forbidden, 404 not_found, 409 in_trash.",
     "operationId": "set_project_value_v1",
     "parameters": [
      {
@@ -5312,7 +5816,7 @@
      "artifacts"
     ],
     "summary": "Download a project artifact",
-    "description": "The bytes of an artifact produced in this project: a drawio XML diagram, a built report, an export. The content type follows the bytes; the answer is always an attachment and is never sniffed by the browser. Viewer role. 400 invalid_id, 404 not_found.",
+    "description": "The bytes of an artifact produced in this project: a drawio XML diagram, a built report, an export. The content type follows the bytes; the answer is an attachment and is never sniffed by the browser. With inline=1 a PDF or a raster image is served for display in the browser instead, so the page can embed it directly; anything else stays an attachment. Viewer role. 400 invalid_id, 404 not_found.",
     "operationId": "download_artifact_v1",
     "parameters": [
      {
@@ -5331,6 +5835,16 @@
       "schema": {
        "type": "string",
        "title": "Project Id"
+      }
+     },
+     {
+      "name": "inline",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Inline"
       }
      }
     ],
@@ -5529,6 +6043,162 @@
          "type": "object",
          "additionalProperties": true,
          "title": "Response Kadai Set Condition V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/kadai/wishes": {
+   "get": {
+    "tags": [
+     "v1",
+     "kadai"
+    ],
+    "summary": "What the person asked of this work",
+    "description": "The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. 400 invalid_id, 404 not_found.",
+    "operationId": "kadai_wishes_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Kadai Wishes V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "v1",
+     "kadai"
+    ],
+    "summary": "Store the wishes for this work",
+    "description": "Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "kadai_set_wishes_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WishesIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Kadai Set Wishes V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/kadai/restart": {
+   "post": {
+    "tags": [
+     "v1",
+     "kadai"
+    ],
+    "summary": "Start a stage over on a work that has stopped",
+    "description": "Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed.",
+    "operationId": "kadai_restart_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RestartIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Kadai Restart V1"
         }
        }
       }
@@ -6153,6 +6823,17 @@
        }
       ],
       "title": "Template"
+     },
+     "template_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Id"
      }
     },
     "type": "object",
@@ -6183,6 +6864,17 @@
        }
       ],
       "title": "Template"
+     },
+     "template_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Id"
      }
     },
     "type": "object",
@@ -6408,7 +7100,7 @@
      "kind"
     ],
     "title": "JobIn",
-    "description": "Тело постановки задания.\n\nИмя по-английски, как у соседей (`ProjectNameIn`, `ModelKeyIn`): оно уезжает\nв OpenAPI и становится именем типа в клиенте сайта (§5)."
+    "description": "Тело постановки задания.\n\nИмя по-английски, как у соседей (`ProjectNameIn`, `ModelKeyIn`): оно уезжает\nв OpenAPI и становится именем типа в клиенте сайта."
    },
    "LoginIn": {
     "properties": {
@@ -6488,6 +7180,50 @@
     "title": "ModelKeyIn",
     "description": "Тело `POST /api/keys`.\n\nПоле называется `key`, а не `secret`: человек несёт сюда то, что у\nпоставщика называется API key, и переименовывать это по дороге значит\nзаставлять его гадать, туда ли он вставил."
    },
+   "ProfileIn": {
+    "properties": {
+     "nickname": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 128
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nickname"
+     },
+     "default_endpoint": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 64
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Default Endpoint",
+      "description": "Model preset to preselect; empty string clears it"
+     },
+     "agent_overwrite": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Agent Overwrite",
+      "description": "Whether the agent may overwrite values edited by hand"
+     }
+    },
+    "type": "object",
+    "title": "ProfileIn",
+    "description": "Правка своего профиля: `PATCH /auth/me`.\n\n**Все поля необязательные, и это договор, а не удобство.** Тело правки\nописывает изменение, а не человека целиком: пропущенное поле означает «не\nтрогать», а не «стереть». Поэтому же тут `None` — «поле не пришло», и ни\nодно поле не имеет `None` осмысленным значением.\n\nФорма нарочно расширяемая: сюда же дописываются настройки агента и модели\nпо умолчанию (`default_endpoint`, `agent_overwrite`). Новое поле добавляется\nстрокой здесь и строкой в `правка_профиля` — второго маршрута «поменять ещё\nодну мелочь профиля» заводить не надо."
+   },
    "ProjectNameIn": {
     "properties": {
      "name": {
@@ -6502,7 +7238,7 @@
      "name"
     ],
     "title": "ProjectNameIn",
-    "description": "Тело переименования. Имя по-английски, как у соседей: оно уезжает в\nOpenAPI и становится именем типа в клиенте сайта (§5)."
+    "description": "Тело переименования. Имя по-английски, как у соседей: оно уезжает в\nOpenAPI и становится именем типа в клиенте сайта."
    },
    "RegisterIn": {
     "properties": {
@@ -6516,15 +7252,21 @@
       "maxLength": 1024,
       "minLength": 10,
       "title": "Password"
+     },
+     "nickname": {
+      "type": "string",
+      "maxLength": 128,
+      "title": "Nickname"
      }
     },
     "type": "object",
     "required": [
      "email",
-     "password"
+     "password",
+     "nickname"
     ],
     "title": "RegisterIn",
-    "description": "Регистрация. Длина пароля проверяется формой, а не обработчиком: беда\nформы уезжает клиенту с адресом поля (`where: body.password`)."
+    "description": "Регистрация. Длина пароля проверяется формой, а не обработчиком: беда\nформы уезжает клиенту с адресом поля (`where: body.password`).\n\nНик — обязательное поле: именно он показывается\nвместо почты, и завести человека без него значит завести его безымянным.\nГраницы и знаки ника формой НЕ проверяются намеренно: `422\nvalidation_failed` не отличить от беды в почте, а сайту нужен отдельный код\n`invalid_nickname`, чтобы показать подсказку под нужным полем. Форма здесь\nсторожит только длину строки — от тела запроса в мегабайт."
    },
    "ResetIn": {
     "properties": {
@@ -6547,6 +7289,19 @@
     ],
     "title": "ResetIn"
    },
+   "RestartIn": {
+    "properties": {
+     "stage": {
+      "type": "string",
+      "title": "Stage",
+      "description": "Stage to restart from; empty means the one that stumbled",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "RestartIn",
+    "description": "С какой стадии начинать заново. Пусто — с той, на которой встали."
+   },
    "RollbackIn": {
     "properties": {
      "n": {
@@ -6562,6 +7317,57 @@
     ],
     "title": "RollbackIn",
     "description": "Тело возврата: номер версии, к которой возвращаемся.\n\nТело, а не путь, потому что возврат — действие над тегом, а не обращение к\nверсии: `POST …/values/{key}/versions/{n}` читалось бы как «создать версию\nномер n», чего служба не умеет и не должна."
+   },
+   "TemplateOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Template id, used when creating a project"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Human-readable name"
+     },
+     "bytes": {
+      "type": "integer",
+      "title": "Bytes",
+      "description": "Size of the DOCX on the volume"
+     },
+     "tags": {
+      "type": "integer",
+      "title": "Tags",
+      "description": "How many tags the template has"
+     },
+     "sha256": {
+      "type": "string",
+      "title": "Sha256",
+      "description": "First characters of the content hash"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At",
+      "description": "When it was uploaded"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "bytes",
+     "tags",
+     "sha256"
+    ],
+    "title": "TemplateOut",
+    "description": "Карточка шаблона. Пути на томе в ней нет и быть не может."
    },
    "UmlIn": {
     "properties": {
@@ -6651,6 +7457,48 @@
     "title": "UmlSourceIn",
     "description": "Исходник в теле запроса: как называется и что в нём написано.\n\nИмя нужно разбору (в замечание «файл не разобрался» едет именно оно) и\nчеловеку в ответе. Путём оно не является и в путь не превращается нигде."
    },
+   "UserCreateIn": {
+    "properties": {
+     "email": {
+      "type": "string",
+      "maxLength": 320,
+      "title": "Email",
+      "description": "Email of the person to create"
+     },
+     "plan": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 32
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Plan",
+      "description": "Plan from GET /api/admin/plans"
+     },
+     "nickname": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 128
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nickname",
+      "description": "Nickname; derived from the email when left out"
+     }
+    },
+    "type": "object",
+    "required": [
+     "email"
+    ],
+    "title": "UserCreateIn",
+    "description": "Тело `POST /api/admin/users`: кого заводит владелец.\n\nПароля здесь нет и быть не может: владелец не придумывает человеку пароль\nи не пересылает его — он передаёт ссылку сброса, а пароль человек ставит\nсам. Ник необязателен: не названный берётся из почты (`ник_из_почты`)."
+   },
    "UserPatchIn": {
     "properties": {
      "plan": {
@@ -6690,11 +7538,49 @@
       ],
       "title": "Limits",
       "description": "Per-user limit overrides, replaced as a whole; known keys: monthly_units, quota_bytes. Empty means defaults."
+     },
+     "blocked": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Blocked",
+      "description": "Block or unblock the account. Blocking revokes every session; the person is refused with account_blocked at sign-in, on the site and with an API token alike."
      }
     },
     "type": "object",
     "title": "UserPatchIn",
     "description": "Тело `PATCH /api/admin/users/{id}`: только то, что владелец и правит.\n\nВсе поля необязательны, и не заданное не трогается: правка «сменить план»\nне должна молча обнулять лимиты, поставленные в прошлый раз."
+   },
+   "WishesIn": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Text",
+      "description": "What the person wants from the work, in prose",
+      "default": ""
+     },
+     "show_task": {
+      "type": "boolean",
+      "title": "Show Task",
+      "description": "Stop and show how the assignment was understood",
+      "default": false
+     },
+     "show_structure": {
+      "type": "boolean",
+      "title": "Show Structure",
+      "description": "Stop and show the structure before writing",
+      "default": false
+     }
+    },
+    "type": "object",
+    "title": "WishesIn",
+    "description": "Пожелания человека к работе — те же три поля, что у `kadai.plan.Wishes`."
    },
    "WorkspaceNameIn": {
     "properties": {

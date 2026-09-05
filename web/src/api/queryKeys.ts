@@ -10,8 +10,8 @@
  * уточнения от общего к частному, чтобы `invalidateQueries({ queryKey: ['projects'] })`
  * гасил и список, и каждый проект.
  *
- * Агентам B–E: заводите свои ключи здесь же, отдельным полем; файл дописывается,
- * а не переписывается.
+ * Новой области: заводите свои ключи здесь же, отдельным полем; файл
+ * дописывается, а не переписывается.
  */
 
 export const keys = {
@@ -76,9 +76,12 @@ export const keys = {
     blockVersions: (projectId: string) => ['projects', 'one', projectId, 'block-versions'] as const,
     blockVersion: (projectId: string, n: number) =>
       ['projects', 'one', projectId, 'block-versions', n] as const,
+    wishes: (projectId: string) => ['projects', 'one', projectId, 'kadai-wishes'] as const,
   },
   // Область E: настройки аккаунта.
   modelKeys: ['model-keys'] as const,
+  /** Свои шаблоны отчётов: их читают и настройки, и диалог «Новая работа». */
+  templates: ['templates'] as const,
   keyProviders: ['key-providers'] as const,
   apiTokens: ['api-tokens'] as const,
   // Область E: админка. Всё под одним корнем, чтобы правка человека гасила и
@@ -92,9 +95,12 @@ export const keys = {
     /** Ряды графиков «Обзора»; период — часть ключа, иначе 7 и 90 дней делили
      *  бы одну строку кэша. */
     stats: (days: number) => ['admin', 'stats', days] as const,
+    /** Справочник планов. Под тем же корнем, что и люди: правка человека его
+     *  не меняет, но лишний запрос справочника дешевле разъехавшегося кэша. */
+    plans: ['admin', 'plans'] as const,
   },
-  // Область D: схемы. Ключи свои, а не чужие `projects.*`, намеренно: под теми
-  // лежат формы области B, и гасить их своим списком схем значило бы сбрасывать
+  // Схемы. Ключи свои, а не чужие `projects.*`, намеренно: под теми
+  // лежат формы проектов, и гасить их своим списком схем значило бы сбрасывать
   // чужой кэш ради своего.
   diagrams: {
     all: ['diagrams'] as const,
@@ -113,7 +119,7 @@ export const keys = {
   // список своим поиском значило бы перезапрашивать экран проектов впустую.
   search: {
     all: ['search'] as const,
-    projects: ['search', 'projects'] as const,
-    materials: (projectId: string) => ['search', 'materials', projectId] as const,
+    /** Запрос службе: ключ несёт саму строку — по ней и кэшируется выдача. */
+    query: (q: string) => ['search', 'query', q] as const,
   },
 }

@@ -24,6 +24,8 @@
 
 import createClient, { type Middleware } from 'openapi-fetch'
 
+import { BASE_PATH } from '@/lib/basePath'
+
 import { ApiError } from './errors'
 import type { paths } from './schema'
 
@@ -70,19 +72,26 @@ const csrfMiddleware: Middleware = {
 
 function isAuthPath(url: string): boolean {
   try {
-    return new URL(url, BASE_URL).pathname.startsWith('/api/auth/')
+    // Префикс пути тут обязателен: под ним лежит и `/api`, и без него
+    // `/k7f3x9/api/auth/login` не узнался бы, а 401 на неверный пароль увёл
+    // бы человека с формы входа на форму входа.
+    return new URL(url, BASE_URL).pathname.startsWith(`${BASE_PATH}/api/auth/`)
   } catch {
     return false
   }
 }
 
 /**
- * Адрес службы — тот же origin, что у страницы. Записан явно, а не оставлен
- * пустым: `new Request('/api/…')` без схемы и хоста — законный вызов в
- * браузере и ошибка в Node, где живут тесты. Один и тот же клиент обязан
- * работать в обоих.
+ * Адрес службы — тот же origin, что у страницы, плюс префикс пути, под которым
+ * живёт сайт (без домена адрес — IP плюс случайная строка, и `/api`
+ * уезжает под тот же префикс, что и страницы; иначе cookie сессии не одна на
+ * двоих). Префикс приходит от Vite и в `pnpm dev` пуст.
+ *
+ * Origin записан явно, а не оставлен пустым: `new Request('/api/…')` без схемы
+ * и хоста — законный вызов в браузере и ошибка в Node, где живут тесты. Один и
+ * тот же клиент обязан работать в обоих.
  */
-const BASE_URL = globalThis.location?.origin ?? 'http://localhost'
+const BASE_URL = (globalThis.location?.origin ?? 'http://localhost') + BASE_PATH
 
 export const api = createClient<paths>({
   baseUrl: BASE_URL,

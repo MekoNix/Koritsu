@@ -3,7 +3,7 @@
 
 Роутер без префикса `/api`: его несёт вход сайта (`routes.site`). Внешнего входа
 (`/api/v1/`) у аккаунтов нет и не будет — скрипт входит Bearer-токеном, а не
-почтой с паролем; токены — работа ночи 2.
+почтой с паролем.
 
     POST /auth/register          201  {"status": "confirmation_sent"}
     POST /auth/confirm           200  {"status": "confirmed"}
@@ -11,6 +11,7 @@
     POST /auth/logout            200  {"status": "ok"}
     POST /auth/logout-all        200  {"status": "ok"}
     GET  /auth/me                200  {"user": {...}}
+    PATCH /auth/me               200  {"user": {...}}
     POST /auth/password/forgot   200  {"status": "reset_sent"}
     POST /auth/password/reset    200  {"status": "password_changed"}
 
@@ -24,22 +25,25 @@
    сообщал бы «такая почта у нас есть, но не подтверждена» кому угодно, кто
    ввёл чужой адрес.
 3. **Пароль не уезжает никуда, кроме argon2.** Ни в ответ, ни в журнал, ни в
-   событие безопасности; тело запроса не пишет и каркас (`log.py`, §3).
+   событие безопасности; тело запроса не пишет и каркас (`log.py`).
 
 Формы запроса (`RegisterIn`, `LoginIn`, …) названы по-английски, а не как всё
 остальное в проекте: их имена уезжают в OpenAPI и становятся именами типов в
-клиенте сайта (§5), а `Регистрация` в TypeScript — это имя, которое никто не
+клиенте сайта, а `Регистрация` в TypeScript — это имя, которое никто не
 наберёт. Всё, что наружу не видно, остаётся по-русски.
 
-**Коды бед** (§7 — коды и тексты по-английски):
+**Коды бед** (коды и тексты по-английски):
 
     validation_failed    422  не почта, короткий пароль (проверка формы)
     rate_limited         429  лимит регистраций по IP; запертый перебором вход
     invalid_credentials  401  не та почта или не тот пароль
     email_not_confirmed  403  пароль верный, почта не подтверждена
+    account_blocked      403  аккаунт заблокирован владельцем службы
     unauthenticated      401  нет годной сессии (`/me`, `/logout-all`)
     invalid_token        400  токена нет, он чужой или уже использован
     token_expired        400  токен был годен, но протух
+    invalid_nickname     422  ник не той длины или не из тех знаков
+    nickname_taken       409  такой ник уже занят (без учёта регистра)
 """
 from __future__ import annotations
 
@@ -49,17 +53,18 @@ from pydantic import BaseModel, Field, field_validator
 from ..db import SessionDep, now
 from ..errors import ApiError
 from . import mail
-from .models import CONFIRM, RESET, User
-from .service import (EMAIL_NOT_CONFIRMED, INVALID_CREDENTIALS, PASSWORD_MAX,
-                      PASSWORD_MIN, RATE_LIMITED, CurrentUser, в_utc,
-                      взять_токен, выдать_токен, годная_почта, заперт,
-                      захешировать, найти_по_почте, нормальная_почта,
-                      отметить_неудачу, отозвать_все, открыть_сессию,
-                      очистить_неудачи, поставить_cookie,
-                      посчитать_регистрацию, потратить_время_впустую,
-                      проверить_пароль,
+from .models import CONFIRM, ENDPOINT_LEN, RESET, User
+from .service import (EMAIL_NOT_CONFIRMED, INVALID_CREDENTIALS, NICK_LEN,
+                      PASSWORD_MAX, PASSWORD_MIN, RATE_LIMITED, CurrentUser,
+                      в_utc, взять_токен, выдать_токен, годная_почта,
+                      заблокирован, занять_ник, заперт, захешировать,
+                      ключ_ника, найти_по_почте, нормальная_почта,
+                      отказать_заблокированному, отметить_неудачу,
+                      отозвать_все, открыть_сессию, очистить_неудачи,
+                      поставить_cookie, посчитать_регистрацию,
+                      потратить_время_впустую, проверить_ник, проверить_пароль,
                       создать_пользователя, снять_cookie, событие,
-                      текущая_сессия)
+                      текущая_сессия, требовать_свободный_ник)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -93,9 +98,18 @@ class _Почта(BaseModel):
 
 class RegisterIn(_Почта):
     """Регистрация. Длина пароля проверяется формой, а не обработчиком: беда
-    формы уезжает клиенту с адресом поля (`where: body.password`)."""
+    формы уезжает клиенту с адресом поля (`where: body.password`).
+
+    Ник — обязательное поле: именно он показывается
+    вместо почты, и завести человека без него значит завести его безымянным.
+    Границы и знаки ника формой НЕ проверяются намеренно: `422
+    validation_failed` не отличить от беды в почте, а сайту нужен отдельный код
+    `invalid_nickname`, чтобы показать подсказку под нужным полем. Форма здесь
+    сторожит только длину строки — от тела запроса в мегабайт.
+    """
 
     password: str = Field(min_length=PASSWORD_MIN, max_length=PASSWORD_MAX)
+    nickname: str = Field(max_length=NICK_LEN * 4)
 
 
 class LoginIn(_Почта):
@@ -117,6 +131,55 @@ class ResetIn(ConfirmIn):
     password: str = Field(min_length=PASSWORD_MIN, max_length=PASSWORD_MAX)
 
 
+class ProfileIn(BaseModel):
+    """Правка своего профиля: `PATCH /auth/me`.
+
+    **Все поля необязательные, и это договор, а не удобство.** Тело правки
+    описывает изменение, а не человека целиком: пропущенное поле означает «не
+    трогать», а не «стереть». Поэтому же тут `None` — «поле не пришло», и ни
+    одно поле не имеет `None` осмысленным значением.
+
+    Форма нарочно расширяемая: сюда же дописываются настройки агента и модели
+    по умолчанию (`default_endpoint`, `agent_overwrite`). Новое поле добавляется
+    строкой здесь и строкой в `правка_профиля` — второго маршрута «поменять ещё
+    одну мелочь профиля» заводить не надо.
+    """
+
+    nickname: str | None = Field(default=None, max_length=NICK_LEN * 4)
+    # Умолчания панели агента (раздел настроек «Агент и модели»). Пресет —
+    # имя из `llm.presets`; **пустая строка означает «сбросить»**, потому что
+    # `None` здесь уже занято смыслом «поле не пришло», а «ничего не выбрано»
+    # человеку выразить надо: он вправе вернуться к правилу сайта «свой ключ,
+    # потом общий».
+    default_endpoint: str | None = Field(
+        default=None, max_length=ENDPOINT_LEN,
+        description="Model preset to preselect; empty string clears it")
+    agent_overwrite: bool | None = Field(
+        default=None,
+        description="Whether the agent may overwrite values edited by hand")
+
+
+def пресет_по_умолчанию(сырое: str) -> str | None:
+    """Имя пресета из тела правки → что класть в `users.default_endpoint`.
+
+    Пустая строка — «сбросить выбор» (`None`), см. `ProfileIn`. Всё остальное
+    проверяется тем же `keys.service.check_provider`, которым проверяется
+    поставщик при заведении ключа: свой список пресетов здесь разошёлся бы с
+    настройками моделей на первом же новом поставщике, и человек сохранил бы
+    умолчание, которого не бывает. Отказ — `400 unknown_provider`.
+
+    Импорт внутри функции: пакет ключей тянет `llm`, а этот модуль читается при
+    сборке приложения — на уровне модуля вход в службу платил бы за это
+    импортом движка моделей.
+    """
+    from ..keys.service import check_provider                   # noqa: PLC0415
+
+    имя = (сырое or "").strip()
+    if not имя:
+        return None
+    return check_provider(имя, where="body.default_endpoint")
+
+
 # ── что мы рассказываем о человеке ───────────────────────────────────────────
 
 def профиль(user: User) -> dict:
@@ -134,14 +197,25 @@ def профиль(user: User) -> dict:
     админский маршрут «на отказ» — то есть просить 403 у каждого вошедшего
     просто чтобы узнать, кто он. Секрета в самом флаге нет: свой собственный
     признак админа человек и так узнаёт, зайдя по адресу.
+
+    `nickname` — то имя, которым человека зовут на экране. Почта наружу тоже
+    уезжает и уезжать обязана: свою собственную почту человек и так знает, а
+    показывать её в настройках надо. Прячет её частично (`a***@mail.ru`)
+    сайт — на дашборде и в профиле, где она никому, кроме хозяина, не нужна.
     """
     return {
         "id": user.id,
         "email": user.email,
+        "nickname": user.nickname,
         "plan": user.plan,
         "email_confirmed": user.email_confirmed_at is not None,
         "totp_enabled": bool(user.totp_enabled),
         "is_admin": bool(user.is_admin),
+        # Умолчания панели агента: сайт берёт их отсюда, а не из своего
+        # хранилища в браузере, — иначе выбор человека жил бы в одной вкладке
+        # и пропадал бы на втором устройстве.
+        "default_endpoint": user.default_endpoint,
+        "agent_overwrite": bool(user.agent_overwrite),
         "created_at": (в_utc(user.created_at) or now()).isoformat(),
     }
 
@@ -182,14 +256,24 @@ def register(тело: RegisterIn, request: Request, s: SessionDep) -> dict:
 
     Письмо при этом отправляется не всегда: подтверждённому аккаунту оно
     незачем — человек и так может войти, а «кто-то пробовал зарегистрироваться
-    под вашим адресом» этой ночью не пишем (лишний повод для рассылки чужими
-    руками).
+    под вашим адресом» не пишем (лишний повод для рассылки чужими руками).
     """
     посчитать_регистрацию(s, request, request.app.state.settings)
 
+    # Ник проверяется ДО того, как мы посмотрели на почту, и без исключений для
+    # своей же строки. Порядок здесь — часть правила 1, а не вкус: проверь мы
+    # ник только на ветке «почты ещё нет», ответ стал бы разным для занятой и
+    # свободной почты (201 против 409), то есть форма опять начала бы отвечать
+    # на вопрос «есть ли у вас аккаунт». Занятость ника при этом секретом не
+    # является: ники показываются участникам пространств, и узнать их можно и
+    # не спрашивая. Цена — человек, который просит выслать письмо ещё раз со
+    # своим же ником, получит `nickname_taken`; он и правда уже занят, им же.
+    ник = проверить_ник(тело.nickname)
+    требовать_свободный_ник(s, ключ_ника(ник))
+
     user = найти_по_почте(s, тело.email)
     if user is None:
-        user = создать_пользователя(s, тело.email, тело.password)
+        user = создать_пользователя(s, тело.email, тело.password, ник)
         _письмо(request, user, s, CONFIRM)
         событие(request, "registered", user=user.id)
     elif user.email_confirmed_at is None:
@@ -244,6 +328,10 @@ def login(тело: LoginIn, request: Request, response: Response,
 
     Порядок проверок — часть защиты, а не вкус (см. правила 2 и 3 в докстроке
     модуля): замок перебора, потом пароль, и только потом подтверждение почты.
+
+    **Блокировка проверяется после пароля** и по той же причине, что и
+    подтверждение почты: сказать «этот аккаунт заблокирован» тому, кто пароля не
+    знает, значило бы отвечать на вопрос «есть ли тут такой человек».
     """
     settings = request.app.state.settings
     нет = ApiError(INVALID_CREDENTIALS, "Invalid email or password", 401)
@@ -264,6 +352,12 @@ def login(тело: LoginIn, request: Request, response: Response,
     if not проверить_пароль(user.password_hash, тело.password):
         отметить_неудачу(s, request, user)
         raise нет
+
+    if заблокирован(user):
+        # Тоже не неудача входа: пароль верный, и запирать перебором аккаунт,
+        # который и так закрыт, незачем.
+        событие(request, "login_blocked", user=user.id)
+        отказать_заблокированному(user)
 
     if user.email_confirmed_at is None:
         # Неудачей входа это не считаем: пароль верный, человек свой, и
@@ -309,7 +403,7 @@ def logout(request: Request, response: Response, s: SessionDep) -> dict:
                  "cookie. 401 unauthenticated."))
 def logout_all(me: CurrentUser, request: Request, response: Response,
                s: SessionDep) -> dict:
-    """Выход со всех устройств (§7) — то, ради чего сессии лежат в базе."""
+    """Выход со всех устройств — то, ради чего сессии лежат в базе."""
     отозвать_все(s, me)
     снять_cookie(response, request.app.state.settings)
     событие(request, "logout_all", user=me.id)
@@ -323,6 +417,42 @@ def logout_all(me: CurrentUser, request: Request, response: Response,
                 "401 unauthenticated."))
 def whoami(me: CurrentUser) -> dict:
     """Кто вошёл. Первое, что спрашивает сайт при загрузке страницы."""
+    return {"user": профиль(me)}
+
+
+@router.patch("/me", operation_id="update_profile",
+              summary="Update the signed-in user's profile",
+              description=(
+                  "Updates the profile of the signed-in user. Every field is "
+                  "optional; a missing field is left alone. Returns the whole "
+                  "profile. 401 unauthenticated, 409 nickname_taken, "
+                  "422 invalid_nickname."))
+def правка_профиля(тело: ProfileIn, me: CurrentUser, request: Request,
+                   s: SessionDep) -> dict:
+    """Поменять свой профиль: ник и умолчания панели агента.
+
+    Ответ — весь профиль, а не одно изменённое поле: сайт держит `me` в кэше
+    целиком, и отдать ему кусок значило бы заставить его спрашивать `GET /me`
+    сразу после каждой правки.
+
+    Сюда же дописываются поля соседей (`default_endpoint`,
+    `agent_overwrite`): строка в `ProfileIn` и строка здесь. Отдельного
+    маршрута на каждое поле профиля не заводить — их станет столько же,
+    сколько полей.
+
+    Смена ника не трогает ни сессии, ни почту: ник — это имя на экране, а не
+    то, чем входят. Событие безопасности всё же пишется: «человек на экране
+    зовётся иначе» — ровно то, чего не понять из журнала запросов.
+    """
+    if тело.nickname is not None:
+        было = me.nickname
+        стало = занять_ник(s, me, тело.nickname)
+        if стало != было:
+            событие(request, "nickname_changed", user=me.id)
+    if тело.default_endpoint is not None:
+        me.default_endpoint = пресет_по_умолчанию(тело.default_endpoint)
+    if тело.agent_overwrite is not None:
+        me.agent_overwrite = bool(тело.agent_overwrite)
     return {"user": профиль(me)}
 
 

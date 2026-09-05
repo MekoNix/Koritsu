@@ -73,6 +73,7 @@ def count_pages(xml: str) -> int:
 def drawio_to_png(xml: str, page: int | None = None, scale: float = 2.0, timeout: float = 120,
                   cache: bool = True) -> bytes:
     """draw.io XML → PNG через drawio CLI (+ xvfb-run, если есть). Ошибка, если CLI нет.
+    Зовётся с `--no-sandbox`: Electron без него в контейнере падает (см. ниже).
     page — номер страницы mxfile, считая с 1 (None — первая). CLI при выходе за границу
     молча отдаёт последнюю страницу, поэтому номер проверяется здесь.
 
@@ -98,7 +99,17 @@ def drawio_to_png(xml: str, page: int | None = None, scale: float = 2.0, timeout
         out = os.path.join(tmp, "d.png")
         with open(src, "w", encoding="utf-8") as f:
             f.write(xml)
-        cmd = [exe, "-x", "-f", "png", "-s", str(scale), "-o", out]
+        # `--no-sandbox` — не небрежность и не «чтобы заработало». draw.io CLI
+        # это Electron, то есть Chromium, а его песочница берётся либо из
+        # setuid-помощника, либо из пространств имён пользователя; в контейнере
+        # (мы ходим там непривилегированным UID 10001) нет ни того ни другого, и
+        # Chromium падает с «Trace/breakpoint trap (core dumped)» — ровно та
+        # беда, из-за которой схема не попадала в собранный DOCX. Проверено
+        # прогоном в контейнере: без флага — падение, с флагом — PNG.
+        # Опасности здесь меньше, чем кажется: свой процесс мы и так закрываем
+        # снаружи (`subproc`, потолки памяти и времени), а рисуется не чужая
+        # страница, а наш собственный XML.
+        cmd = [exe, "-x", "-f", "png", "-s", str(scale), "--no-sandbox", "-o", out]
         if page is not None:
             cmd += ["-p", str(page)]
         cmd.append(src)

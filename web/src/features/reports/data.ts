@@ -1,11 +1,11 @@
 /**
  * data — запросы области «Отчёты» одним файлом.
  *
- * То же правило, что у области B: адрес маршрута, форма ответа и список
+ * То же правило, что у проектов: адрес маршрута, форма ответа и список
  * ключей, которые сбрасываются после изменения, — одно знание, и живёт оно в
  * одном месте. Экраны зовут хуки, а не `api.GET`.
  *
- * Общее с областью B (карточка проекта, материалы, постановка задания, адрес
+ * Общее с проектами (карточка проекта, материалы, постановка задания, адрес
  * артефакта) берётся из `@/features/projects/data` и здесь не повторяется:
  * второй `useProject` рядом с первым — это два кэша одного проекта, которые
  * расходятся после переименования.
@@ -13,6 +13,7 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 
 import { api, keys, unwrap } from '@/api'
+import { useMe } from '@/api/hooks'
 
 import type {
   ProjectTag,
@@ -199,4 +200,23 @@ export function defaultProvider(body: ProvidersBody | undefined): string | null 
     body.providers.find((p) => source[p] === 'shared') ??
     null
   )
+}
+
+/**
+ * Что подставить в выбор пресета: выбор человека, а если его нет — правило
+ * сайта (`defaultProvider`).
+ *
+ * Выбор живёт в профиле (`me.default_endpoint`, раздел настроек «Агент и
+ * модели»), а не в браузере: человек открывает работу и с ноутбука, и с чужой
+ * машины, и умолчание, оставшееся в `localStorage` первой, на второй молча
+ * исчезло бы.
+ *
+ * Хуком, а не аргументом `defaultProvider`: профиль читается тем же
+ * `useMe`, что и вся оболочка, и просить каждый экран передать его сюда
+ * значило бы четыре одинаковых строки в четырёх местах.
+ */
+export function useDefaultEndpoint(): string | null {
+  const me = useMe()
+  const providers = useProviders()
+  return me.data?.default_endpoint ?? defaultProvider(providers.data)
 }

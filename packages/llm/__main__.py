@@ -10,7 +10,7 @@ PYTHONPATH, и python из venv проекта — иначе не найдёт�
 Запускать из корня репозитория:
 
     DEEPSEEK_API_KEY=… PYTHONPATH=packages \\
-        /home/kurisu/koritsu2/.venv/bin/python -m llm probe --preset deepseek
+        ./.venv/bin/python -m llm probe --preset deepseek
 
 Ключ можно не передавать в командной строке, а положить в
 ~/.config/koritsu/deepseek.key — он читается, когда переменной нет.

@@ -24,14 +24,30 @@ export type KeySource = 'own' | 'shared' | 'none'
 /**
  * Тело `GET /api/keys/providers`.
  *
- * `key_source` появляется в службе позже списка (правка агента C), поэтому поле
- * необязательное: пока его нет, экран не догадывается про общий ключ, а просто
- * не показывает пометку. Терпимость здесь дешевле, чем ночь, в которой сайт
- * падает от отсутствия поля.
+ * `key_source` появился в службе позже списка, поэтому поле необязательное:
+ * пока его нет, экран не догадывается про общий ключ, а просто не показывает
+ * пометку. Терпимость здесь дешевле сайта, падающего от отсутствия поля.
  */
 export type KeyProviders = {
   providers: string[]
   key_source?: Partial<Record<string, KeySource>>
+}
+
+/**
+ * `packages/api/templates/routes.py: TemplateOut` — свой шаблон отчёта.
+ *
+ * `tags` — сколько тегов нашла служба тем же разбором, которым строится
+ * манифест работы. Это и есть то, по чему шаблон узнают в списке, когда имена
+ * похожи.
+ */
+export type ReportTemplate = {
+  id: string
+  name: string
+  bytes: number
+  tags: number
+  /** Первые знаки sha256 содержимого: по ним видно, что файл тот же самый. */
+  sha256: string
+  created_at: string | null
 }
 
 /** `packages/api/tokens/routes.py: ApiTokenOut`. */

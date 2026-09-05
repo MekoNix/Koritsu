@@ -24,7 +24,7 @@ service — что показывает админка и как в базу п�
 `scope["state"]`, то есть один на запрос, как `request_id` и `user_id` журнала.
 
 **Секретов в `detail` не бывает.** Ни пароля, ни строки ключа, ни значения
-cookie, ни почты (§7: почта — то, что при удалении аккаунта обязано исчезнуть).
+cookie, ни почты (почта — то, что при удалении аккаунта обязано исчезнуть).
 Следит за этим `_почистить`, а не обещание: место, пишущее событие, однажды
 передаст `token=…`, и лучше, если это отсечёт код.
 
@@ -205,8 +205,8 @@ def лимит(user, ключ: str, умолчание):
     Поле — мешок JSON, а не колонка на лимит, потому что лимиты ещё не
     закрыты владельцем (цены и планы он решает вместе): колонка на каждый
     означала бы миграцию на каждое его решение. Читают его те, кто лимит и
-    применяет: расход модели — агент B (`monthly_units`), место на томе —
-    материалы (`quota_bytes`).
+    применяет: расход модели (`monthly_units`) и место на томе
+    (`quota_bytes`).
 
         месячный = admin.service.лимит(user, "monthly_units",
                                        settings.free_monthly_units)
@@ -219,26 +219,39 @@ def карточка_человека(user, settings: Settings, *, bytes_used: i
                       spent_units: int) -> dict:
     """Что видит владелец в списке людей.
 
-    Почта здесь есть — и это не противоречие §7. Список читает владелец службы,
+    Ник рядом с почтой: людей владелец различает по нику, а почта
+    осталась тем, по чему человека находят и приглашают.
+
+    Почта здесь есть, и это не противоречие. Список читает владелец службы,
     которому иначе некого опознать (UUID не говорит ничего), а в **журнал** она
     по-прежнему не попадает: журнал переживает удаление аккаунта, а эта
     страница показывает то, что в базе есть прямо сейчас.
+
+    `quota_bytes` — то самое число, по которому отказывают в загрузке файла
+    (`materials.service.проверить_квоту`), а не «настройка службы»: считает его
+    одна дверь `runs.limits.квота_человека` — план из справочника, поверх него
+    личный лимит. Пока их было два, карточка обещала одно, а отказ приходил по
+    другому.
     """
+    from ..runs.limits import квота_человека                    # noqa: PLC0415
+
     def iso(момент):
         return момент.isoformat() if момент is not None else None
 
     return {
         "id": user.id,
         "email": user.email,
+        "nickname": user.nickname,
         "plan": user.plan,
         "is_admin": bool(user.is_admin),
         "limits": dict(user.limits or {}),
-        "quota_bytes": лимит(user, "quota_bytes", settings.user_quota_bytes),
+        "quota_bytes": квота_человека(settings, user),
         "bytes_used": bytes_used,
         "spent_units": spent_units,
         "email_confirmed": user.email_confirmed_at is not None,
         "created_at": iso(user.created_at),
         "deleted_at": iso(user.deleted_at),
+        "blocked_at": iso(user.blocked_at),
     }
 
 
@@ -257,25 +270,130 @@ def люди(s: Session, settings: Settings, *, limit: int = 200) -> list[dict]:
 
 
 def поправить(s: Session, user_id: str, *, plan: str | None = None,
-              is_admin: bool | None = None, limits: dict | None = None):
-    """Сменить план, права владельца и личные лимиты. Возвращает строку.
+              is_admin: bool | None = None, limits: dict | None = None,
+              blocked: bool | None = None, request=None):
+    """Сменить план, права владельца, личные лимиты и блокировку. Даёт строку.
 
     `limits` присваивается целиком, а не сливается: правка «поставь квоту»,
     молча сохраняющая прошлый месячный лимит, однажды сохранит тот, который
     владелец как раз убирал. Целиком — значит видно, что осталось.
+
+    **План проверяется по справочнику** (`runs.limits.ПЛАНЫ`):
+    неизвестный — `400 unknown_plan`. До справочника план вписывался свободной
+    строкой, и «pro » с пробелом молча оставлял человека на потолке `free`.
+
+    **Блокировка отзывает все сессии человека, и это не украшение.** Без
+    отзыва заблокированный доработал бы в уже открытой вкладке до истечения
+    cookie; проверка в `current_user` его, конечно, не пустит, но сессия,
+    которую никто не гасил, — это строка в базе, по которой он числится
+    вошедшим. Разблокировка сессий не возвращает: войти заново — одно действие,
+    а воскрешать чужие открытые вкладки служба не должна.
+
+    `request` нужен только для события безопасности; без него (вызов из
+    консоли или из теста без приложения) правка идёт молча — журнал привязан к
+    запросу, а не к процессу (`записать`).
     """
     from ..accounts.models import User
+    from ..accounts.service import отозвать_все
+    from ..accounts.service import событие as в_оба_журнала
+    from ..runs.limits import UNKNOWN_PLAN, известен, нормальный_план
+    from .models import ACCOUNT_BLOCKED, ACCOUNT_UNBLOCKED
 
     user = s.get(User, user_id)
     if user is None:
         raise ApiError("not_found", "User not found", 404, where="path.user_id")
     if plan is not None:
-        user.plan = plan.strip()[:32]
+        if not известен(plan):
+            raise ApiError(UNKNOWN_PLAN, f"Unknown plan {plan!r}", 400,
+                           where="body.plan")
+        user.plan = нормальный_план(plan)
     if is_admin is not None:
         user.is_admin = bool(is_admin)
     if limits is not None:
         user.limits = dict(limits)
+    if blocked is not None and blocked != (user.blocked_at is not None):
+        user.blocked_at = now() if blocked else None
+        if blocked:
+            отозвать_все(s, user)
+        # Через `accounts.service.событие`, а не через здешнее: то пишет в
+        # оба журнала разом (stderr и таблица), и второго места, где событие
+        # превращается в запись, у службы нет.
+        в_оба_журнала(request,
+                      ACCOUNT_BLOCKED if blocked else ACCOUNT_UNBLOCKED,
+                      user=user.id)
     return user
+
+
+EMAIL_TAKEN = "email_taken"
+
+
+def завести_человека(s: Session, settings: Settings, *, email: str,
+                     plan: str | None = None, nickname: str | None = None,
+                     request=None) -> tuple[object, str]:
+    """Завести аккаунт руками владельца. Даёт `(строка, ссылка сброса)`.
+
+    Писем служба не шлёт, поэтому человека заводит владелец, а ссылку отдаёт
+    ему сам — один раз, как строку ключа.
+
+    **Пароля у такого аккаунта нет.** Не пустой и не общий: в `password_hash`
+    ложится хеш случайной строки, которой не знает никто, включая нас. Пустое
+    поле означало бы вход без пароля, а известное умолчание («koritsu123») —
+    вход по угаданному паролю в каждый заведённый так аккаунт.
+
+    **Почта считается подтверждённой сразу.** Владелец знает, кого заводит, а
+    подтверждение всё равно случится: ссылку сброса человек открывает из своего
+    ящика. Требовать сверх этого ещё и подтверждения значило бы послать письмо,
+    которого служба не шлёт.
+
+    **Ссылка — обычный сброс пароля** (`accounts.выдать_токен`, назначение
+    `RESET`), тот же час жизни и тот же маршрут `/auth/reset`. Второго
+    механизма «приглашение» не заводится: он отличался бы от сброса только
+    именем, и однажды один из двух починили бы, а другой нет.
+
+    Дубль почты — `409 email_taken`, и здесь это не утечка (в отличие от
+    открытой регистрации, правило 1): спрашивает владелец службы, который и
+    так видит весь список людей.
+    """
+    from ..accounts import mail
+    from ..accounts.models import RESET, User
+    from ..accounts.service import (выдать_токен, годная_почта, ключ_ника,
+                                    новый_токен, нормальная_почта,
+                                    проверить_ник, создать_пользователя,
+                                    требовать_свободный_ник)
+    from ..accounts.service import событие as в_оба_журнала
+    from ..runs.limits import UNKNOWN_PLAN, известен, нормальный_план
+    from .models import USER_CREATED_BY_ADMIN
+
+    почта = нормальная_почта(email)
+    if not годная_почта(почта):
+        raise ApiError("validation_failed", "Not a valid email address", 422,
+                       where="body.email")
+    # По всей таблице, а не по живым: почту держит уникальный ключ базы, и
+    # аккаунт в корзине (`deleted_at`) отдал бы `IntegrityError` и пятисотку
+    # вместо внятного отказа.
+    if s.scalar(select(User).where(User.email == почта)) is not None:
+        raise ApiError(EMAIL_TAKEN, "This email is already registered", 409,
+                       where="body.email")
+
+    if plan is not None and not известен(plan):
+        raise ApiError(UNKNOWN_PLAN, f"Unknown plan {plan!r}", 400,
+                       where="body.plan")
+
+    ник = None
+    if nickname:
+        ник = проверить_ник(nickname)
+        требовать_свободный_ник(s, ключ_ника(ник))
+
+    # Пароль, которого не знает никто: 32 случайных байта, выброшенные сразу
+    # после хеширования. Аккаунт открывается только по ссылке сброса.
+    user = создать_пользователя(s, почта, новый_токен(), ник)
+    user.email_confirmed_at = now()
+    if plan is not None:
+        user.plan = нормальный_план(plan)
+
+    токен = выдать_токен(s, user, RESET)
+    в_оба_журнала(request, USER_CREATED_BY_ADMIN, user=user.id)
+    return user, mail.reset_link(settings, токен)
 
 
 # ── очередь ──────────────────────────────────────────────────────────────────
@@ -415,7 +533,8 @@ def сводка(s: Session, *, days: int = СВОДКА_ДНЕЙ_ПО_УМОЛ�
 __all__ = ["событие", "записать", "сбросить", "install", "СОБЫТИЯ",
            "ЖурналБезопасности",
            "события", "карточка_события", "люди",
-           "карточка_человека", "поправить", "очередь", "сводка", "лимит",
-           "FORBIDDEN",
+           "карточка_человека", "поправить", "завести_человека", "очередь",
+           "сводка", "лимит",
+           "FORBIDDEN", "EMAIL_TAKEN",
            "СОБЫТИЙ_ПО_УМОЛЧАНИЮ", "СОБЫТИЙ_МАКСИМУМ",
            "СВОДКА_ДНЕЙ_ПО_УМОЛЧАНИЮ", "СВОДКА_ДНЕЙ_МАКСИМУМ"]

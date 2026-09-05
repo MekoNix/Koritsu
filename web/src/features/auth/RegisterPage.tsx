@@ -5,6 +5,11 @@
  * Поэтому у страницы два состояния: форма и «письмо отправлено». Второе — не
  * тост и не строчка под кнопкой: человеку надо уйти в почтовый ящик, и экран
  * обязан это сказать так, чтобы он не тыкал «зарегистрироваться» второй раз.
+ *
+ * Ник — обязательное поле: им человека зовут на всех
+ * экранах, и спросить его позже было бы поздно — пришлось бы заводить экран
+ * «представьтесь» между входом и работой. Отказы службы (`invalid_nickname`,
+ * `nickname_taken`) приходят с адресом поля и встают под ним же.
  */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
@@ -27,7 +32,7 @@ export function RegisterPage() {
 
   const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { email: '', password: '' },
+    defaultValues: { email: '', nickname: '', password: '' },
   })
   const { formError, handle, reset } = useAuthError(form.setError)
 
@@ -35,7 +40,7 @@ export function RegisterPage() {
     mutationFn: (values: RegisterValues) =>
       unwrap(api.POST('/api/auth/register', { body: values })),
     onSuccess: (_data, values) => setSentTo(values.email),
-    onError: (e) => handle(e, ['email', 'password']),
+    onError: (e) => handle(e, ['email', 'nickname', 'password']),
   })
 
   if (sentTo) {
@@ -74,6 +79,14 @@ export function RegisterPage() {
           placeholder={t('auth.hint.emailPlaceholder')}
           error={form.formState.errors.email?.message}
           {...form.register('email')}
+        />
+        <Input
+          label={t('auth.field.nickname')}
+          autoComplete="nickname"
+          placeholder={t('auth.hint.nicknamePlaceholder')}
+          hint={t('auth.hint.nickname')}
+          error={form.formState.errors.nickname?.message}
+          {...form.register('nickname')}
         />
         <PasswordInput
           label={t('auth.field.password')}

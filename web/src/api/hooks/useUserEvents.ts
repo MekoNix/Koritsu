@@ -9,12 +9,12 @@
  *
  * Что делает хук: сбрасывает ключи кэша (`notifications`, `jobs`, `usage`) и
  * зовёт тост на завершение фоновой задачи. Тосты — только на завершение и на
- * ошибку (решение владельца), всё прочее оседает в колокольчике; поэтому
+ * ошибку, всё прочее оседает в колокольчике; поэтому
  * решение «тостить или нет» принимается ровно здесь, а не в каждом экране.
  *
- * **Тост на упавшее задание — один на всё приложение, и он здесь.** До сведения
- * ночи 1 области тостили провал ещё и сами (отчёты, схемы), и человек получал
- * два тоста на одну беду. Причину показывает оболочка: `data.code` уведомления
+ * **Тост на упавшее задание — один на всё приложение, и он здесь.** Раньше
+ * области тостили провал ещё и сами (отчёты, схемы), и человек получал два
+ * тоста на одну беду. Причину показывает оболочка: `data.code` уведомления
  * (`notifications/service.py`) — это тот же код отказа, что и везде, и русский
  * текст ему даёт `errors.json`. Свои тосты области оставляют только на отказ
  * обычного запроса (не задания): его никто, кроме области, не увидит.
@@ -27,6 +27,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 
 import { t as translate, useT } from '@/i18n'
+import { withBase } from '@/lib/basePath'
 import { useToast } from '@/ui/toast'
 
 import { keys } from '../queryKeys'
@@ -73,7 +74,7 @@ export function useUserEvents(enabled = true): SseState {
       }
 
       // Тост — только на завершение фоновой задачи и на беду. Остальное человек
-      // найдёт в колокольчике: это и есть решение владельца о тостах.
+      // найдёт в колокольчике: это и есть правило о тостах.
       if (kind === JOB_DONE) toast.success(t('notifications.jobDone'))
       else if (kind === JOB_FAILED) toast.error(t('notifications.jobFailed'), failedReason(card))
       else if (kind === LIMIT_EXHAUSTED) toast.error(t('errors.limit_exhausted'))
@@ -86,7 +87,9 @@ export function useUserEvents(enabled = true): SseState {
   const shouldReconnect = useCallback(() => true, [])
 
   return useSseStream({
-    url: enabled ? '/api/events' : null,
+    // `withBase` — префикс пути сайта: поток идёт своим `fetch`'ем, мимо
+    // клиента API, который ставит префикс сам.
+    url: enabled ? withBase('/api/events') : null,
     onFrame,
     shouldReconnect,
     // Кадры складывать незачем: всё нужное уже разложено по кэшу и колокольчику.

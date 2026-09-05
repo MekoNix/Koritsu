@@ -2,7 +2,7 @@
  * Тесты поиска и страниц в списке людей.
  *
  * Проверяется здесь не «работает ли `filter`», а два случая, которые ломаются
- * молча: пустой поиск обязан показывать всех (иначе раздел встречает владельца
+ * молча: пустой поиск обязан показывать всех (иначе раздел встречает админа
  * словами «никого не нашлось»), и номер страницы обязан приводиться в границы
  * — сузил поиск, стоя на пятой странице, и таблица оказалась бы пустой при
  * непустом списке.
@@ -16,6 +16,7 @@ function user(id: string, email: string, is_admin = false): AdminUser {
   return {
     id,
     email,
+    nickname: email.split('@')[0] as string,
     plan: 'free',
     is_admin,
     limits: {},
@@ -25,6 +26,7 @@ function user(id: string, email: string, is_admin = false): AdminUser {
     email_confirmed: true,
     created_at: null,
     deleted_at: null,
+    blocked_at: null,
   }
 }
 
@@ -41,6 +43,10 @@ describe('поиск людей', () => {
 
   it('ищет по почте без учёта регистра', () => {
     expect(filterUsers(люди, 'MARIA').map((u) => u.id)).toEqual(['bbb22222'])
+  })
+
+  it('ищет по нику', () => {
+    expect(filterUsers(люди, 'ARTEM').map((u) => u.id)).toEqual(['aaa11111'])
   })
 
   it('ищет по идентификатору', () => {

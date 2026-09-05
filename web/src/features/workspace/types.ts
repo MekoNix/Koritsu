@@ -10,6 +10,12 @@
 export type Member = {
   user_id: string
   /**
+   * Ник участника — то, чем его зовут на экране.
+   * `null` — по той же причине, что и у почты: строка, оставшаяся от стёртого
+   * аккаунта.
+   */
+  nickname: string | null
+  /**
    * Почта участника. `null` бывает у аккаунта, стёртого из `users` мимо
    * каскада; такую строку показываем идентификатором, а не пустотой.
    */
@@ -29,7 +35,7 @@ export type MemberChanged = {
 export const ROLES = ['owner', 'editor', 'viewer'] as const
 export type Role = (typeof ROLES)[number]
 
-/** Участников меняет только владелец (§7 решений по API). */
+/** Участников меняет только владелец пространства. */
 export function canManageMembers(role: string | undefined): boolean {
   return role === 'owner'
 }

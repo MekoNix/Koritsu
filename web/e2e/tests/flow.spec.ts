@@ -117,10 +117,21 @@ test('путь человека: от регистрации до выхода',
     .click()
   const превью = page.locator('embed[type="application/pdf"]')
   await expect(превью).toBeVisible({ timeout: 120_000 })
-  // Показывается именно собранный файл, и показывается через `blob:`: служба
-  // отдаёт артефакт с `Content-Disposition: attachment`, и `<embed>` на прямой
-  // адрес браузер скачал бы, а не нарисовал.
-  await expect(превью).toHaveAttribute('src', /^blob:/)
+  // Показывается прямой адрес артефакта с `?inline=1`: служба по этому
+  // параметру отдаёт PDF с `Content-Disposition: inline`, и просмотрщик рисует
+  // его на месте. Без параметра заголовок был бы `attachment`, и браузер
+  // скачал бы файл вместо того, чтобы показать, — поэтому проверяется именно
+  // адрес, а не только видимость `<embed>`.
+  await expect(превью).toHaveAttribute('src', /\/api\/projects\/.+\/artifacts\/.+\?inline=1$/)
+  // Копии в памяти вкладки больше нет: `blob:` был обходом, а не задумкой.
+  await expect(превью).not.toHaveAttribute('src', /^blob:/)
+  // Скачивание при этом осталось скачиванием: ссылка ведёт на тот же адрес БЕЗ
+  // параметра, и по ней приезжает файл.
+  const скачать_pdf = page.getByRole('link', { name: t('reports.pdf.downloadPdf') })
+  await expect(скачать_pdf).toHaveAttribute('href', /\/api\/projects\/.+\/artifacts\/[^?]+$/)
+  const [собранный] = await Promise.all([page.waitForEvent('download'), скачать_pdf.click()])
+  expect(await собранный.failure()).toBeNull()
+  expect(собранный.suggestedFilename()).toMatch(/\.pdf$/)
   await expect(page.getByRole('link', { name: t('reports.pdf.downloadDocx') })).toBeVisible()
 
   // ── 7. версии тега и откат ────────────────────────────────────────────────

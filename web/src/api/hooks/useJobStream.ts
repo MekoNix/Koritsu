@@ -23,6 +23,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 
+import { withBase } from '@/lib/basePath'
+
 import { api, unwrap } from '../client'
 import { keys } from '../queryKeys'
 import { useSseStream, type SseState } from '../sse'
@@ -85,7 +87,9 @@ export function useJobStream(jobId: string | null | undefined): JobStreamState {
 
   // Поток не открывается вовсе, если задание уже кончилось: события лежат в
   // `GET /api/jobs/{id}/events`, а поток закрылся бы первым же кадром.
-  const url = id && !done ? `/api/jobs/${encodeURIComponent(id)}/stream` : null
+  // `withBase`: поток открывается своим `fetch`'ем, мимо клиента API, а тот
+  // ставит префикс пути сам. В корне это пустая строка.
+  const url = id && !done ? withBase(`/api/jobs/${encodeURIComponent(id)}/stream`) : null
   const stream = useSseStream({ url, shouldReconnect })
 
   const events = useMemo<JobEvent[]>(

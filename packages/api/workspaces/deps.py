@@ -1,11 +1,10 @@
 """
-deps — кто спрашивает: одна точка, через которую зона C берёт вошедшего.
+deps — кто спрашивает: одна точка, через которую пространства берут вошедшего.
 
-Аккаунты — зона агента B (`api.accounts`: модель `User`, зависимость
-`current_user`, псевдоним `CurrentUser`). Пока его пакета нет, маршруты
-пространств и проектов всё равно обязаны собираться: иначе половина службы не
-импортируется, пока не готова другая половина, и два агента ждут друг друга
-вместо работы.
+Аккаунты живут в `api.accounts`: модель `User`, зависимость `current_user`,
+псевдоним `CurrentUser`. Пока этого пакета нет, маршруты пространств и проектов
+всё равно обязаны собираться: иначе половина службы не импортируется, пока не
+готова другая половина, и два подпакета требуют друг друга.
 
 Отсюда заглушка — и она устроена так, что **не может тихо остаться в проде**:
 без аккаунтов любой защищённый маршрут отвечает `401 unauthorized`, а не пускает
@@ -31,9 +30,9 @@ from ..errors import ApiError
 
 UNAUTHORIZED = "unauthorized"
 
-try:                                                    # пакет B, когда он есть
+try:                                                    # аккаунты, когда они есть
     from ..accounts import CurrentUser, current_user    # type: ignore
-except Exception:                                       # noqa: BLE001 — B ещё нет
+except Exception:                                       # noqa: BLE001 — их ещё нет
     def current_user() -> Any:
         """Заглушка на время, пока нет аккаунтов: вошедших не бывает."""
         raise ApiError(UNAUTHORIZED, "Authentication required", 401)
@@ -47,16 +46,16 @@ def user_id_by_email(s: Session, email: str) -> str | None:
     Почта сравнивается без регистра: человек, приглашающий коллегу, набирает её
     руками, и `Ivan@` вместо `ivan@` — это не другой человек, а другая раскладка.
 
-    Две ветки, потому что таблица `users` принадлежит B, а маршрут — нам: пока
-    его модели нет, читаем ту же таблицу через Core. Когда B на месте, работает
-    первая ветка, и запасная не выполняется вовсе.
+    Две ветки, потому что таблица `users` принадлежит аккаунтам, а маршрут —
+    нам: пока их модели нет, читаем ту же таблицу через Core. Когда пакет
+    аккаунтов на месте, работает первая ветка, и запасная не выполняется вовсе.
     """
     нужная = (email or "").strip().lower()
     if not нужная:
         return None
     try:
         from ..accounts import User                     # type: ignore
-    except Exception:                                   # noqa: BLE001 — B ещё нет
+    except Exception:                                   # noqa: BLE001 — их ещё нет
         row = s.execute(text("SELECT id FROM users WHERE lower(email) = :e"),
                         {"e": нужная}).first()
         return None if row is None else str(row[0])
@@ -84,7 +83,7 @@ def emails_by_ids(s: Session, ids: Sequence[str]) -> dict[str, str]:
         return {}
     try:
         from ..accounts import User                     # type: ignore
-    except Exception:                                   # noqa: BLE001 — B ещё нет
+    except Exception:                                   # noqa: BLE001 — их ещё нет
         места = ", ".join(f":i{n}" for n in range(len(нужные)))
         строки = s.execute(
             text(f"SELECT id, email FROM users WHERE id IN ({места})"),
@@ -94,5 +93,36 @@ def emails_by_ids(s: Session, ids: Sequence[str]) -> dict[str, str]:
             s.execute(select(User.id, User.email).where(User.id.in_(нужные))).all()}
 
 
+def nicknames_by_ids(s: Session, ids: Sequence[str]) -> dict[str, str]:
+    """Ники по идентификаторам: `{id: nickname}`. Тому же списку участников.
+
+    Вторым запросом рядом с `emails_by_ids`, а не одним на две колонки: у
+    `emails_by_ids` есть свои читатели, и менять её форму значило бы править их
+    всех ради одной колонки. Список участников — два десятка строк, второй
+    обход той же таблицы по первичному ключу здесь ничего не стоит.
+
+    Ник вытеснил почту в роли имени на экране: почта
+    осталась в ответе, но показывается мелко и только там, где она нужна.
+
+    Две ветки — по той же причине, что у соседок: таблица `users` принадлежит
+    аккаунтам, а маршрут — нам.
+    """
+    нужные = [str(i) for i in ids if i]
+    if not нужные:
+        return {}
+    try:
+        from ..accounts import User                     # type: ignore
+    except Exception:                                   # noqa: BLE001 — их ещё нет
+        места = ", ".join(f":i{n}" for n in range(len(нужные)))
+        строки = s.execute(
+            text(f"SELECT id, nickname FROM users WHERE id IN ({места})"),
+            {f"i{n}": знач for n, знач in enumerate(нужные)}).all()
+        return {str(строка[0]): str(строка[1]) for строка in строки}
+    return {str(айди): str(ник) for айди, ник in
+            s.execute(select(User.id, User.nickname)
+                      .where(User.id.in_(нужные))).all()}
+
+
 __all__ = ["current_user", "CurrentUser", "user_id_by_email", "emails_by_ids",
+           "nicknames_by_ids",
            "UNAUTHORIZED"]

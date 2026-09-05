@@ -6,7 +6,7 @@
 `upgrade head` на пустом файле, — а на живом томе миграция ложится на базу с
 данными, и ровно там она и ломается. Три вещи, которые тут закрепляются:
 
-* **голова одна.** Четыре агента вели четыре ветви; вторая голова означает, что
+* **голова одна.** Ветвей в цепочке несколько; вторая голова означает, что
   `upgrade head` падает с `Multiple head revisions are present`, а `create_app`
   зовёт его при сборке — то есть служба не поднимается вовсе;
 * **схема и модели сходятся.** `alembic check` пишет «no new operations», если
@@ -35,19 +35,22 @@ from sqlalchemy import text
 from api import Settings
 from api.db import Db, alembic_config, current_revision
 
-# Порядок ветвей после сведения. Список пишется руками намеренно: он и есть
+# Порядок ревизий, включая слияние ветвей. Список пишется руками намеренно: он и есть
 # утверждение теста — «цепочка выглядит вот так», — а не пересказ того, что
 # сейчас лежит в каталоге.
 ЦЕПОЧКА = (
     "0001_root",                 # якорь: общий корень для трёх ветвей
-    "5f7bb4acb03d",              # B: users, email_tokens, sessions, лимиты
-    "70d001e82586",              # C: workspaces, members, projects
-    "d89510c0e548",              # слияние B и C
-    "be5b0b0dd8f6",              # D: model_keys
-    "c3a71f0d94e6",              # E: model_keys.user_id → users.id CASCADE
-    "3cb2572ff488",              # A5.1: jobs, job_events
-    "7f7799c6dac1",              # C5.1: api_tokens, security_events, is_admin
-    "eef3027c39f2",              # B5.1: notifications
+    "5f7bb4acb03d",              # users, email_tokens, sessions, лимиты
+    "70d001e82586",              # workspaces, members, projects
+    "d89510c0e548",              # слияние двух ветвей
+    "be5b0b0dd8f6",              # model_keys
+    "c3a71f0d94e6",              # model_keys.user_id → users.id CASCADE
+    "3cb2572ff488",              # jobs, job_events
+    "7f7799c6dac1",              # api_tokens, security_events, is_admin
+    "eef3027c39f2",              # notifications
+    "a1c47b30f5e2",              # users.blocked_at (блокировка аккаунта)
+    "f5872fd9890d",              # users.nickname, users.nickname_key
+    "b2d7c1a54e39",              # templates, users.default_endpoint/overwrite
 )
 
 ГОЛОВА = ЦЕПОЧКА[-1]
@@ -66,8 +69,8 @@ def cfg(том):
 
 def головы_базы(settings: Settings) -> set[str]:
     """Какие ревизии стоят на базе. Множество, а не одна: пока ветви не сведены,
-    их в `alembic_version` честно две — то самое состояние, в котором работали
-    B, C и D одновременно."""
+    их в `alembic_version` честно две — то самое состояние, в котором ветви
+    живут до слияния."""
     from alembic.runtime.migration import MigrationContext
 
     db = Db(settings)
@@ -161,14 +164,17 @@ def test_каждая_ступень_по_одной(том, cfg):
     ожидаемые = [
         {"0001_root"},
         {"5f7bb4acb03d"},
-        # Две головы разом — то самое состояние, в котором ночь и работала:
-        # ветвь B поднята, ветвь C поднята, слияния ещё нет.
+        # Две головы разом — то самое состояние, ради которого заведено
+        # слияние: обе ветви подняты, сливающей ревизии ещё нет.
         {"5f7bb4acb03d", "70d001e82586"},
         {"d89510c0e548"},
         {"be5b0b0dd8f6"},
         {"c3a71f0d94e6"},
         {"3cb2572ff488"},
         {"7f7799c6dac1"},
+        {"eef3027c39f2"},
+        {"a1c47b30f5e2"},
+        {"f5872fd9890d"},
         {ГОЛОВА},
     ]
     for ревизия, головы in zip(ЦЕПОЧКА, ожидаемые):
@@ -186,8 +192,8 @@ def test_каждая_ступень_вниз_по_одной(том, cfg):
     сказать об этом `alembic_version` (или снимает вместе с собой лишнюю
     таблицу), видна только так.
 
-    Слияние спускается в две головы разом — то же состояние, в котором работали
-    B и C одновременно, только пройденное в обратную сторону.
+    Слияние спускается в две головы разом — то же состояние, в котором ветви
+    жили до него, только пройденное в обратную сторону.
     """
     command.upgrade(cfg, "head")
 
@@ -208,10 +214,11 @@ def test_каждая_ступень_вниз_по_одной(том, cfg):
     assert таблицы(том) <= {"alembic_version"}
 
 
-# ── то, ради чего заведены миграции ключей и уведомлений (агенты C и B) ──────
+# ── то, ради чего заведены миграции ключей и уведомлений ─────────────────────
 
 def test_ступень_ключей_и_журнала_откатывается_в_одиночку(том, cfg):
-    """Шаг C5.1 снимается один: нет ни ключей, ни журнала, ни колонок у `users`.
+    """Ступень ключей и журнала снимается одна: нет ни ключей, ни журнала,
+    ни колонок у `users`.
 
     Колонки проверяются отдельно от таблиц: `is_admin` и `limits` добавлены
     через `batch_alter_table`, то есть таблица `users` при откате
@@ -239,8 +246,14 @@ def test_ступень_ключей_и_журнала_откатывается_
 
 
 def test_ступень_уведомлений_откатывается_в_одиночку(том, cfg):
-    """Голова цепочки снимается одна: таблицы уведомлений нет, чужие целы."""
-    command.upgrade(cfg, "head")
+    """Ступень уведомлений снимается одна: таблицы нет, чужие целы.
+
+    Поднимаемся именно до неё, а не до `head`: поверх легли ещё три
+    ревизии, и «голова минус один» с тех пор снимает не эту ступень, а
+    последнюю. Ревизия названа явно — тест про **эту** ступень, а не про то,
+    что лежит сверху сегодня.
+    """
+    command.upgrade(cfg, "eef3027c39f2")
     command.downgrade(cfg, "-1")
 
     assert current_revision(том) == "7f7799c6dac1"
@@ -250,7 +263,7 @@ def test_ступень_уведомлений_откатывается_в_од�
 
 
 def test_уведомление_уходит_с_человеком(том, cfg):
-    """§7: удалили аккаунт — удалено всё, что с ним связано. Колокольчик тоже.
+    """Удалили аккаунт — удалено всё, что с ним связано. Колокольчик тоже.
 
     Поведение на живой базе, а не описание в схеме: `PRAGMA foreign_keys` в
     SQLite выключен по умолчанию и включается на каждом соединении
@@ -261,10 +274,11 @@ def test_уведомление_уходит_с_человеком(том, cfg):
     try:
         with db.engine.begin() as conn:
             conn.execute(text(
-                "INSERT INTO users (id, email, password_hash, plan, "
-                "totp_enabled, failed_logins, is_admin, limits, "
-                "created_at, updated_at) "
-                "VALUES ('u1', 'кто@пример.рф', 'хеш', 'free', 0, 0, 0, '{}', "
+                "INSERT INTO users (id, email, nickname, nickname_key, "
+                "password_hash, plan, totp_enabled, failed_logins, "
+                "is_admin, limits, created_at, updated_at) "
+                "VALUES ('u1', 'кто@пример.рф', 'кто', 'кто', 'хеш', "
+                "'free', 0, 0, 0, '{}', "
                 "'2026-09-04 00:00:00', '2026-09-04 00:00:00')"))
             conn.execute(text(
                 "INSERT INTO notifications (id, user_id, kind, data, "
@@ -279,12 +293,12 @@ def test_уведомление_уходит_с_человеком(том, cfg):
         db.dispose()
 
 
-# ── то, ради чего заведена миграция E ────────────────────────────────────────
+# ── то, ради чего заведена миграция слияния ──────────────────────────────────
 
 def test_ключ_на_users_с_каскадом(том, cfg):
     """`model_keys.user_id` смотрит на `users.id` и уходит вместе с человеком.
 
-    §7 обещает: удалили аккаунт — удалено всё, что с ним связано. Без каскада
+    Удалили аккаунт — удалено всё, что с ним связано. Без каскада
     шифртексты ушедшего остались бы строками, у которых больше нет владельца.
     """
     command.upgrade(cfg, "head")
@@ -297,7 +311,7 @@ def test_ключ_на_users_с_каскадом(том, cfg):
         assert строка[2] == "users" and строка[3] == "user_id"
         assert строка[4] == "id" and строка[6] == "CASCADE"
 
-        # Индекс агента D пережил пересборку таблицы: `batch_alter_table`
+        # Индекс пережил пересборку таблицы: `batch_alter_table`
         # копирует таблицу целиком, и потерянный индекс здесь означал бы
         # медленный список ключей, о котором никто бы не узнал.
         with db.engine.connect() as conn:
@@ -322,9 +336,11 @@ def test_каскад_работает_на_живой_базе(том, cfg):
     try:
         with db.engine.begin() as conn:
             conn.execute(text(
-                "INSERT INTO users (id, email, password_hash, plan, "
-                "totp_enabled, failed_logins, created_at, updated_at) "
-                "VALUES ('u1', 'кто@пример.рф', 'хеш', 'free', 0, 0, "
+                "INSERT INTO users (id, email, nickname, nickname_key, "
+                "password_hash, plan, totp_enabled, failed_logins, "
+                "created_at, updated_at) "
+                "VALUES ('u1', 'кто@пример.рф', 'кто', 'кто', 'хеш', "
+                "'free', 0, 0, "
                 "'2026-09-03 00:00:00', '2026-09-03 00:00:00')"))
             conn.execute(text(
                 "INSERT INTO model_keys (id, user_id, provider, ciphertext, "
@@ -341,10 +357,10 @@ def test_каскад_работает_на_живой_базе(том, cfg):
 
 
 def test_откат_снимает_ключ(том, cfg):
-    """Шаг E откатывается: ключа нет, таблица цела.
+    """Шаг с внешним ключом откатывается: ключа нет, таблица цела.
 
-    Спуск назван ревизией, а не `-1`: головой цепочки шаг E перестал быть, как
-    только к ней прибавилась очередь, и `-1` проверял бы уже чужой откат.
+    Спуск назван ревизией, а не `-1`: головой цепочки этот шаг перестал быть,
+    как только к ней прибавилась очередь, и `-1` проверял бы уже чужой откат.
     """
     command.upgrade(cfg, "head")
     command.downgrade(cfg, "be5b0b0dd8f6")
@@ -362,7 +378,7 @@ def test_откат_снимает_ключ(том, cfg):
     assert {"user_id", "provider", "ciphertext", "last4"} <= столбцы
 
 
-# ── то, ради чего заведена миграция очереди (агент A ночи 2) ─────────────────
+# ── то, ради чего заведена миграция очереди ──────────────────────────────────
 
 def test_очередь_откатывается_в_одиночку(том, cfg):
     """Шаг очереди снимается один: обеих её таблиц нет, чужие целы.
@@ -385,7 +401,7 @@ def test_очередь_откатывается_в_одиночку(том, cfg
 def test_задание_уходит_с_человеком_и_событие_с_заданием(том, cfg):
     """Не описание каскада в схеме, а его поведение на живой базе.
 
-    §7 обещает: удалили аккаунт — удалено всё, что с ним связано. Задание несёт
+    Удалили аккаунт — удалено всё, что с ним связано. Задание несёт
     в `payload` работу человека, а событие — текст, который ему написала модель;
     остаться без владельца не должно ни то, ни другое. Проверяется через `Db`, а
     не голым соединением: `PRAGMA foreign_keys` в SQLite выключен по умолчанию.
@@ -395,9 +411,11 @@ def test_задание_уходит_с_человеком_и_событие_с_
     try:
         with db.engine.begin() as conn:
             conn.execute(text(
-                "INSERT INTO users (id, email, password_hash, plan, "
-                "totp_enabled, failed_logins, created_at, updated_at) "
-                "VALUES ('u1', 'кто@пример.рф', 'хеш', 'free', 0, 0, "
+                "INSERT INTO users (id, email, nickname, nickname_key, "
+                "password_hash, plan, totp_enabled, failed_logins, "
+                "created_at, updated_at) "
+                "VALUES ('u1', 'кто@пример.рф', 'кто', 'кто', 'хеш', "
+                "'free', 0, 0, "
                 "'2026-09-04 00:00:00', '2026-09-04 00:00:00')"))
             conn.execute(text(
                 "INSERT INTO jobs (id, user_id, project_id, kind, status, "
@@ -433,9 +451,11 @@ def test_два_события_с_одним_номером_не_ложатся(
     try:
         with db.engine.begin() as conn:
             conn.execute(text(
-                "INSERT INTO users (id, email, password_hash, plan, "
-                "totp_enabled, failed_logins, created_at, updated_at) "
-                "VALUES ('u1', 'кто@пример.рф', 'хеш', 'free', 0, 0, "
+                "INSERT INTO users (id, email, nickname, nickname_key, "
+                "password_hash, plan, totp_enabled, failed_logins, "
+                "created_at, updated_at) "
+                "VALUES ('u1', 'кто@пример.рф', 'кто', 'кто', 'хеш', "
+                "'free', 0, 0, "
                 "'2026-09-04 00:00:00', '2026-09-04 00:00:00')"))
             conn.execute(text(
                 "INSERT INTO jobs (id, user_id, project_id, kind, status, "

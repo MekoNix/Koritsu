@@ -1,9 +1,21 @@
 /**
  * PdfPreview — правая колонка: как отчёт выглядит в Word, и файлы для скачивания.
  *
- * Просмотрщик — встроенный, браузерный (`<embed>` на артефакт PDF), решение
- * владельца: pdf.js ради страницы, которую браузер и так умеет показывать, —
+ * Просмотрщик — встроенный, браузерный (`<embed>` на артефакт PDF):
+ * pdf.js ради страницы, которую браузер и так умеет показывать, —
  * это мегабайт кода и свой набор ошибок отрисовки.
+ *
+ * **Адрес прямой, без `blob:`**. Раньше служба отдавала артефакт
+ * только вложением (`Content-Disposition: attachment`), а заголовок сильнее
+ * тега: `<embed>` на такой адрес браузер не рисует, а скачивает. Обходили это
+ * выкачиванием байтов `fetch`'ем и показом через `URL.createObjectURL` — то
+ * есть вторым запросом за тем же файлом и копией отчёта в памяти вкладки до
+ * перезагрузки страницы. Теперь у службы есть `?inline=1`, и просмотрщику
+ * достаётся тот самый адрес: ни второго запроса, ни копии, ни
+ * `revokeObjectURL`, который однажды забудут.
+ *
+ * Ссылки «скачать» ведут по тому же адресу **без** параметра: там нужно ровно
+ * обратное — файл в папке «Загрузки», с именем.
  *
  * **Превью по кнопке, а не само.** Сборка зовёт LibreOffice, стоит денег
  * (`price_build`) и занимает секунды; перерисовывать её на каждую правку тега
@@ -13,62 +25,12 @@
  * DOCX и PDF собираются одним заданием (см. `useBuild`), поэтому «скачать Word»
  * не запускает вторую сборку — файл уже есть.
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import { useT } from '@/i18n'
 import { Button, EmptyState, Icon, Spinner } from '@/ui'
 
 import type { BuildState } from './useBuild'
-
-/**
- * Артефакт → адрес, который браузер согласится ПОКАЗАТЬ.
- *
- * Служба отдаёт артефакт с `Content-Disposition: attachment`
- * (`modules/artifacts.py`), и это правильно для кнопки «скачать»: файл без
- * имени и с чужим типом на своём домене — плохая мысль. Но `<embed>` на такой
- * адрес браузер не рисует, а скачивает: заголовок сильнее тега.
- *
- * Поэтому байты берутся `fetch`'ем (cookie сессии уезжает сама, origin тот же)
- * и показываются как `blob:` — у него никакого расположения нет, и встроенный
- * просмотрщик работает как ни в чём не бывало. Ссылку обязательно отпускаем:
- * каждый `createObjectURL` держит копию файла в памяти вкладки до перезагрузки
- * страницы.
- *
- * Второй путь — параметр `?inline` в службе — тоже годится, но он меняет чужой
- * маршрут, которым пользуются и схемы, и выгрузка; предложено главной сессии
- * отдельно.
- */
-function useInlinePdf(url: string | null): { src: string | null; failed: boolean } {
-  const [src, setSrc] = useState<string | null>(null)
-  const [failed, setFailed] = useState(false)
-
-  useEffect(() => {
-    if (!url) {
-      setSrc(null)
-      setFailed(false)
-      return
-    }
-    let живо = true
-    let ссылка: string | null = null
-    setFailed(false)
-    void fetch(url, { credentials: 'include' })
-      .then((ответ) => (ответ.ok ? ответ.blob() : Promise.reject(new Error(String(ответ.status)))))
-      .then((байты) => {
-        if (!живо) return
-        ссылка = URL.createObjectURL(байты)
-        setSrc(ссылка)
-      })
-      .catch(() => {
-        if (живо) setFailed(true)
-      })
-    return () => {
-      живо = false
-      if (ссылка) URL.revokeObjectURL(ссылка)
-    }
-  }, [url])
-
-  return { src, failed }
-}
 
 export function PdfPreview({
   build,
@@ -80,7 +42,6 @@ export function PdfPreview({
   canBuild: boolean
 }) {
   const t = useT()
-  const превью = useInlinePdf(build.pdfUrl)
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface-2">
@@ -114,25 +75,23 @@ export function PdfPreview({
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {build.running || (build.pdfUrl && !превью.src && !превью.failed) ? (
+        {build.running ? (
           <div className="flex h-full flex-col items-center justify-center gap-s3 text-sm text-muted">
             <Spinner size={28} />
             {t('reports.pdf.building')}
           </div>
-        ) : build.error || превью.failed ? (
+        ) : build.error ? (
           <div className="flex h-full flex-col items-center justify-center gap-s3 p-s5 text-center">
             <Icon name="error" size={32} className="text-err" />
-            <p className="max-w-[40ch] text-sm text-ink">
-              {build.error ?? t('reports.pdf.embedFailed')}
-            </p>
+            <p className="max-w-[40ch] text-sm text-ink">{build.error}</p>
             <Button variant="primary" size="sm" onClick={build.start} disabled={!canBuild}>
               {t('common.action.retry')}
             </Button>
           </div>
-        ) : превью.src ? (
+        ) : build.pdfInlineUrl ? (
           <embed
-            key={превью.src}
-            src={превью.src}
+            key={build.pdfInlineUrl}
+            src={build.pdfInlineUrl}
             type="application/pdf"
             title={t('reports.pdf.title')}
             className="h-full w-full"

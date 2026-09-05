@@ -1,10 +1,22 @@
 /**
  * TagEditor — середина экрана: заполнение выбранного тега.
  *
- * Три действия над полем (бриф): сгенерировать, скопировать, очистить. На время
- * генерации поле заблокировано (решение владельца) — не «только для чтения», а
+ * Три действия над полем (правило интерфейса): сгенерировать, скопировать,
+ * очистить. На время генерации поле заблокировано — не «только для чтения», а
  * именно `disabled`: правка, набранная поверх приходящего текста, была бы
  * потеряна первым же куском потока.
+ *
+ * **Полей два, по типу тега.** Текстовые типы
+ * (`text`, `markdown`, `code`) правятся как текст; у остальных — таблицы,
+ * картинки, схемы, формулы — полей больше одного, и «текстом» их не выразить.
+ * Их значение правится JSON'ом в CodeMirror (`JsonEditor`), а форма проверяется
+ * тем же правилом, что у службы (`values.validateValue`), до отправки. Раньше
+ * такой тег просто не давали трогать — поле было заблокировано с подписью
+ * «этот тип правится не текстом».
+ *
+ * **Отказ службы подписывается на поле.** У `invalid_value` есть `where`
+ * (`body.rows`), и показывать его надо не строкой «что-то не так», а именем
+ * поля: JSON на двадцать строк без указания места читается заново целиком.
  *
  * **Черновик локальный, отправляется по уходу из поля.** Каждое нажатие клавиши
  * в службу не уезжает: там у значения версия и история, и сорок версий на один
@@ -15,16 +27,18 @@
  * значения у службы нет вовсе, и «очистить» обязано так же откатываться, как
  * всё прочее.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
-import { errorText } from '@/api'
+import { errorField, errorText } from '@/api'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { Button, Icon, Spinner, Textarea } from '@/ui'
 
+import { JsonEditor } from './JsonEditor'
 import { TagVersions } from './TagVersions'
 import { useSetValue } from './data'
 import { isTextual, tagTitle, textToValue, valueText } from './tags'
+import { blankValue, parseValue, valueToJson } from './values'
 import type { ProjectTag, TagValue } from './types'
 
 export type TagEditorProps = {
@@ -57,7 +71,14 @@ export function TagEditor({
   const t = useT()
   const save = useSetValue(projectId)
 
-  const серверный = valueText(value)
+  // Тип решает, каким полем правится тег, и берётся у значения, а не у тега:
+  // объявленный тип бывает угадан по метке, а лежит в теге то, что лежит.
+  const тип = value?.type ?? tag?.type ?? 'markdown'
+  const текстовый = isTextual(тип)
+  // Что показывает поле, если человек ничего не набирал. У текстового тега это
+  // текст значения, у прочих — его JSON, а на пустом теге — заготовка по типу:
+  // пустые фигурные скобки не подсказывают ни имён полей, ни их вида.
+  const серверный = текстовый ? valueText(value) : valueToJson(value, тип)
   const [draft, setDraft] = useState(серверный)
   const [dirty, setDirty] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -65,6 +86,10 @@ export function TagEditor({
   // иначе текст одного тега уедет в другой по первому же `blur`.
   const ключ = tag?.key ?? ''
   const прежний = useRef(ключ)
+
+  // Разбор и проверка черновика — на каждое нажатие: беда обязана быть видна
+  // под курсором, а не после «сохранить». Правило то же, что у службы.
+  const разбор = useMemo(() => (текстовый ? null : parseValue(тип, draft)), [текстовый, тип, draft])
 
   useEffect(() => {
     if (прежний.current !== ключ) {
@@ -82,15 +107,29 @@ export function TagEditor({
   // Напечатанное потоком остаётся в поле и после конца прогона — до того, как
   // приедет перечитанное значение. Иначе текст на секунду пропадает: задание
   // уже кончилось, а ответ службы ещё в пути, и человек видит, как написанное
-  // моделью исчезает.
+  // моделью исчезает. Печатать поток в поле имеет смысл только у текстового тега: у прочих поле
+  // держит JSON, и куски прозы посреди него — это сломанный черновик.
   useEffect(() => {
-    if (busy && streamed !== undefined) setDraft(streamed)
-  }, [busy, streamed])
+    if (busy && streamed !== undefined && текстовый) setDraft(streamed)
+  }, [busy, streamed, текстовый])
 
   const записать = useCallback(
     (текст: string) => {
       if (!tag) return
-      save.mutate({ key: tag.key, value: textToValue(текст, { type: tag.type, previous: value }) })
+      if (isTextual(value?.type ?? tag.type)) {
+        save.mutate({
+          key: tag.key,
+          value: textToValue(текст, { type: tag.type, previous: value }),
+        })
+        setDirty(false)
+        return
+      }
+      // Нетекстовое пишется целиком тем, что набрано: `previous` здесь не
+      // подмешивается намеренно — человек видит перед собой ВСЁ значение, и
+      // поле, которое он стёр, он стёр.
+      const разобрано = parseValue(value?.type ?? tag.type, текст)
+      if (разобрано.problem) return
+      save.mutate({ key: tag.key, value: разобрано.value as TagValue })
       setDirty(false)
     },
     [save, tag, value],
@@ -104,9 +143,13 @@ export function TagEditor({
     )
   }
 
-  const текстовый = isTextual(value?.type ?? tag.type)
-  const показ = busy && streamed !== undefined ? streamed : draft
-  const заблокировано = busy || !canEdit || !текстовый
+  const показ = busy && streamed !== undefined && текстовый ? streamed : draft
+  const заблокировано = busy || !canEdit
+  const беда = разбор?.problem ?? null
+  // Отказ службы подписывается тем же местом, что и своя проверка: у
+  // `invalid_value` есть `where` (`body.rows`), и без него человек читает JSON
+  // заново целиком.
+  const место_службы = save.isError ? errorField(save.error) : undefined
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -152,21 +195,39 @@ export function TagEditor({
           >
             {copied ? t('common.action.copied') : t('common.action.copy')}
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={заблокировано || (!показ && !tag.filled)}
-            onClick={() => {
-              setDraft('')
-              записать('')
-            }}
-          >
-            {t('reports.editor.clear')}
-          </Button>
+          {текстовый ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={заблокировано || (!показ && !tag.filled)}
+              onClick={() => {
+                setDraft('')
+                записать('')
+              }}
+            >
+              {t('reports.editor.clear')}
+            </Button>
+          ) : (
+            // У нетекстового значения «пустого» не бывает: пустая таблица —
+            // это `rows: []`, и render считает её ошибкой. Поэтому здесь не
+            // «очистить», а «вернуть заготовку» — и в службу она не уезжает,
+            // пока человек её не заполнит и не сохранит.
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={заблокировано}
+              onClick={() => {
+                setDraft(JSON.stringify(blankValue(тип), null, 2))
+                setDirty(true)
+              }}
+            >
+              {t('reports.editor.template')}
+            </Button>
+          )}
           <Button
             variant="primary"
             size="sm"
-            disabled={!dirty || заблокировано}
+            disabled={!dirty || заблокировано || !!беда}
             loading={save.isPending}
             onClick={() => записать(draft)}
           >
@@ -175,30 +236,63 @@ export function TagEditor({
           <span className="ml-auto text-xs text-muted">{priceHint}</span>
         </div>
 
-        <Textarea
-          value={показ}
-          disabled={заблокировано}
-          aria-label={t('reports.editor.field', { tag: tag.key })}
-          onChange={(e) => {
-            setDraft(e.target.value)
-            setDirty(true)
-          }}
-          onBlur={() => {
-            if (dirty) записать(draft)
-          }}
-          className={cn(
-            'min-h-[220px] flex-1 font-body text-md leading-relaxed',
-            busy && 'text-agent',
-          )}
-        />
+        {текстовый ? (
+          <Textarea
+            value={показ}
+            disabled={заблокировано}
+            aria-label={t('reports.editor.field', { tag: tag.key })}
+            onChange={(e) => {
+              setDraft(e.target.value)
+              setDirty(true)
+            }}
+            onBlur={() => {
+              if (dirty) записать(draft)
+            }}
+            className={cn(
+              'min-h-[220px] flex-1 font-body text-md leading-relaxed',
+              busy && 'text-agent',
+            )}
+          />
+        ) : (
+          <div
+            className={cn(
+              'min-h-[220px] flex-1 overflow-auto rounded-md border bg-surface',
+              беда ? 'border-err' : 'border-line',
+            )}
+          >
+            <JsonEditor
+              value={показ}
+              readOnly={заблокировано}
+              ariaLabel={t('reports.editor.jsonField', { tag: tag.key })}
+              onChange={(текст) => {
+                setDraft(текст)
+                setDirty(true)
+              }}
+              onBlur={() => {
+                if (dirty && !беда) записать(draft)
+              }}
+            />
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-s2 text-xs text-muted">
           <span>
-            {t('reports.editor.chars', { n: показ.length })}
-            {!текстовый && ` · ${t('reports.editor.notTextual')}`}
+            {текстовый ? t('reports.editor.chars', { n: показ.length }) : t('reports.json.hint')}
           </span>
-          {save.isError && <span className="text-err">{errorText(save.error)}</span>}
+          {save.isError && (
+            <span className="text-err">
+              {errorText(save.error)}
+              {место_службы ? ` · ${t('reports.json.at', { field: место_службы })}` : ''}
+            </span>
+          )}
         </div>
+
+        {беда && (
+          <p className="rounded-md border border-err bg-err-bg px-s3 py-s2 text-xs text-err">
+            {t(`reports.json.error.${беда.code}`)}
+            {беда.field ? ` · ${t('reports.json.at', { field: беда.field })}` : ''}
+          </p>
+        )}
 
         <TagVersions
           projectId={projectId}

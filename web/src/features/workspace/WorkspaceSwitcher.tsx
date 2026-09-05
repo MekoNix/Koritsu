@@ -38,6 +38,7 @@ import { errorText } from '@/api'
 
 import { useCreateWorkspace, useWorkspaces } from './data'
 import { workspaceLabel } from './types'
+import { usePersonalName } from './usePersonalName'
 
 export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
   const t = useT()
@@ -47,8 +48,10 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
   const список = useWorkspaces()
   const [creating, setCreating] = useState(false)
 
-  // Личное пространство служба зовёт «Personal» и ждёт, что перевод сделаем мы.
-  const имя = текущее.data ? workspaceLabel(текущее.data, t('workspace.personalName')) : ''
+  // Личное пространство служба зовёт «Personal», а на экране оно называется
+  // ником хозяина — см. `usePersonalName`.
+  const личное = usePersonalName()
+  const имя = текущее.data ? workspaceLabel(текущее.data, личное) : ''
 
   return (
     <>
@@ -94,9 +97,7 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
                   <Icon name="check" size={16} className={этот ? 'text-accent' : 'opacity-0'} />
                 }
               >
-                <span className="min-w-0 flex-1 truncate">
-                  {workspaceLabel(ws, t('workspace.personalName'))}
-                </span>
+                <span className="min-w-0 flex-1 truncate">{workspaceLabel(ws, личное)}</span>
               </MenuItem>
             )
           })}

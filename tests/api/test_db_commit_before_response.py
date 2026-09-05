@@ -41,7 +41,8 @@ def test_запись_видна_другой_сессии_уже_при_отп�
     увидено: list[int] = []
     with TestClient(_обёртка(app, увидено), raise_server_exceptions=False) as c:
         r = c.post("/api/auth/register",
-                   json={"email": ПОЧТА, "password": "Пароль-очень-длинный-123"})
+                   json={"email": ПОЧТА, "password": "Пароль-очень-длинный-123",
+                         "nickname": "ivan"})
     assert r.status_code == 201, r.text
     # Первый кадр тела — и пользователь уже в базе. Без `scope="function"` у
     # `SessionDep` здесь был бы ноль: коммит прошёл бы после этого кадра.

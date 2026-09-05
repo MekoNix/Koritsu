@@ -21,6 +21,7 @@
 # Имена переменных латиницей — bash не признаёт кириллицу в именах (см. stack.sh).
 set -euo pipefail
 
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 marker="/tmp/koritsu-e2e-last"
 dir="${1:-${KORITSU_E2E_DIR:-}}"
 if [ -z "$dir" ] && [ -f "$marker" ]; then dir="$(cat "$marker")"; fi
@@ -31,7 +32,7 @@ fi
 
 API_PORT="${API_PORT:-8006}"
 BASE="http://127.0.0.1:$API_PORT"
-PYTHON="${PYTHON:-/home/kurisu/koritsu2/.venv/bin/python}"
+PYTHON="${PYTHON:-$root/.venv/bin/python}"
 
 work="$(mktemp -d /tmp/koritsu-smoke-XXXXXX)"
 jar="$work/cookies"
@@ -73,9 +74,12 @@ echo "    $(cat "$body")"
 # ── 2. регистрация ───────────────────────────────────────────────────────────
 email="проба-$(date +%s)-$$@example.org"
 password="Пароль-стенда-2026"
-step "регистрация: POST /api/auth/register ($email)"
-code="$(api POST /api/auth/register "$(printf '{"email":%s,"password":%s}' \
-  "\"$email\"" "\"$password\"")")"
+# Ник обязателен и уникален без учёта регистра — берём его из почты,
+# она здесь и так одноразовая.
+nickname="${email%%@*}"
+step "регистрация: POST /api/auth/register ($email, ник $nickname)"
+code="$(api POST /api/auth/register "$(printf '{"email":%s,"password":%s,"nickname":%s}' \
+  "\"$email\"" "\"$password\"" "\"$nickname\"")")"
 [ "$code" = "201" ] || die "регистрация ответила $code"
 echo "    $(cat "$body")"
 

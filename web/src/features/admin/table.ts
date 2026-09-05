@@ -9,7 +9,7 @@
  * Файл без React намеренно: это чистые функции, и проверяются они тестом без
  * единого отрисованного компонента (`table.test.ts`).
  */
-import type { AdminUser } from './types'
+import type { AdminPlan, AdminUser } from './types'
 
 /** Куда сортировать. Третье состояние — не значение, а отсутствие
  *  сортировки: см. `SortState` и `nextSort`. */
@@ -115,17 +115,16 @@ export type PlanRow = {
 }
 
 /**
- * Разбор людей по планам.
+ * Разбор людей по планам: сколько человек на каждой строке `plan`.
  *
- * Справочника планов у службы нет: `PATCH /api/admin/users/{id}` принимает
- * `plan` свободной строкой до 32 символов, и списка «какие планы бывают» не
- * существует нигде. Поэтому таблица планов — это не справочник, а то, что
- * получилось: столько планов, сколько разных строк вписано людям. Опечатка
- * («pro » с пробелом) видна здесь отдельной строкой, и это скорее польза:
- * иначе её не видно вовсе.
+ * Считает по людям, а не по справочнику (`GET /api/admin/plans`), намеренно:
+ * справочник отвечает на вопрос «какие планы бывают», а этот разбор — «что у
+ * людей вписано на самом деле». Сводит их вместе `planRows` ниже; там же видно
+ * план, которого в справочнике нет, — служба такой поставить уже не даёт,
+ * но строки, вписанные раньше, остались.
  *
- * Удалённые люди считаются наравне: план у них остался, и владелец, глядящий
- * на разбор, ищет «кому что выдано», а не «кто сейчас ходит».
+ * Удалённые люди считаются наравне: план у них остался, и администратор,
+ * глядящий на разбор, ищет «кому что выдано», а не «кто сейчас ходит».
  */
 export function planCounts(users: readonly AdminUser[]): PlanRow[] {
   const собрано = new Map<string, PlanRow>()
@@ -145,4 +144,82 @@ export function planCounts(users: readonly AdminUser[]): PlanRow[] {
 /** Отбор по плану. Пустая строка — все планы, а не «план равен пустому». */
 export function filterByPlan(users: readonly AdminUser[], plan: string): AdminUser[] {
   return plan ? users.filter((человек) => (человек.plan || '—') === plan) : [...users]
+}
+
+// ── состояние человека ───────────────────────────────────────────────────────
+
+/**
+ * Состояние аккаунта одним словом. Четыре, и порядок между ними закреплён.
+ *
+ * Удалённый старше заблокированного, заблокированный старше неподтверждённого:
+ * состояние показывается одной ячейкой, и показать в ней надо то, из-за чего
+ * человек не работает **сейчас**. Аккаунт в корзине и заблокирован заодно —
+ * это по-прежнему аккаунт в корзине.
+ */
+export type UserStatus = 'deleted' | 'blocked' | 'unconfirmed' | 'active'
+
+export function userStatus(user: AdminUser): UserStatus {
+  if (user.deleted_at) return 'deleted'
+  if (user.blocked_at) return 'blocked'
+  if (!user.email_confirmed) return 'unconfirmed'
+  return 'active'
+}
+
+/** Порядок состояний при сортировке столбца: сначала беда, потом обычные. */
+const ВЕС: Record<UserStatus, number> = { deleted: 0, blocked: 1, unconfirmed: 2, active: 3 }
+
+export function statusWeight(user: AdminUser): number {
+  return ВЕС[userStatus(user)]
+}
+
+/**
+ * Отбор по состоянию. Пустая строка — все, а не «состояние равно пустому»
+ * (тот же договор, что у отбора по плану).
+ */
+export function filterByStatus(users: readonly AdminUser[], status: string): AdminUser[] {
+  return status ? users.filter((человек) => userStatus(человек) === status) : [...users]
+}
+
+// ── вкладка «Планы» ──────────────────────────────────────────────────────────
+
+/** Строка вкладки «Планы»: справочник плюс то, что вышло у людей. */
+export type PlanTableRow = PlanRow & {
+  /** Месячный потолок и квота из справочника; `null` — плана там нет. */
+  monthly_units: number | null
+  quota_bytes: number | null
+  /** Плана нет в справочнике: строка осталась у людей от старых времён. */
+  unknown: boolean
+}
+
+/**
+ * Свести справочник планов со списком людей.
+ *
+ * Порядок — справочника: он идёт от младшего плана к старшему, и алфавит
+ * поставил бы `free` между `pro` и `team`. Планы, которых в справочнике нет, а
+ * у людей есть, дописываются в конец и помечаются `unknown`: служба
+ * такой план поставить уже не даёт (`unknown_plan`), но строки, вписанные
+ * раньше, никуда не делись, и молчать про них хуже, чем показать.
+ *
+ * План без людей остаётся в таблице с нулём — это справочник, а не отчёт: «на
+ * `team` никого» и «плана `team` нет» — разные вещи.
+ */
+export function planRows(users: readonly AdminUser[], plans: readonly AdminPlan[]): PlanTableRow[] {
+  const посчитано = new Map(planCounts(users).map((строка) => [строка.plan, строка]))
+  const строки: PlanTableRow[] = plans.map((план) => {
+    const счёт = посчитано.get(план.plan)
+    посчитано.delete(план.plan)
+    return {
+      plan: план.plan,
+      count: счёт?.count ?? 0,
+      admins: счёт?.admins ?? 0,
+      spent: счёт?.spent ?? 0,
+      monthly_units: план.monthly_units,
+      quota_bytes: план.quota_bytes,
+      unknown: false,
+    }
+  })
+  for (const остаток of посчитано.values()) {
+    строки.push({ ...остаток, monthly_units: null, quota_bytes: null, unknown: true })
+  }
+  return строки
 }

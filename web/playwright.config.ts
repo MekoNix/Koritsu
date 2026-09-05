@@ -21,7 +21,7 @@
  *
  * Браузер один — Chromium из `~/.cache/ms-playwright` (сборка 1228, ей отвечает
  * `@playwright/test` 1.61). Окно 1440×900: макеты нарисованы на эту ширину, а
- * мобильная — ночь 2.
+ * мобильная — позже.
  */
 import { defineConfig } from '@playwright/test'
 

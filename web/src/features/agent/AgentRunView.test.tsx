@@ -124,6 +124,31 @@ describe('AgentRunView', () => {
     expect(screen.queryByText('Что изменилось')).toBeNull()
   })
 
+  it('провал прогона показывает одной веткой с оболочкой', () => {
+    // Прогон, кончившийся не «готово», роняет задание кодом `run_failed`.
+    // Ветка провала одна — та же, что у оболочки, — но строка «дошёл не до
+    // конца» рядом остаётся: код отвечает на «что случилось», а `outcome` на
+    // «на чём именно».
+    нарисовать(
+      прогон({
+        job: {
+          id: 'j-1',
+          kind: 'agent',
+          status: 'failed',
+          project_id: 'p-1',
+          result: null,
+          error: { code: 'run_failed', message: "ended as 'error'" },
+          created_at: '2026-09-05T01:00:00+00:00',
+        },
+        result: null,
+        changed: [],
+      }),
+    )
+    expect(screen.getByText(/Задание не выполнено/)).toBeInTheDocument()
+    expect(screen.getByText(/Прогон дошёл не до конца/)).toBeInTheDocument()
+    expect(screen.queryByText('Что изменилось')).toBeNull()
+  })
+
   it('говорит словами про кончившийся месячный остаток', () => {
     нарисовать(прогон({ limitExhausted: true }))
     expect(screen.getByText(/Месячный остаток кончился/)).toBeInTheDocument()

@@ -1,12 +1,13 @@
-"""accounts — люди, сессии, токены почты, счётчик регистраций (агент B).
+"""accounts — люди, сессии, токены почты, счётчик регистраций.
 
 Revision ID: 5f7bb4acb03d
 Revises: 0001_root
 Create Date: 2026-09-03
 
 Четыре таблицы подпакета `api.accounts`; почему именно они — в докстроке
-`accounts/models.py`. `down_revision` — корень `0001_root`: у C и D он такой же,
-это три головы, и сводит их слияние (см. `alembic merge`), а не правка чужого
+`accounts/models.py`. `down_revision` — корень `0001_root`: у соседних миграций
+он такой же, это три головы, и сводит их слияние (см. `alembic merge`), а не
+правка чужого
 `down_revision` руками.
 
 Внешние ключи `email_tokens.user_id` и `sessions.user_id` стоят с

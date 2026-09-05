@@ -8,6 +8,8 @@
 export type AdminUser = {
   id: string
   email: string
+  /** Ник: имя человека на экране. */
+  nickname: string
   plan: string
   is_admin: boolean
   /** Личные лимиты поверх плановых. Пусто — берутся значения плана. */
@@ -18,8 +20,13 @@ export type AdminUser = {
   spent_units: number
   email_confirmed: boolean
   created_at: string | null
-  /** Аккаунт удалён (мягко). Своей «блокировки» у службы нет. */
+  /** Аккаунт удалён (мягко) — человек убрал себя сам. */
   deleted_at: string | null
+  /**
+   * Аккаунт заблокирован администратором службы. Не то же, что `deleted_at`, и
+   * не то же, что замок за перебор пароля: этот снимает только администратор.
+   */
+  blocked_at: string | null
 }
 
 /** Тело `GET /api/admin/users`. */
@@ -79,8 +86,40 @@ export type AdminStats = {
 
 /** Тело `PATCH /api/admin/users/{user_id}` (`UserPatchIn`). */
 export type UserPatch = {
+  /** Только имя из справочника (`GET /api/admin/plans`); иное — `unknown_plan`. */
   plan?: string
   is_admin?: boolean
   /** Заменяются целиком: не заданное поле — не «оставить», а «убрать». */
   limits?: Record<string, number>
+  /** Заблокировать или разблокировать. Блокировка отзывает все сессии. */
+  blocked?: boolean
 }
+
+/** Строка справочника планов: `packages/api/runs/limits.py: справочник()`. */
+export type AdminPlan = {
+  plan: string
+  /** Месячный потолок расхода во внутренних единицах. */
+  monthly_units: number
+  /** Квота места на томе, байт. */
+  quota_bytes: number
+}
+
+/** Тело `GET /api/admin/plans`. */
+export type AdminPlansPage = { plans: AdminPlan[] }
+
+/** Тело `POST /api/admin/users` (`UserCreateIn`). */
+export type UserCreate = {
+  email: string
+  plan?: string
+  /** Не названный — берётся из почты службой. */
+  nickname?: string
+}
+
+/**
+ * Ответ `POST /api/admin/users`: карточка и ссылка сброса.
+ *
+ * `reset_url` показывается **один раз**: открытой её служба нигде не хранит
+ * (в базе только sha256), и второго способа её увидеть нет — как у строки
+ * ключа для скриптов.
+ */
+export type CreatedUser = { user: AdminUser; reset_url: string }

@@ -12,27 +12,10 @@
  */
 import { expect, test } from '@playwright/test'
 
-import { PASSWORD, signUpAndLogin, t } from './helpers'
+import { login as войти, logout as выйти, nicknameFor, signUpAndLogin, t } from './helpers'
 
 const ПРОСТРАНСТВО = 'Кафедра ИУ7'
 const РАБОТА = 'Отчёт по практике'
-
-/** Выйти через меню человека — тем же путём, каким выходит человек. */
-async function выйти(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto('/')
-  await page.getByRole('button', { name: t('shell.user.menu') }).click()
-  await page.getByRole('menuitem', { name: t('shell.user.logout') }).click()
-  await expect(page).toHaveURL(/\/auth\/login$/)
-}
-
-/** Войти уже заведённым человеком. */
-async function войти(page: import('@playwright/test').Page, email: string): Promise<void> {
-  await page.goto('/auth/login')
-  await page.getByLabel(t('auth.field.email')).fill(email)
-  await page.getByLabel(t('auth.field.password'), { exact: true }).fill(PASSWORD)
-  await page.getByRole('button', { name: t('auth.login.submit') }).click()
-  await expect(page.getByRole('link', { name: t('shell.nav.projects') })).toBeVisible()
-}
 
 test('пространство: второй человек, приглашение, роль, переключатель', async ({ page }) => {
   test.setTimeout(180_000)
@@ -45,8 +28,8 @@ test('пространство: второй человек, приглашен�
 
   const переключатель = page.getByRole('button', { name: t('workspace.switcher.label') })
   // Пока пространство одно, и это личное — служба зовёт его `Personal`, сайт
-  // показывает своё слово.
-  await expect(переключатель).toContainText(t('workspace.personalName'))
+  // показывает ник человека.
+  await expect(переключатель).toContainText(nicknameFor(первый))
 
   // ── новое пространство ────────────────────────────────────────────────────
   await переключатель.click()
@@ -102,8 +85,8 @@ test('пространство: второй человек, приглашен�
   await переключатель.click()
   const меню = page.getByRole('menu')
   await expect(меню.getByRole('menuitem', { name: ПРОСТРАНСТВО })).toBeVisible()
-  await меню.getByRole('menuitem', { name: t('workspace.personalName') }).click()
-  await expect(переключатель).toContainText(t('workspace.personalName'))
+  await меню.getByRole('menuitem', { name: nicknameFor(первый) }).click()
+  await expect(переключатель).toContainText(nicknameFor(первый))
 
   // ── второй человек видит то же пространство ───────────────────────────────
   await выйти(page)
@@ -116,8 +99,14 @@ test('пространство: второй человек, приглашен�
 
   // Роль наблюдателя видна ему самому и правами не наделяет: приглашать он не
   // может, и кнопки у него нет вовсе.
+  // Роль названа в двух местах — в шапке пространства и своей строкой в
+  // таблице участников, — поэтому спрашиваем строку, а не страницу: «где-то на
+  // экране написано „наблюдатель“» не отвечает на вопрос, чья это роль.
   await page.goto('/workspace')
-  await expect(page.getByText(t('workspace.role.viewer'))).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('row').filter({ hasText: второй })).toContainText(
+    t('workspace.role.viewer'),
+    { timeout: 30_000 },
+  )
   await expect(page.getByRole('button', { name: t('workspace.members.invite') })).toHaveCount(0)
 
   // Первый человек в списке участников у второго тоже виден.
@@ -157,6 +146,14 @@ test('поиск Ctrl+K находит работу и открывает её',
   const поле = палитра.getByPlaceholder(t('search.placeholder'))
   await поле.fill('практик')
   const найдено = палитра.getByRole('option', { name: new RegExp(РАБОТА) })
+  await expect(найдено).toBeVisible({ timeout: 30_000 })
+
+  // Ищет служба (`GET /api/search`), а не браузер, и ищет она по куску имени
+  // без учёта регистра: набранное капсом («ПРАКТИК» в «Отчёт по практике»)
+  // обязано находить то же самое. Проверяется именно это: раньше палитра
+  // отбирала загруженный список сама, и правило совпадения было её,
+  // а не службы.
+  await поле.fill('ПРАКТИК')
   await expect(найдено).toBeVisible({ timeout: 30_000 })
 
   // Того, чего нет, палитра не выдумывает.

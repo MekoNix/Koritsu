@@ -9,7 +9,7 @@
 
 Главное, что здесь проверяется, — не форма ответов, а два запрета: не-админ не
 проходит **ни на один** маршрут (защищённая админка — та, где нельзя забыть
-маршрут), и ключом сюда не ходят вовсе (§11).
+маршрут), и ключом сюда не ходят вовсе.
 
 И третье: события безопасности **и правда пишутся** — не «функция вызвана», а
 строка в таблице после настоящего отказа входа. Журнал, который никто не
@@ -72,7 +72,7 @@ def test_админ_проходит(клиент, владелец, путь):
 
 
 def test_ключом_в_админку_нельзя(app, клиент, владелец):
-    """§11: админка меняет планы и права, а ключ живёт в конфиге скрипта."""
+    """Админка меняет планы и права, а ключ живёт в конфиге скрипта."""
     строка = клиент.post("/api/tokens",
                          json={"name": "скрипт",
                                "scopes": list(ключи.ПРАВА)}).json()["token"]
@@ -112,7 +112,7 @@ def test_расход_за_месяц_считается_по_заданиям(a
 
 
 def test_расход_в_админке_это_цены_видов_а_не_токены(app, клиент, владелец):
-    """§12: платят за запуски нашего кода, и админка показывает ровно их.
+    """Платят за запуски нашего кода, и админка показывает ровно их.
 
     Число берётся из общего места (`jobs.service.расход_за_месяц`), поэтому оно
     обязано совпасть с тем, что называет человеку `GET /api/usage`: два запроса,
@@ -141,7 +141,7 @@ def test_расход_в_админке_это_цены_видов_а_не_то�
 
 
 def test_смена_плана_и_лимитов(app, клиент, владелец, сосед):
-    """§11: «пользователи, смена плана, лимиты»."""
+    """Пользователи, смена плана, лимиты."""
     ответ = клиент.patch(f"/api/admin/users/{сосед.id}",
                          json={"plan": "pro",
                                "limits": {"monthly_units": 10, "quota_bytes": 99}})
@@ -289,7 +289,7 @@ def test_отказ_входа_попадает_в_таблицу(app, клие�
 
 
 def test_событие_не_несёт_ни_почты_ни_пароля(app, клиент, владелец):
-    """§7: почта — то, что при удалении аккаунта обязано исчезнуть, и в журнале
+    """Почта — то, что при удалении аккаунта обязано исчезнуть, и в журнале
     ей делать нечего. Пароль — тем более."""
     завести(app, клиент, "жертва@пример.рф")
     клиент.post("/api/auth/login",
@@ -322,8 +322,7 @@ def test_секреты_из_подробностей_вырезаются():
 
 def test_событие_переживает_удаление_аккаунта_обезличенным(app, клиент,
                                                            владелец):
-    """§7 дословно: «для журнала безопасности оставить только обезличенную
-    запись».
+    """Для журнала безопасности остаётся только обезличенная запись.
 
     Каскад унёс бы след «с этого адреса ломились» вместе с аккаунтом — то есть
     ровно то, чего добивался бы тот, кто ломился. Поэтому ключ снимает связь
@@ -363,3 +362,263 @@ def test_события_переживают_откат_запроса(app, кл
         строки = list(s.scalars(select(SecurityEvent)
                                 .where(SecurityEvent.kind == "login_failed")))
     assert строки and строки[0].ip
+
+
+# ── блокировка аккаунта ──────────────────────────────────────────────────────
+
+def завести_и_поставить_пароль(клиент, email: str, пароль: str,
+                               **поля) -> dict:
+    """Владелец заводит человека, тот ставит пароль по ссылке. → карточка.
+
+    Проходит ровно тем путём, которым это делается на живом сайте: `POST
+    /api/admin/users` даёт `reset_url`, из него берётся токен, и пароль
+    ставится обычным `/auth/password/reset`. Отдельного механизма
+    «приглашение» у службы нет, и тест это подтверждает, а не обходит.
+    """
+    ответ = клиент.post("/api/admin/users", json={"email": email, **поля})
+    assert ответ.status_code == 201, ответ.text
+    тело = ответ.json()
+
+    токен = тело["reset_url"].split("token=")[1]
+    сброс = клиент.post("/api/auth/password/reset",
+                        json={"token": токен, "password": пароль})
+    assert сброс.status_code == 200, сброс.text
+    return тело["user"]
+
+
+def test_заблокированного_не_пускают_по_паролю(app, клиент, владелец):
+    """Пароль верный, а вход отказан — и код у отказа свой (`account_blocked`),
+    чтобы сайт сказал не «неверный пароль», а «аккаунт заблокирован»."""
+    пароль = "очень-длинный-пароль"
+    карточка = завести_и_поставить_пароль(клиент, "гость@пример.рф", пароль)
+    вход = {"email": "гость@пример.рф", "password": пароль}
+    assert клиент.post("/api/auth/login", json=вход).status_code == 200
+
+    правка = клиент.patch(f"/api/admin/users/{карточка['id']}",
+                          json={"blocked": True})
+    assert правка.status_code == 200, правка.text
+    assert правка.json()["blocked_at"]
+
+    отказ = клиент.post("/api/auth/login", json=вход)
+    assert отказ.status_code == 403, отказ.text
+    assert отказ.json()["error"]["code"] == "account_blocked"
+
+    снятие = клиент.patch(f"/api/admin/users/{карточка['id']}",
+                          json={"blocked": False})
+    assert снятие.status_code == 200
+    assert снятие.json()["blocked_at"] is None
+    assert клиент.post("/api/auth/login", json=вход).status_code == 200
+
+
+def test_блокировка_отзывает_все_сессии(app, клиент, владелец):
+    """Иначе заблокированный дорабатывает в открытой вкладке до конца cookie."""
+    from api.accounts.models import UserSession
+
+    пароль = "очень-длинный-пароль"
+    карточка = завести_и_поставить_пароль(клиент, "гость@пример.рф", пароль)
+    assert клиент.post("/api/auth/login",
+                       json={"email": "гость@пример.рф",
+                             "password": пароль}).status_code == 200
+
+    клиент.patch(f"/api/admin/users/{карточка['id']}", json={"blocked": True})
+
+    with app.state.db.session_scope() as s:
+        сессии = list(s.scalars(select(UserSession)
+                                .where(UserSession.user_id == карточка["id"])))
+    assert сессии, "сессия входа не завелась — тест ничего не проверил"
+    assert all(с.revoked_at is not None for с in сессии)
+
+
+def test_живая_сессия_заблокированного_получает_403(app, клиент, владелец):
+    """Проверка в `current_user`, а не только отзыв сессий: сессия, открытая
+    между отзывом и записью, обязана упереться в неё же."""
+    пароль = "очень-длинный-пароль"
+    карточка = завести_и_поставить_пароль(клиент, "гость@пример.рф", пароль)
+    assert клиент.post("/api/auth/login",
+                       json={"email": "гость@пример.рф",
+                             "password": пароль}).status_code == 200
+
+    # Блокировка ставится прямо в базе — мимо `поправить`, который сессии
+    # отзывает: иначе проверять было бы нечего, отказ пришёл бы `401`.
+    with app.state.db.session_scope() as s:
+        s.get(User, карточка["id"]).blocked_at = datetime.datetime.now(
+            datetime.timezone.utc)
+
+    app.dependency_overrides.clear()
+    ответ = клиент.get("/api/auth/me")
+    assert ответ.status_code == 403, ответ.text
+    assert ответ.json()["error"]["code"] == "account_blocked"
+
+
+def test_ключ_заблокированного_не_работает(app, клиент, владелец):
+    """`/api/v1` — третий вход, и блокировка обязана действовать и на нём.
+
+    Отказ именно `account_blocked`, а не «ключ не годится»: ключ как раз
+    годный, и человек, услышавший «invalid token», пошёл бы выпускать новый.
+    """
+    строка = клиент.post("/api/tokens",
+                         json={"name": "скрипт",
+                               "scopes": list(ключи.ПРАВА)}).json()["token"]
+    with app.state.db.session_scope() as s:
+        s.get(User, владелец.id).blocked_at = datetime.datetime.now(
+            datetime.timezone.utc)
+
+    app.dependency_overrides.clear()
+    клиент.headers["Authorization"] = f"Bearer {строка}"
+    ответ = клиент.get("/api/v1/projects", params={"workspace_id": "х"})
+    assert ответ.status_code == 403, ответ.text
+    assert ответ.json()["error"]["code"] == "account_blocked"
+
+
+def test_блокировка_пишет_событие_безопасности(app, клиент, владелец, сосед):
+    """Блокировка и снятие — события журнала: «кто и когда закрыл аккаунт» не
+    должно восстанавливаться по памяти владельца."""
+    from api.admin.models import SecurityEvent
+
+    клиент.patch(f"/api/admin/users/{сосед.id}", json={"blocked": True})
+    клиент.patch(f"/api/admin/users/{сосед.id}", json={"blocked": False})
+
+    with app.state.db.session_scope() as s:
+        виды = [с.kind for с in s.scalars(
+            select(SecurityEvent).where(SecurityEvent.user_id == сосед.id))]
+    assert "account_blocked" in виды
+    assert "account_unblocked" in виды
+
+
+def test_повторная_блокировка_не_плодит_событий(app, клиент, владелец, сосед):
+    """`blocked: true` у уже заблокированного — не событие: журнал, в котором
+    одно и то же повторяется от каждого сохранения формы, читать нельзя."""
+    from api.admin.models import SecurityEvent
+
+    клиент.patch(f"/api/admin/users/{сосед.id}", json={"blocked": True})
+    первый = клиент.patch(f"/api/admin/users/{сосед.id}",
+                          json={"blocked": True}).json()["blocked_at"]
+    второй = клиент.patch(f"/api/admin/users/{сосед.id}",
+                          json={"plan": "pro"}).json()["blocked_at"]
+    assert первый == второй, "отметка времени переставилась на пустой правке"
+
+    with app.state.db.session_scope() as s:
+        сколько = len([с for с in s.scalars(select(SecurityEvent))
+                       if с.kind == "account_blocked"])
+    assert сколько == 1
+
+
+# ── заведение человека владельцем ────────────────────────────────────────────
+
+def test_заведённый_человек_подтверждён_и_с_личным_пространством(app, клиент,
+                                                                 владелец):
+    """Почта подтверждена сразу (владелец знает, кого заводит), а хуки
+    регистрации отработали — то есть заведённый ничем не отличается от
+    зарегистрировавшегося."""
+    from api.workspaces.models import Workspace
+
+    ответ = клиент.post("/api/admin/users",
+                        json={"email": "новый@пример.рф", "plan": "pro",
+                              "nickname": "новичок"})
+    assert ответ.status_code == 201, ответ.text
+    тело = ответ.json()
+    assert тело["user"]["email"] == "новый@пример.рф"
+    assert тело["user"]["nickname"] == "новичок"
+    assert тело["user"]["plan"] == "pro"
+    assert тело["user"]["email_confirmed"] is True
+    assert тело["reset_url"].startswith("http")
+    assert "token=" in тело["reset_url"]
+
+    with app.state.db.session_scope() as s:
+        свои = list(s.scalars(select(Workspace)
+                              .where(Workspace.owner_id == тело["user"]["id"])))
+    assert свои
+
+
+def test_ссылка_сброса_и_правда_даёт_войти(app, клиент, владелец):
+    """Тот же механизм, что у «забыл пароль»: своего «приглашения» нет."""
+    пароль = "очень-длинный-пароль"
+    завести_и_поставить_пароль(клиент, "новый@пример.рф", пароль)
+    вход = клиент.post("/api/auth/login",
+                       json={"email": "новый@пример.рф", "password": пароль})
+    assert вход.status_code == 200, вход.text
+
+
+def test_дубль_почты_409(клиент, владелец, сосед):
+    ответ = клиент.post("/api/admin/users", json={"email": сосед.email})
+    assert ответ.status_code == 409, ответ.text
+    assert ответ.json()["error"]["code"] == "email_taken"
+
+
+def test_занятый_ник_409(клиент, владелец, сосед):
+    ответ = клиент.post("/api/admin/users",
+                        json={"email": "другой@пример.рф",
+                              "nickname": сосед.nickname})
+    assert ответ.status_code == 409, ответ.text
+    assert ответ.json()["error"]["code"] == "nickname_taken"
+
+
+def test_без_ника_он_берётся_из_почты(клиент, владелец):
+    тело = клиент.post("/api/admin/users",
+                       json={"email": "марина@пример.рф"}).json()
+    assert тело["user"]["nickname"] == "марина"
+
+
+def test_не_почта_422(клиент, владелец):
+    ответ = клиент.post("/api/admin/users", json={"email": "не почта"})
+    assert ответ.status_code == 422, ответ.text
+
+
+# ── справочник планов ────────────────────────────────────────────────────────
+
+def test_справочник_планов(клиент, владелец, settings):
+    from api.runs.limits import ПЛАНЫ
+
+    ответ = клиент.get("/api/admin/plans")
+    assert ответ.status_code == 200, ответ.text
+    планы = ответ.json()["plans"]
+    assert [п["plan"] for п in планы] == list(ПЛАНЫ)
+    for план in планы:
+        assert план["monthly_units"] > 0
+        assert план["quota_bytes"] > 0
+    по_имени = {п["plan"]: п for п in планы}
+    assert по_имени["free"]["monthly_units"] == settings.free_monthly_units
+    assert по_имени["free"]["quota_bytes"] == settings.user_quota_bytes
+    assert по_имени["pro"]["quota_bytes"] == settings.pro_quota_bytes
+
+
+def test_неизвестный_план_не_ставится(клиент, владелец, сосед):
+    """До справочника план вписывался строкой, и «pr0» молча оставлял человека
+    на потолке `free`."""
+    ответ = клиент.patch(f"/api/admin/users/{сосед.id}", json={"plan": "pr0"})
+    assert ответ.status_code == 400, ответ.text
+    assert ответ.json()["error"]["code"] == "unknown_plan"
+
+    заведение = клиент.post("/api/admin/users",
+                            json={"email": "х@пример.рф", "plan": "pr0"})
+    assert заведение.status_code == 400
+    assert заведение.json()["error"]["code"] == "unknown_plan"
+
+
+def test_план_меняет_потолок_и_квоту(клиент, владелец, сосед, settings):
+    """Смена плана обязана менять оба числа, а не одно: до справочника квота
+    была одна на всех, и «pro» не давал ни байта сверх `free`."""
+    было = {ч["id"]: ч for ч in
+            клиент.get("/api/admin/users").json()["users"]}[сосед.id]
+    assert было["quota_bytes"] == settings.user_quota_bytes
+
+    стало = клиент.patch(f"/api/admin/users/{сосед.id}",
+                         json={"plan": "pro"}).json()
+    assert стало["plan"] == "pro"
+    assert стало["quota_bytes"] == settings.pro_quota_bytes
+
+    # Личный лимит по-прежнему старше плана.
+    личный = клиент.patch(f"/api/admin/users/{сосед.id}",
+                          json={"limits": {"quota_bytes": 42}}).json()
+    assert личный["quota_bytes"] == 42
+
+
+def test_потолок_плана_виден_в_расходе(app, клиент, владелец, сосед, settings):
+    """`GET /api/usage` считает по тому же справочнику, что и админка."""
+    from api.runs.limits import расход
+
+    клиент.patch(f"/api/admin/users/{сосед.id}", json={"plan": "team"})
+    with app.state.db.session_scope() as s:
+        сводка = расход(s, settings, s.get(User, сосед.id))
+    assert сводка.plan == "team"
+    assert сводка.limit_units == settings.team_monthly_units

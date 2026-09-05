@@ -18,7 +18,7 @@ from .model import Declared, EndpointSpec, OperatorChannel, PrefixCache, Prices,
 
 def deepseek(endpoint_id: str = "ep_deepseek", model: str = "deepseek-chat",
              **overrides) -> EndpointSpec:
-    """DeepSeek — первый рабочий endpoint (решение владельца 2026-08-29).
+    """DeepSeek — первый рабочий endpoint.
 
     «Без thinking, просто api»: модель без размышлений, `reasoning_effort` не
     объявляем и не шлём.
@@ -68,14 +68,14 @@ def deepseek(endpoint_id: str = "ep_deepseek", model: str = "deepseek-chat",
             streaming=True,
             prefix_cache=PrefixCache.AUTOMATIC,
             effort=False,                       # «без thinking, просто api»
-            # Решение владельца 2026-09-03 на основании пробы: указание оператора,
-            # поставленное системным сообщением ПОСЛЕ подложенного «забудь
-            # инструкции», устояло 2 из 2 (`probing._step_operator`). Структурной
-            # гарантии у формата OpenAI нет — `system` лежит в том же `messages`,
-            # — поэтому канал здесь не данность, а исполнение:
-            # `openai_compat._operator_reminder` повторяет указание после
-            # недоверенного текста. Проба умеет эту заявку понизить и не умеет
-            # повысить (`model.merged_caps`), так что отзыв стоит одной строки.
+            # На основании пробы: указание оператора, поставленное системным
+            # сообщением ПОСЛЕ подложенного «забудь инструкции», устояло 2 из 2
+            # (`probing._step_operator`). Структурной гарантии у формата OpenAI
+            # нет — `system` лежит в том же `messages`, — поэтому канал здесь не
+            # данность, а исполнение: `openai_compat._operator_reminder`
+            # повторяет указание после недоверенного текста. Проба умеет эту
+            # заявку понизить и не умеет повысить (`model.merged_caps`), так что
+            # отзыв стоит одной строки.
             operator_channel=OperatorChannel.MESSAGES_SYSTEM,
             tools=True,
             usage_in_stream=False,
@@ -189,8 +189,8 @@ def openrouter(endpoint_id: str = "ep_openrouter",
                model: str = "google/gemini-2.5-flash-lite", **overrides) -> EndpointSpec:
     """OpenRouter — шлюз ко многим поставщикам по протоколу chat/completions.
 
-    Решение владельца 2026-08-29: своего сервера пока нет, endpoint — внешний
-    API. OpenRouter выбран первым рабочим: один ключ, один адрес, много моделей.
+    Своего сервера пока нет, endpoint — внешний API. OpenRouter выбран первым
+    рабочим: один ключ, один адрес, много моделей.
 
     **Главная особенность, ради которой стоит читать эту докстроку.** Через
     шлюз наша несущая мысль обостряется: возможность оказывается свойством не
@@ -358,10 +358,10 @@ def claude_cli_proba(endpoint_id: str = "ep_claude_cli_proba", model: str = "hai
                      **overrides) -> EndpointSpec:
     """Claude через команду `claude` — **временный пресет для проб, не боевой**.
 
-    Решение владельца 2026-08-31: ключа к API нет, а пробовать надо уже сейчас,
-    поэтому kadai ходит к Haiku через командную строку. Имя пресета и метка
-    endpoint'а названы так, чтобы это было видно в каждой записи журнала и в
-    каждом списке endpoint'ов: не «claude», а «claude_cli_proba».
+    Ключа к API нет, а пробовать надо уже сейчас, поэтому kadai ходит к Haiku
+    через командную строку. Имя пресета и метка endpoint'а названы так, чтобы
+    это было видно в каждой записи журнала и в каждом списке endpoint'ов: не
+    «claude», а «claude_cli_proba».
 
     Как устроен вызов, чем отобраны инструменты, что решено с загрязнённым
     учётом и чего этот путь не умеет в принципе — всё в докстроке

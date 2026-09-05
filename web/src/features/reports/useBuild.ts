@@ -33,8 +33,10 @@ export type BuildState = {
   running: boolean
   /** Что собрано в этот раз: идентификаторы артефактов. */
   artifacts: BuiltArtifacts
-  /** Адрес PDF для `<embed>`; `null` — собирать ещё нечего. */
+  /** Адрес PDF для ссылки «скачать»; `null` — собирать ещё нечего. */
   pdfUrl: string | null
+  /** Тот же PDF, но с `?inline=1` — адрес для `<embed>` (см. `PdfPreview`). */
+  pdfInlineUrl: string | null
   docxUrl: string | null
   /** Беда сборки — уже по-русски. */
   error: string | null
@@ -82,7 +84,7 @@ export function useBuild(projectId: string): BuildState {
       setError(null)
     } else {
       // Тоста здесь нет: провал задания тостит оболочка (`useUserEvents`) по
-      // коду из уведомления — решение сведения ночи 1. Беда всё равно остаётся
+      // коду из уведомления. Беда всё равно остаётся
       // на экране, в самой колонке превью: тост уходит через шесть секунд, а
       // человек смотрит именно сюда.
       const беда = (stream.job?.error ?? {}) as { code?: string; message?: string }
@@ -115,6 +117,7 @@ export function useBuild(projectId: string): BuildState {
     running: !!jobId && !stream.done,
     artifacts: готово,
     pdfUrl: готово.pdf ? artifactUrl(projectId, готово.pdf) : null,
+    pdfInlineUrl: готово.pdf ? artifactUrl(projectId, готово.pdf, { inline: true }) : null,
     docxUrl: готово.docx ? artifactUrl(projectId, готово.docx) : null,
     error,
     unfilled,

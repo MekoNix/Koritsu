@@ -4,7 +4,7 @@
  * Три вещи в одном столбце, в том порядке, в каком они появляются: прогресс —
  * ходы — текст — что изменилось. Разворачивать их вкладками, как в макете
  * («Ход работы / Результаты / Лог»), незачем: у нас нет ни лога наружу
- * (решение владельца §7: инструменты и аргументы не уезжают), ни артефактов
+ * (инструменты и аргументы не уезжают), ни артефактов
  * отдельным списком — итог прогона это ключи тегов, и он короткий.
  *
  * Ход — это поставленный тег. Другого события служба не шлёт, и придумывать
@@ -53,6 +53,21 @@ function outcomeText(outcome: string | undefined): string | undefined {
   if (!outcome) return undefined
   const текст = translate(`agent.outcome.${outcome}`)
   return текст === `agent.outcome.${outcome}` ? undefined : текст
+}
+
+/**
+ * Дошёл ли прогон до конца.
+ *
+ * Два признака, а не один, потому что признак зависит от того, кто уронил
+ * задание. Служба роняет прогон, кончившийся не «готово», кодом `run_failed`,
+ * и итога прогона при этом в карточке задания нет вовсе: отказ обработчика не
+ * несёт `result`. Остальные коды (`no_key`, `limit_exhausted`) — это беды до
+ * прогона, и говорить про них «дошёл не до конца» неправда: прогон не
+ * начинался.
+ */
+function недошёл(run: AgentRunState): boolean {
+  const code = (run.job?.error as { code?: unknown } | null | undefined)?.code
+  return code === 'run_failed' || run.result?.ok === false
 }
 
 export function AgentRunView({ run, projectId }: { run: AgentRunState; projectId: string }) {
@@ -110,12 +125,26 @@ export function AgentRunView({ run, projectId }: { run: AgentRunState; projectId
       {run.limitExhausted && <p className="text-xs text-err">{t('agent.limit')}</p>}
 
       {/* Задание упало: тоста здесь нет (его даёт оболочка), но строка нужна —
-          человек смотрит в панель, а не в угол экрана. */}
+          человек смотрит в панель, а не в угол экрана.
+
+          Сюда приходит и прогон, кончившийся не «готово»: служба роняет
+          такое задание кодом `run_failed`, и ветка провала одна — та же, что
+          у оболочки. Строка «дошёл не до конца» стоит рядом: код отвечает на
+          вопрос «что случилось», а `outcome` — «на чём именно», и «модель не
+          ответила» человек чинит не так, как «кончились ходы». */}
       {status === 'failed' && (
-        <p className="text-xs text-err">
-          {t('agent.result.failed')}
-          {failedReason(run.job?.error) ? ` · ${failedReason(run.job?.error)}` : ''}
-        </p>
+        <div className="flex flex-col gap-0.5">
+          <p className="text-xs text-err">
+            {t('agent.result.failed')}
+            {failedReason(run.job?.error) ? ` · ${failedReason(run.job?.error)}` : ''}
+          </p>
+          {недошёл(run) && (
+            <p className="text-xs text-warn">
+              {t('agent.result.notOk')}
+              {outcomeText(run.result?.outcome) ? ` · ${outcomeText(run.result?.outcome)}` : ''}
+            </p>
+          )}
+        </div>
       )}
 
       {/* Итог: что изменилось. */}

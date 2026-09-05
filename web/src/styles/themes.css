@@ -1,14 +1,14 @@
 /*
  * themes.css — переменные четырёх тем × светлый/тёмный.
  *
- * Перенесено из макетов (`~/koritsu2-extras/labs/refsheet/themes/<id>-<mode>.css`),
+ * Перенесено из макетов ref sheet (`themes/<id>-<mode>.css`),
  * где каждая тема лежала отдельным файлом с `:root`. Здесь тот же набор значений
  * разложен по селекторам `[data-theme][data-mode]`: атрибуты ставятся на `<html>`
  * (`src/theme/apply.ts`, и до первого рендера — встроенным скриптом в `index.html`).
  *
  * Правило: тема — это ТОЛЬКО значения переменных. Ни одного правила раскладки
  * здесь нет и быть не должно — иначе смена темы начнёт двигать разметку.
- * Полный список переменных — договор из спецификации §3.
+ * Полный список переменных — общий договор всех тем.
  *
  * Файл сгенерирован; правки вносить сюда (макеты — только источник первого
  * переноса, обратно они не читаются).
@@ -45,6 +45,11 @@
   --edge:var(--muted); --edge-label:var(--muted);
   /* домен: теги отчёта */
   --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: графики (админка). Переменные свои, а не `accent`/`err`:
+     заливке графика нужен контраст 3:1 к поверхности и различимость с
+     соседями при дальтонизме, а акценту интерфейса — 4.5:1 к тексту.
+     Подобраны по правилам skill `dataviz`, проверяются `palette.test.ts`. */
+  --chart-1:#123CE8; --chart-2:#8E2E00; --chart-3:#008D50; --chart-4:#AB01A6; --chart-bad:#F71600; --chart-grid:#DBDBDC;
   /* домен: подсветка кода */
   --code-kw:#8E3BD6; --code-str:#1F8A3B; --code-num:#B35C00; --code-comment:#6E7583; --code-fn:#0B63C4;
   /* домен: ассемблер, карточки, доска */
@@ -83,6 +88,11 @@
   --edge:var(--muted); --edge-label:var(--muted);
   /* домен: теги отчёта */
   --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: графики (админка). Переменные свои, а не `accent`/`err`:
+     заливке графика нужен контраст 3:1 к поверхности и различимость с
+     соседями при дальтонизме, а акценту интерфейса — 4.5:1 к тексту.
+     Подобраны по правилам skill `dataviz`, проверяются `palette.test.ts`. */
+  --chart-1:#386DFE; --chart-2:#C68200; --chart-3:#07AA85; --chart-4:#C514BC; --chart-bad:#D62442; --chart-grid:#303236;
   /* домен: подсветка кода */
   --code-kw:#C77DFF; --code-str:#7EE787; --code-num:#FFA657; --code-comment:#8A909B; --code-fn:#79C0FF;
   /* домен: ассемблер, карточки, доска */
@@ -121,6 +131,11 @@
   --edge:var(--muted); --edge-label:var(--muted);
   /* домен: теги отчёта */
   --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: графики (админка). Переменные свои, а не `accent`/`err`:
+     заливке графика нужен контраст 3:1 к поверхности и различимость с
+     соседями при дальтонизме, а акценту интерфейса — 4.5:1 к тексту.
+     Подобраны по правилам skill `dataviz`, проверяются `palette.test.ts`. */
+  --chart-1:#0A7FDD; --chart-2:#C85B00; --chart-3:#009062; --chart-4:#5D34A4; --chart-bad:#931C44; --chart-grid:#D8D6D2;
   /* домен: подсветка кода */
   --code-kw:#2B4372; --code-str:#4A7A52; --code-num:#8F6212; --code-comment:#8A8374; --code-fn:#7B4B9E;
   /* домен: ассемблер, карточки, доска */
@@ -159,6 +174,11 @@
   --edge:var(--muted); --edge-label:var(--muted);
   /* домен: теги отчёта */
   --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: графики (админка). Переменные свои, а не `accent`/`err`:
+     заливке графика нужен контраст 3:1 к поверхности и различимость с
+     соседями при дальтонизме, а акценту интерфейса — 4.5:1 к тексту.
+     Подобраны по правилам skill `dataviz`, проверяются `palette.test.ts`. */
+  --chart-1:#049CE5; --chart-2:#BB8900; --chart-3:#31AA7A; --chart-4:#A655AF; --chart-bad:#CB463E; --chart-grid:#45423D;
   /* домен: подсветка кода */
   --code-kw:#C9A6E6; --code-str:#8FC79A; --code-num:#E0B36A; --code-comment:#8B8476; --code-fn:#9FB4E0;
   /* домен: ассемблер, карточки, доска */
@@ -197,6 +217,11 @@
   --edge:var(--muted); --edge-label:var(--muted);
   /* домен: теги отчёта */
   --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: графики (админка). Переменные свои, а не `accent`/`err`:
+     заливке графика нужен контраст 3:1 к поверхности и различимость с
+     соседями при дальтонизме, а акценту интерфейса — 4.5:1 к тексту.
+     Подобраны по правилам skill `dataviz`, проверяются `palette.test.ts`. */
+  --chart-1:#3E09EB; --chart-2:#8B3100; --chart-3:#00915D; --chart-4:#D141C2; --chart-bad:#E94120; --chart-grid:#DDDDDE;
   /* домен: подсветка кода */
   --code-kw:#8B5CF6; --code-str:#2E9E6B; --code-num:#B7791F; --code-comment:#7C8290; --code-fn:#2F7BD0;
   /* домен: ассемблер, карточки, доска */
@@ -235,6 +260,11 @@
   --edge:var(--muted); --edge-label:var(--muted);
   /* домен: теги отчёта */
   --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: графики (админка). Переменные свои, а не `accent`/`err`:
+     заливке графика нужен контраст 3:1 к поверхности и различимость с
+     соседями при дальтонизме, а акценту интерфейса — 4.5:1 к тексту.
+     Подобраны по правилам skill `dataviz`, проверяются `palette.test.ts`. */
+  --chart-1:#6B66FE; --chart-2:#C98002; --chart-3:#01AB8C; --chart-4:#CE00C4; --chart-bad:#D92249; --chart-grid:#383939;
   /* домен: подсветка кода */
   --code-kw:#C084FC; --code-str:#4CB782; --code-num:#F2C94C; --code-comment:#8A8F98; --code-fn:#4C9AE8;
   /* домен: ассемблер, карточки, доска */
@@ -273,6 +303,11 @@
   --edge:var(--muted); --edge-label:var(--muted);
   /* домен: теги отчёта */
   --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: графики (админка). Переменные свои, а не `accent`/`err`:
+     заливке графика нужен контраст 3:1 к поверхности и различимость с
+     соседями при дальтонизме, а акценту интерфейса — 4.5:1 к тексту.
+     Подобраны по правилам skill `dataviz`, проверяются `palette.test.ts`. */
+  --chart-1:#1754FE; --chart-2:#8B3100; --chart-3:#028751; --chart-4:#A354B5; --chart-bad:#EC2500; --chart-grid:#CED1D6;
   /* домен: подсветка кода */
   --code-kw:#6D3FC4; --code-str:#1F7A4A; --code-num:#8A5A00; --code-comment:#6A707A; --code-fn:#1F5FA8;
   /* домен: ассемблер, карточки, доска */
@@ -311,6 +346,11 @@
   --edge:var(--muted); --edge-label:var(--muted);
   /* домен: теги отчёта */
   --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: графики (админка). Переменные свои, а не `accent`/`err`:
+     заливке графика нужен контраст 3:1 к поверхности и различимость с
+     соседями при дальтонизме, а акценту интерфейса — 4.5:1 к тексту.
+     Подобраны по правилам skill `dataviz`, проверяются `palette.test.ts`. */
+  --chart-1:#1394FE; --chart-2:#C56C01; --chart-3:#049475; --chart-4:#AB71BA; --chart-bad:#FF3379; --chart-grid:#4B4F57;
   /* домен: подсветка кода */
   --code-kw:#D7B4FF; --code-str:#7DE2B0; --code-num:#FFD27D; --code-comment:rgba(255,255,255,.6); --code-fn:#9DD0FF;
   /* домен: ассемблер, карточки, доска */
@@ -326,7 +366,7 @@
  * который приезжает npm-пакетом `@fontsource/ibm-plex-sans` с кириллическим
  * подмножеством, а не из Google Fonts.
  *
- * Решение владельца: IBM Plex Sans во всех темах, КРОМЕ «Бумаги» — у неё свой
+ * IBM Plex Sans во всех темах, КРОМЕ «Бумаги» — у неё свой
  * характер держится на паре «засечки в заголовке + гротеск в тексте», и подмена
  * шрифта его стирает. Поэтому `--font-ui` подставляется всем, кроме `paper`.
  */

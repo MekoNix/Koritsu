@@ -14,7 +14,7 @@
  * сам макет помечает его гипотезой. Прогресс стоит над списком тегов, а не в
  * шапке страницы: он про список.
  *
- * Обязательные состояния §7 все здесь: скелетон (пока едут теги), пусто (проект
+ * Обязательные состояния все здесь: скелетон (пока едут теги), пусто (проект
  * без шаблона — тегов нет вовсе), ошибка (с повтором), запрет (роль `viewer` —
  * читать можно, писать нет).
  */
@@ -33,7 +33,7 @@ import { canEditWorkspace, useMaterials, useProject, useWorkspace } from '@/feat
 import { PdfPreview } from './PdfPreview'
 import { TagEditor } from './TagEditor'
 import { TagList } from './TagList'
-import { defaultProvider, useProjectTags, useProjectValues, useProviders } from './data'
+import { useDefaultEndpoint, useProjectTags, useProjectValues, useProviders } from './data'
 import { ModelPicker, PriceHint } from './runControls'
 import { emptyKeys, filterTags, type TagFilter } from './tags'
 import { BUILD, FILL_REPORT, FILL_TAG } from './types'
@@ -73,14 +73,13 @@ export function ReportWorkPage() {
 
   useDocumentCrumb(project.data?.name)
 
-  // Пресет по умолчанию — первый, которым есть чем платить (свой ключ вперёд
+  // Пресет по умолчанию — выбранный человеком в настройках, а если он там
+  // ничего не выбрал, первый, которым есть чем платить (свой ключ вперёд
   // общего). Ставится один раз: дальше выбор человека, а не наш.
+  const по_умолчанию = useDefaultEndpoint()
   useEffect(() => {
-    if (endpoint === null) {
-      const по_умолчанию = defaultProvider(providers.data)
-      if (по_умолчанию) setEndpoint(по_умолчанию)
-    }
-  }, [providers.data, endpoint])
+    if (endpoint === null && по_умолчанию) setEndpoint(по_умолчанию)
+  }, [по_умолчанию, endpoint])
 
   /**
    * Какой тег открыт при входе.

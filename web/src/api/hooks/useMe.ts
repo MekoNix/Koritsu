@@ -40,6 +40,41 @@ export function useMe(): UseQueryResult<Me | null> {
   })
 }
 
+/**
+ * Правка своего профиля: `PATCH /api/auth/me` (`update_profile`).
+ *
+ * Служба возвращает профиль целиком, и он же кладётся в кэш `me` напрямую, без
+ * повторного `GET`: ник виден в шапке, на дашборде и в имени личного
+ * пространства сразу, а не через круг запросов. Ключи, где ник тоже
+ * показывается (участники, список админки), сбрасываются — их служба отдаёт
+ * своими ответами.
+ *
+ * Тело расширяемое: сюда же уедут `default_endpoint` и `agent_overwrite`
+ * (`ProfileIn` в службе). Второго хука на «ещё одно поле профиля» заводить не
+ * надо.
+ */
+export type ProfilePatch = {
+  nickname?: string
+  /**
+   * Пресет модели по умолчанию. **Пустая строка — «сбросить»**: `undefined`
+   * означает «поле не пришло, не трогать», и другого способа сказать «ничего
+   * не выбрано» у тела правки нет (`ProfileIn` в службе).
+   */
+  default_endpoint?: string
+  agent_overwrite?: boolean
+}
+
+export function useUpdateProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ProfilePatch) => unwrap<{ user?: Me }>(api.PATCH('/api/auth/me', { body })),
+    onSuccess: (тело) => {
+      if (тело?.user) qc.setQueryData(keys.me, тело.user)
+      void qc.invalidateQueries({ queryKey: ['workspaces'] })
+    },
+  })
+}
+
 /** Выход. Гасит сессию на службе и весь кэш — чужих данных в нём остаться не должно. */
 export function useLogout() {
   const qc = useQueryClient()

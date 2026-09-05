@@ -1,16 +1,35 @@
 """
 routes — задания: `/api/kadai` и `/api/projects/{id}/kadai`.
 
-    GET /api/kadai/stages                 200  имена стадий по порядку
-    GET /api/projects/{id}/kadai          200  ход работы: стадии, остановка, файлы
-    PUT /api/projects/{id}/kadai/condition 200 назвать материал условием (editor)
+    GET  /api/kadai/stages                  200  имена стадий по порядку
+    GET  /api/projects/{id}/kadai           200  ход работы: стадии, остановка, файлы
+    PUT  /api/projects/{id}/kadai/condition 200  назвать материал условием (editor)
+    GET  /api/projects/{id}/kadai/wishes    200  пожелания к работе
+    PUT  /api/projects/{id}/kadai/wishes    200  записать пожелания (editor)
+    POST /api/projects/{id}/kadai/restart   200  начать стадию заново (editor)
 
-Трёх маршрутов хватает, потому что делает работу не модуль, а очередь: прогон
+Маршрутов хватает этих, потому что делает работу не модуль, а очередь: прогон
 и замечание — задания `kadai_run` и `kadai_rework`, и второго способа их
 запустить здесь не заводится. Осталось ровно то, чего у заданий нет.
 
+**Пожелания живут в проекте, а не в браузере.** Человек пишет их при заведении
+работы, а первый прогон случается позже — после
+того, как он подтвердит распознанное условие. До этого записи о работе не
+существует вовсе, и хранить пожелания было негде: они лежали в
+`sessionStorage`, то есть терялись вместе с вкладкой и не доезжали до второго
+устройства. Своя запись на томе (`orchestrator.kadai.WISHES_KEY`) отдельно от
+записи о задании: непустая запись о задании означает «работа заведена», и
+положить пожелания туда значило бы объявить работу заведённой до первой стадии.
+
+**«Начать стадию заново» не ставит задание и не зовёт модель.** Оно только
+возвращает ход работы на томе к названной стадии; прогон после этого человек
+запускает обычным `kadai_run`. Второй точки, из которой начинается платный
+прогон, здесь не заводится — цена ошибки в ней измеряется списанными
+единицами. До этого маршрута вставшая работа чинилась только замечанием к
+условию, а оно переигрывает всё с разбора задания и стоит цены прогона.
+
 **Стадии — списком, а не константой в клиенте.** Их семь, границы между ними
-проведены по цене ошибки (записка Е.1), и сайт рисует по ним полоску ещё до
+проведены по цене ошибки, и сайт рисует по ним полоску ещё до
 первого прогона. Своя копия списка в браузере отстала бы от пакета молча —
 восьмая стадия появилась бы в службе и не появилась бы на экране.
 
@@ -21,8 +40,8 @@ routes — задания: `/api/kadai` и `/api/projects/{id}/kadai`.
 (`orchestrator.kadai.status`), поэтому опрашивать снимок дёшево.
 
 **Условие — отдельный маршрут, а не флаг загрузки.** Человек подтверждает
-распознанное **после** приёма файла (решение владельца 2026-08-31): до
-подтверждения условие — обычный материал. Поэтому «назвать условием» это
+распознанное **после** приёма файла: до подтверждения условие — обычный
+материал. Поэтому «назвать условием» это
 действие над проектом, и `PUT`: назвать дважды тот же материал — то же
 состояние, а не второе условие.
 
@@ -45,12 +64,37 @@ from ...materials.service import открыть
 
 router = APIRouter(tags=["kadai"])
 
+# Тот же код отказа, каким отвечает задание `kadai_run`. Один, а не свой:
+# человек видит одну беду — «сценарий отказал», — и различать её по тому, каким
+# входом он попросил, ему незачем (`runs/handlers/kadai_run.KADAI_FAILED`).
+KADAI_FAILED = "kadai_failed"
+
 
 class ConditionIn(BaseModel):
     """Какой материал проекта считать условием задачи."""
 
     material_id: str = Field(
         description="Id of an already parsed material of this project")
+
+
+class WishesIn(BaseModel):
+    """Пожелания человека к работе — те же три поля, что у `kadai.plan.Wishes`."""
+
+    text: str = Field(default="", max_length=4000,
+                      description="What the person wants from the work, in prose")
+    show_task: bool = Field(
+        default=False,
+        description="Stop and show how the assignment was understood")
+    show_structure: bool = Field(
+        default=False, description="Stop and show the structure before writing")
+
+
+class RestartIn(BaseModel):
+    """С какой стадии начинать заново. Пусто — с той, на которой встали."""
+
+    stage: str = Field(
+        default="",
+        description="Stage to restart from; empty means the one that stumbled")
 
 
 @router.get("/kadai/stages", operation_id="kadai_stages",
@@ -111,4 +155,60 @@ def назначить_условие(тело: ConditionIn, проект: Ре�
     return {"condition": проект_на_томе.condition()}
 
 
-__all__ = ["router", "ConditionIn"]
+@router.get("/projects/{project_id}/kadai/wishes",
+            operation_id="kadai_wishes",
+            summary="What the person asked of this work",
+            description=(
+                "The wishes stored with the project: the prose request and the "
+                "two stop points. A `kadai_run` job reads them when its payload "
+                "carries none, which is what happens on the first run: the "
+                "person writes them when the work is created, and the run only "
+                "starts once the assignment has been confirmed. Empty is not an "
+                "error; it means nothing was written. 400 invalid_id, "
+                "404 not_found."))
+def пожелания(проект: ЧитательПроекта) -> dict:
+    """Пожелания к работе с тома. Пусто — их не писали."""
+    return сценарий.wishes(открыть(проект))
+
+
+@router.put("/projects/{project_id}/kadai/wishes",
+            operation_id="kadai_set_wishes",
+            summary="Store the wishes for this work",
+            description=(
+                "Writes the wishes into the project, replacing what was there: "
+                "wishes are one text and two flags, and half of them is not a "
+                "state. They reach the model on the first run, and only there: "
+                "the scenario reads its wishes once, when the work is created. "
+                "Editor role. 400 invalid_id, 403 forbidden, 404 not_found."))
+def записать_пожелания(тело: WishesIn, проект: РедакторПроекта) -> dict:
+    """Записать пожелания в проект. Заменяются целиком."""
+    return сценарий.set_wishes(открыть(проект), text=тело.text,
+                               show_task=тело.show_task,
+                               show_structure=тело.show_structure)
+
+
+@router.post("/projects/{project_id}/kadai/restart",
+             operation_id="kadai_restart",
+             summary="Start a stage over on a work that has stopped",
+             description=(
+                 "Puts the named stage and everything after it back to "
+                 "'waiting' and the work back to 'running'. No model is called "
+                 "and nothing is charged: the run itself is started afterwards "
+                 "by the usual `kadai_run` job, so that a paid run still begins "
+                 "in exactly one place. With no stage named it takes the one "
+                 "that stumbled, or the one holding the work with a question. A "
+                 "work that is running and has stopped nowhere is refused. "
+                 "Editor role. 400 invalid_id, 403 forbidden, 404 not_found, "
+                 "422 kadai_failed."))
+def начать_заново(тело: RestartIn, проект: РедакторПроекта) -> dict:
+    """Вернуть вставшую работу к названной стадии. Модель не зовётся."""
+    try:
+        return сценарий.restart(открыть(проект), stage=тело.stage)
+    except Exception as беда:                                # noqa: BLE001
+        # Тот же довод, что в `runs/handlers/kadai_run.py`: ловить сценарий по
+        # имени класса значило бы импортировать `kadai` из службы. Текст уезжает
+        # наружу как есть — он по-русски и путей на томе не содержит.
+        raise ApiError(KADAI_FAILED, str(беда), 422, where="body.stage") from None
+
+
+__all__ = ["router", "ConditionIn", "WishesIn", "RestartIn", "KADAI_FAILED"]

@@ -106,3 +106,69 @@ test('агент: Ctrl+J, задача с ходами, итог со ссылк
     timeout: 30_000,
   })
 })
+
+/**
+ * Прогон агента, у которого модель не ответила, — это упавшее задание, а не
+ * «готово».
+ *
+ * Раньше уровень 3 отдавал `done` с `result.ok=false`: задание службы
+ * кончилось штатно, а прогон — нет, и оболочка тостила «Задание готово» поверх
+ * панели, в которой было написано «дошёл не до конца». Теперь служба роняет
+ * такое задание, и ветка провала одна.
+ * Проверяется наблюдаемое: панель говорит «не выполнено», тост — про провал, и
+ * ни один тост не говорит «готово». Ни служба, ни vitest этого не видят: там
+ * нет ни тостов, ни панели.
+ *
+ * Роняется маркером `[[FAKE:500]]` прямо в задаче агента — тем же полем, каким
+ * человек пишет, что поменять.
+ */
+test('агент: модель не ответила — задание упало, и тост про это, а не «готово»', async ({
+  page,
+}) => {
+  test.setTimeout(180_000)
+  await signUpAndLogin(page, 'agent-fail')
+
+  await page.goto('/projects')
+  await page
+    .getByRole('button', { name: t('projects.list.create') })
+    .first()
+    .click()
+  const создание = page.getByRole('dialog')
+  await создание.getByLabel(t('projects.create.name')).fill('Работа для упавшего агента')
+  await создание.locator('input[type="file"]').setInputFiles(templateDocx())
+  await создание.getByRole('button', { name: t('common.action.create') }).click()
+  await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/)
+
+  const панель = page.getByRole('dialog').filter({ hasText: t('agent.title') })
+  await page.keyboard.press('Control+j')
+  await expect(панель).toBeVisible()
+  await панель.getByLabel(t('agent.task.label')).fill('[[FAKE:500]] Заполни оба тега отчёта.')
+  await панель.getByRole('button', { name: t('agent.run') }).click()
+
+  // Тост первым делом: он живёт шесть секунд (`ui/toast.tsx`), и проверять
+  // его после длинных ожиданий значило бы проверять пустой угол экрана.
+  // «Готово» не звучит ни разу — это и была беда `result.ok=false`, из-за
+  // которой такое задание теперь роняется.
+  const тосты = page.getByRole('status')
+  await expect(тосты.filter({ hasText: t('notifications.jobFailed') })).toHaveCount(1, {
+    timeout: 120_000,
+  })
+  await expect(тосты.filter({ hasText: t('notifications.jobDone') })).toHaveCount(0)
+
+  // Панель: «Задание не выполнено» и никакого «Что изменилось».
+  await expect(панель.getByText(t('agent.result.failed'))).toBeVisible({ timeout: 60_000 })
+  await expect(панель.getByText(t('agent.result.title'))).toHaveCount(0)
+
+  // История прогонов берёт состояние из очереди, а не из панели: там тоже
+  // «не вышло».
+  const история = панель
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: t('agent.history.title') }) })
+    .getByRole('listitem')
+  await expect
+    .poll(() => история.filter({ hasText: t('agent.status.failed') }).count(), { timeout: 60_000 })
+    .toBe(1)
+
+  await page.keyboard.press('Control+j')
+  await expect(панель).toHaveCount(0)
+})

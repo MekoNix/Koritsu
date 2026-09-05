@@ -1,4 +1,0 @@
-# Разработка: тесты и лаборатория labs/fragmos (нужен ещё drawio CLI + xvfb-run для PNG).
--r requirements.txt
-Pillow>=10
-pytest>=8

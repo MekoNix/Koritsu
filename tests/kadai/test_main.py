@@ -94,7 +94,7 @@ def test_run_до_стадии_останавливается_на_ней(фаб
     assert not фабрика.двери[каталог].solved      # петля не начиналась
 
 
-def test_status_печатает_снимок_формы_записки(фабрика, tmp_path, условие_файлом, capsys):
+def test_status_печатает_снимок_работы(фабрика, tmp_path, условие_файлом, capsys):
     каталог = завести(фабрика, tmp_path, условие_файлом)
     cli.main(["run", каталог], services_factory=фабрика)
     capsys.readouterr()

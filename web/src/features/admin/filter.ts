@@ -12,15 +12,21 @@ import type { AdminUser } from './types'
 export const PAGE_SIZE = 20
 
 /**
- * Отбор по строке поиска: почта или идентификатор, без учёта регистра.
+ * Отбор по строке поиска: ник, почта или идентификатор, без учёта регистра.
  * Пустая строка — весь список (а не пустой), иначе первый же заход в раздел
  * встречал бы человека словами «никого не нашлось».
+ *
+ * Ник ищется наравне с почтой: администратор знает людей по нику, и искать
+ * человека по адресу, которого он в глаза не видел, ему незачем.
  */
 export function filterUsers(users: readonly AdminUser[], query: string): AdminUser[] {
   const needle = query.trim().toLowerCase()
   if (!needle) return [...users]
   return users.filter(
-    (user) => user.email.toLowerCase().includes(needle) || user.id.toLowerCase().includes(needle),
+    (user) =>
+      (user.nickname ?? '').toLowerCase().includes(needle) ||
+      user.email.toLowerCase().includes(needle) ||
+      user.id.toLowerCase().includes(needle),
   )
 }
 

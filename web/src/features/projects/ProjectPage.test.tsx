@@ -110,7 +110,7 @@ describe('страница работы', () => {
 
     expect(await screen.findByRole('heading', { name: 'Курсовая — ИС библиотеки' })).toBeVisible()
 
-    // Адреса экранов модулей — договор между областями ночи.
+    // Адреса экранов модулей — договор между областями.
     expect(await screen.findByRole('link', { name: /Отчёты/ })).toHaveAttribute(
       'href',
       '/reports/p-1',
