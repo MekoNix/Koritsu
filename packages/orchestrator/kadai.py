@@ -139,6 +139,56 @@ def rework(project, *, endpoint: str, note: str, block: str | None = None,
     return {"rework": итог, "snapshot": run_mod.snapshot(сессия)}
 
 
+def status(project) -> dict:
+    """Ход работы, прочитанный с тома. Ни одной стадии и ни одного вызова модели.
+
+    Четвёртая обёртка нужна затем же, что и три первых, — чтобы служба не
+    импортировала `kadai`, — но отвечает она на другой вопрос. `work` и
+    `rework` рассказывают, чем кончился **прогон**; здесь — чем кончилась
+    **работа**, и спрашивает это не тот процесс, который считал: ход стадий
+    пишется на том (`kadai.status`), а карточку задания читает сайт.
+
+    Сессия не собирается намеренно: `run.load` строит план, сверяет профиль и
+    остановки и падает, если пожелания разошлись, — то есть показ статуса
+    зависел бы от того, чем его заводили. Снимок же чист по построению (записка
+    Е.4), и записи на диске хватает целиком.
+
+    Пустой словарь — работы не заводили. Это не беда: страница заданий
+    открывается до первого прогона, и отказ на ней означал бы «работы нет,
+    поэтому и посмотреть нельзя».
+
+    `made` — идентификаторы собранного (DOCX, PDF). Они здесь потому, что
+    `outputs` работы — **имена** файлов, а не артефакты: имя проверяется тем,
+    что в нём нет пути (`kadai.stages`), и скачать по нему нечего.
+    """
+    from kadai import status as status_mod
+
+    ход = dict(project.state(status_mod.STATE_KEY) or {})
+    if not ход:
+        return {}
+    задание = dict(project.state(status_mod.TASK_KEY) or {})
+    условие = dict(ход.get("condition") or {})
+    текст = str(условие.pop("text", "") or "")
+    события = list(ход.get("events") or ())
+    try:
+        расход = status_mod.spent_of(project)
+    except Exception:                                        # noqa: BLE001
+        # Проект без журнала расхода — законное состояние (ни одного вызова ещё
+        # не было). Ронять показ статуса из-за этого нельзя: смотрят его именно
+        # тогда, когда что-то пошло не так. Тот же довод, что в `run.snapshot`.
+        расход = status_mod.empty_spent()
+    return {"work": ход.get("work"), "state": ход.get("state"),
+            "stage": ход.get("stage"), "stages": list(ход.get("stages") or ()),
+            "current": ход.get("current") or "", "hold": ход.get("hold"),
+            "condition": условие, "condition_text": текст,
+            "problems": list(ход.get("problems") or ()),
+            "outputs": dict(ход.get("outputs") or {}),
+            "made": dict(задание.get("made") or {}),
+            "requirement": dict(задание.get("requirement") or {}),
+            "wishes": dict(задание.get("wishes") or {}),
+            "since": int(события[-1]["n"]) if события else 0}
+
+
 def main(argv=None) -> int:
     """Точка входа. Разбор аргументов и коды возврата — сценария, не наши."""
     from kadai.__main__ import main as scenario
@@ -150,4 +200,5 @@ if __name__ == "__main__":                      # pragma: no cover
     raise SystemExit(main())
 
 
-__all__ = ["blank_template", "services", "stage_names", "work", "rework", "main"]
+__all__ = ["blank_template", "services", "stage_names", "work", "rework",
+           "status", "main"]

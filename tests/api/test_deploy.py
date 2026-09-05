@@ -166,12 +166,79 @@ def test_образ_запускается_модулем_службы():
     assert '"serve", "--host", "0.0.0.0"' in текст
 
 
+def ступени(текст: str) -> list[list[str]]:
+    """Dockerfile, разрезанный по `FROM`: ступень — список своих строк.
+
+    Комментарии перед `FROM` достаются предыдущей ступени, и это здесь верно:
+    ими объясняют то, что было, а не то, что начинается.
+    """
+    вышло: list[list[str]] = []
+    for строка in текст.splitlines():
+        if строка.startswith("FROM "):
+            вышло.append([])
+        if вышло:
+            вышло[-1].append(строка)
+    return вышло
+
+
 def test_dockerignore_не_пускает_env_в_образ():
     """`.env` в слое образа — это ключ, который читается `docker history` у
     любого, кто образ скачал (§7: секреты живут на хосте)."""
     текст = файл(".dockerignore")
     assert re.search(r"^\.env$", текст, re.M)
     assert re.search(r"^!\.env\.example$", текст, re.M)
+
+
+# ── Dockerfile сайта ─────────────────────────────────────────────────────────
+
+def test_сайт_собирается_многоступенчато():
+    """§3: «образ Docker с сайтом — многоступенчатая сборка, только файлы».
+
+    Первая ступень — Node с pnpm; всё, что она принесла (сам Node, pnpm,
+    `node_modules`, исходники), остаётся в ней.
+    """
+    ступ = ступени(файл("web/Dockerfile"))
+    assert len(ступ) >= 2, "сборка одноступенчатая: Node уехал бы в бой"
+    первая = ступ[0][0]
+    assert первая.startswith("FROM node:22-alpine"), первая
+    assert " AS build" in первая, первая
+
+
+def test_в_итоговой_ступени_сайта_нет_node():
+    """«Только файлы» — проверяемо: в последней ступени нет ни одной команды,
+    кроме `COPY` собранного каталога.
+
+    Тест сторожит самое дорогое место этого файла. Одна строка `RUN npm …`,
+    дописанная в конец «чтобы быстро проверить», превращает образ сайта из
+    сотни килобайт статики в полтораста мегабайт чужого кода — и заметить это
+    без такой проверки можно только по счёту за реестр.
+    """
+    итог = ступени(файл("web/Dockerfile"))[-1]
+    assert итог[0].startswith("FROM caddy:"), итог[0]
+    команды = [строка.split()[0] for строка in итог
+               if строка and not строка.startswith("#")
+               and not строка.startswith((" ", "\t"))]
+    assert set(команды) == {"FROM", "COPY"}, команды
+    assert "node" not in "\n".join(итог[1:]).lower()
+    assert "COPY --from=build /app/dist /srv/web" in "\n".join(итог)
+
+
+def test_сборка_сайта_идёт_по_замку_зависимостей():
+    """`--frozen-lockfile` — не придирка: без него pnpm дообновит зависимости
+    молча, и в бой уедет сборка из кода, которого никто не проверял."""
+    текст = файл("web/Dockerfile")
+    assert "corepack enable" in текст          # версия pnpm — из package.json
+    assert "pnpm install --frozen-lockfile" in текст
+    assert "pnpm build" in текст
+
+
+def test_dockerignore_сайта_не_везёт_node_modules():
+    """Сотни мегабайт и десятки тысяч файлов, которые демон Docker прочитает на
+    каждую сборку, чтобы тут же выбросить."""
+    текст = файл("web/.dockerignore")
+    for строка in ("node_modules/", "dist/", "test-results/",
+                   "playwright-report/"):
+        assert re.search(r"^" + re.escape(строка) + r"$", текст, re.M), строка
 
 
 # ── compose ──────────────────────────────────────────────────────────────────
@@ -223,10 +290,30 @@ def test_миграция_идёт_до_службы_и_воркера():
     assert текст.count("condition: service_completed_successfully") >= 2
 
 
-def test_сайт_отдаётся_статикой_из_web_dist():
-    """§11: сайт живёт в `/web`, выкатывается вместе с API, отдельного
-    контейнера у него нет."""
-    assert "./web/dist:/srv/web:ro" in файл("docker-compose.yml")
+def test_сайт_приезжает_ступенью_образа_а_не_каталогом_с_хоста():
+    """§3 плюс §11: отдельного контейнера у сайта по-прежнему нет, но статику
+    приносит выкат, а не каталог на хосте.
+
+    Обратное — `./web/dist` томом в бою — означает, что отданный сайт зависит от
+    того, что лежит на машине, а не от того, что собрано из этого кода: забыли
+    `pnpm build` перед выкатом — и люди неделю ходят по прошлой сборке.
+    """
+    текст = файл("docker-compose.yml")
+    caddy = текст[текст.index("  caddy:"):текст.index("  anubis:")]
+    assert "build:" in caddy and "context: ./web" in caddy
+    assert "image: koritsu-web:local" in caddy
+    assert "./web/dist" not in caddy, "статика с хоста — это dev, а не бой"
+
+
+def test_белый_список_админки_доезжает_до_caddy():
+    """§3: «плюс белый список IP на Caddy». Значение приходит в контейнер
+    переменной, и умолчание у неё — петля, а не «всем»."""
+    текст = файл("docker-compose.yml")
+    caddy = текст[текст.index("  caddy:"):текст.index("  anubis:")]
+    assert "KORITSU_ADMIN_ALLOW" in caddy
+    assert "127.0.0.1/32" in caddy, "умолчание обязано закрывать, а не открывать"
+    # И оно же названо человеку там, где он заполняет остальное.
+    assert "KORITSU_ADMIN_ALLOW=" in файл(".env.example")
 
 
 def test_dev_без_anubis_и_с_портом():
@@ -236,6 +323,17 @@ def test_dev_без_anubis_и_с_портом():
     assert "replicas: 0" in anubis
     assert "KORITSU_ENV: dev" in текст
     assert "127.0.0.1:8000:8000" in текст
+
+
+def test_dev_отдаёт_dist_с_диска_и_не_собирает_образ_сайта():
+    """На машине разработчика `pnpm build` должен быть виден перезагрузкой
+    страницы, а не пересборкой образа: `vite build` внутри Docker — это минуты
+    вместо секунд ради того же самого каталога, который уже лежит рядом."""
+    текст = файл("docker-compose.dev.yml")
+    caddy = текст[текст.index("  caddy:"):]
+    assert "build: !reset null" in caddy
+    assert "image: caddy:2-alpine" in caddy
+    assert "./web/dist:/srv/web:ro" in caddy
 
 
 # ── Caddyfile ────────────────────────────────────────────────────────────────
@@ -265,12 +363,37 @@ def test_v1_идёт_мимо_anubis():
 
 def test_админка_за_белым_списком_ip():
     """§3: доступ в админку по белому списку IP на уровне прокси. В коде — флаг,
-    здесь — заготовка списка."""
+    здесь — сам список.
+
+    Проверяется и то, чем список закрывает: страница `/admin*` и `/api/admin/*`
+    вместе. Закрыть одну страницу, оставив открытым её API, — это не белый
+    список, а украшение.
+    """
     текст = файл("Caddyfile")
-    assert "@admin path" in текст and "remote_ip" in текст
+    заслон = текст[текст.index("(admin_guard) {"):]
+    заслон = заслон[:заслон.index("(service) {")]
+    assert "path /api/admin/* /admin /admin/*" in заслон
+    # `remote_ip`, а не `client_ip`: второй смотрит в `X-Forwarded-For`, а он
+    # пишется одной строкой в curl.
+    assert "not remote_ip {$KORITSU_ADMIN_ALLOW:" in заслон
+    # Умолчание — петля: файл, который однажды выкатят не дочитав, обязан
+    # закрывать.
+    assert "127.0.0.1/32 ::1}" in заслон
     # Чужому знать, что админка тут есть, незачем: 404, а не 403.
-    админ = текст[текст.index("@admin path"):]
-    assert "respond 404" in админ[:админ.index("@api path")]
+    assert "respond 404" in заслон
+    # И заслон стоит на обоих входах — наружном и том, куда шлёт Anubis.
+    assert текст.count("import admin_guard") == 2
+
+
+def test_служба_видна_по_своим_адресам():
+    """Что уходит в `api`, а не в статику: сайт со своей cookie-сессией,
+    `/health` для прокси и открытые `/openapi.json` с `/docs` (из них
+    генерируется клиент сайта)."""
+    текст = файл("Caddyfile")
+    служба = текст[текст.index("(service) {"):текст.index("(static) {")]
+    for адрес in ("/api/*", "/health", "/openapi.json", "/docs"):
+        assert адрес in служба, адрес
+    assert "reverse_proxy api:8000" in служба
 
 
 def test_статика_отдаётся_с_try_files():
@@ -281,10 +404,39 @@ def test_статика_отдаётся_с_try_files():
     assert "try_files {path} /index.html" in текст
 
 
+def test_кэш_разный_для_хешованных_файлов_и_страницы():
+    """Имена в `assets/` содержат хеш содержимого, `index.html` — нет.
+
+    Один заголовок на всё сломал бы либо одно, либо другое: `immutable` на
+    `index.html` — это выкат, которого неделю никто не видит; `no-cache` на
+    `assets/` — лишний запрос на каждый файл каждой страницы.
+    """
+    текст = файл("Caddyfile")
+    assert 'header /assets/* Cache-Control "public, max-age=31536000, immutable"' in текст
+    # Со знаком вопроса: правила одной директивы Caddy сортирует от точного к
+    # общему, и «поставить» вместо «поставить, если пусто» затёрло бы
+    # `immutable` у `assets/` (проверено запуском Caddy).
+    assert 'header ?Cache-Control "no-cache"' in текст
+
+
+def test_статика_обёрнута_в_handle():
+    """`try_files` разбирается раньше маршрутов службы (порядок директив в Caddy
+    свой, не по строкам). Без `handle` вокруг статики он переписал бы
+    `/api/...` в `/index.html` ещё до того, как `import service` узнал бы свой
+    адрес, — и сайт отвечал бы разметкой на запросы к API."""
+    текст = файл("Caddyfile")
+    for кусок in текст.split("import static")[:-1]:
+        # Перед каждым `import static` открыт `handle` — либо свой, либо с
+        # матчером (`handle @admin {`).
+        assert re.search(r"handle[^\n]*\{\s*$", кусок), кусок[-200:]
+
+
 def test_место_под_сайт_описано():
-    """§11: ночью 2 сайт не делается, только место под него — и оно объяснено."""
+    """Выкат сайта объяснён там, где его читают, — в `web/README.md`."""
     текст = файл("web/README.md")
     assert "web/dist" in текст and "Vite" in текст
+    assert "## Выкат" in текст
+    assert "docker compose up -d --build" in текст
 
 
 # ── команда службы ───────────────────────────────────────────────────────────

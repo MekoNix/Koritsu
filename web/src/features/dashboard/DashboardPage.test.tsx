@@ -67,6 +67,8 @@ function служба(модули: { id: string; title: string; routes: string 
         return Promise.resolve(json(РАСХОД))
       case '/api/jobs':
         return Promise.resolve(json({ jobs: [] }))
+      case '/api/notifications':
+        return Promise.resolve(json({ notifications: [], unread_count: 0 }))
       default:
         throw new Error(`тест не ждал запроса ${url.pathname}`)
     }

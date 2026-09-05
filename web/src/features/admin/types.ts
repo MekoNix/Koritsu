@@ -55,6 +55,28 @@ export type SecurityEvent = {
 /** Тело `GET /api/admin/security`. */
 export type SecurityEventsPage = { events: SecurityEvent[] }
 
+/** Точка ряда по дням из `GET /api/admin/stats`. */
+export type StatsDay = { day: string; units: number }
+
+/** Точка ряда регистраций. Поле другое, поэтому и тип другой. */
+export type StatsRegistration = { day: string; count: number }
+
+/** Задания периода одного вида: сколько всего и сколько упало. */
+export type StatsKind = { kind: string; count: number; failed: number }
+
+/** `packages/api/admin/service.py: сводка()` — ряды для графиков «Обзора». */
+export type AdminStats = {
+  /** Сколько дней в ряду. Ряд плотный: дни идут подряд, включая пустые. */
+  days: number
+  /** Начало периода, 00:00 UTC первого дня. */
+  since: string
+  usage_by_day: StatsDay[]
+  jobs_by_kind: StatsKind[]
+  registrations_by_day: StatsRegistration[]
+  /** Сколько людей запускало за период хоть что-то (не «сколько заведено»). */
+  active_users: number
+}
+
 /** Тело `PATCH /api/admin/users/{user_id}` (`UserPatchIn`). */
 export type UserPatch = {
   plan?: string

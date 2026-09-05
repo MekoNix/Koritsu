@@ -23,13 +23,8 @@ import { useJobStream, useUsage } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { Button, Icon, Spinner, useToast } from '@/ui'
 import { FileDrop } from '@/features/projects/FileDrop'
-import {
-  BUILD,
-  artifactUrl,
-  useCreateProject,
-  useEnqueueJob,
-  usePersonalWorkspace,
-} from '@/features/projects/data'
+import { useCurrentWorkspace } from '@/api/hooks'
+import { BUILD, artifactUrl, useCreateProject, useEnqueueJob } from '@/features/projects/data'
 
 import { Widget } from './Widget'
 
@@ -48,7 +43,7 @@ function pdfArtifact(result: unknown): string | undefined {
 export function WordToPdfWidget() {
   const t = useT()
   const toast = useToast()
-  const workspace = usePersonalWorkspace()
+  const workspace = useCurrentWorkspace()
   const usage = useUsage()
   const create = useCreateProject()
   const enqueue = useEnqueueJob()

@@ -27,5 +27,5 @@
     docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d   # dev
 
 Домен-заглушка — `koritsu.example` (в `Caddyfile` и `KORITSU_BASE_URL`). Сайт —
-React на Vite, живёт в `web/` и отдаётся статикой из `web/dist`; собирается снаружи
-образа. Настройки службы перечислены в `.env.example`, все до одной.
+React на Vite, живёт в `web/`; в бою его собирает многоступенчатый `web/Dockerfile`, а
+отдаёт последняя ступень — образ Caddy; на dev монтируется `web/dist` с диска. Настройки службы перечислены в `.env.example`, все до одной.

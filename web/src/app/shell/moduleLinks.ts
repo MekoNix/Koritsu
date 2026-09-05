@@ -24,6 +24,7 @@ export type ModuleLink = {
 
 export const MODULE_LINKS: Record<string, ModuleLink> = {
   reports: { path: '/reports', icon: 'file', colorVar: '--mod-reports' },
+  kadai: { path: '/kadai', icon: 'tasks', colorVar: '--mod-kadai' },
   flowcharts: { path: '/flowcharts', icon: 'flowchart', colorVar: '--mod-flowcharts' },
   uml: { path: '/uml', icon: 'uml', colorVar: '--mod-uml' },
 }

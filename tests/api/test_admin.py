@@ -5,6 +5,7 @@
     PATCH /api/admin/users/{id}       план, лимиты, флаг владельца
     GET   /api/admin/queue            очередь: сколько ждёт, слоты, воркеры
     GET   /api/admin/security         события безопасности, новые сверху
+    GET   /api/admin/stats            расход, задания и регистрации по дням
 
 Главное, что здесь проверяется, — не форма ответов, а два запрета: не-админ не
 проходит **ни на один** маршрут (защищённая админка — та, где нельзя забыть
@@ -15,6 +16,8 @@
 проверил на живом отказе, обнаруживается пустым тогда, когда он нужен.
 """
 from __future__ import annotations
+
+import datetime
 
 import pytest
 from sqlalchemy import select
@@ -27,7 +30,8 @@ from api.tokens import service as ключи
 from .c_fixtures import (войти, завести, клиент, личное_id,  # noqa: F401
                          создать_проект, сосед, хозяин)
 
-МАРШРУТЫ = ("/api/admin/users", "/api/admin/queue", "/api/admin/security")
+МАРШРУТЫ = ("/api/admin/users", "/api/admin/queue", "/api/admin/security",
+            "/api/admin/stats")
 
 
 def сделать_админом(app, user):
@@ -191,6 +195,83 @@ def test_пустая_очередь_это_нули_а_не_беда(клиен
     тело = клиент.get("/api/admin/queue").json()
     assert тело["queued"] == 0 and тело["running"] == 0
     assert тело["by_kind"] == {} and тело["workers"] == []
+
+
+# ── сводка для графиков ──────────────────────────────────────────────────────
+
+def test_пустая_сводка_это_нули_а_не_беда(клиент, владелец):
+    """Свежая база — не повод отвечать бедой: у графика просто нет столбцов."""
+    тело = клиент.get("/api/admin/stats").json()
+    assert тело["days"] == 30
+    assert тело["jobs_by_kind"] == []
+    assert тело["active_users"] == 0
+    assert len(тело["usage_by_day"]) == 30
+    assert len(тело["registrations_by_day"]) == 30
+    assert {т["units"] for т in тело["usage_by_day"]} == {0}
+    # Регистрация владельца случилась сегодня, поэтому нулей ждём от всех дней,
+    # кроме последнего.
+    assert {т["count"] for т in тело["registrations_by_day"][:-1]} == {0}
+
+
+def test_дни_идут_подряд_и_пустые_среди_них_есть(клиент, владелец):
+    """Ряд с пропущенными днями график рисует ровной линией, то есть неправдой."""
+    дни = [т["day"] for т in клиент.get("/api/admin/stats",
+                                        params={"days": 7}).json()["usage_by_day"]]
+    assert len(дни) == 7
+    подряд = [datetime.date.fromisoformat(д) for д in дни]
+    assert all((б - а).days == 1 for а, б in zip(подряд, подряд[1:]))
+    assert подряд[-1] == datetime.datetime.now(datetime.timezone.utc).date()
+
+
+def test_расход_и_виды_считаются_за_период(app, клиент, владелец):
+    """Задание сегодня попадает в сегодняшний столбец и в свой вид."""
+    with app.state.db.session_scope() as s:
+        s.add(Job(user_id=владелец.id, kind="fill_tag", status="done",
+                  spent_units=300))
+        s.add(Job(user_id=владелец.id, kind="fill_tag", status="failed",
+                  spent_units=200))
+        s.add(Job(user_id=владелец.id, kind="build", status=QUEUED))
+
+    тело = клиент.get("/api/admin/stats").json()
+    сегодня = тело["usage_by_day"][-1]
+    assert сегодня["day"] == datetime.datetime.now(
+        datetime.timezone.utc).date().isoformat()
+    assert сегодня["units"] == 500
+    по_видам = {в["kind"]: в for в in тело["jobs_by_kind"]}
+    assert по_видам["fill_tag"] == {"kind": "fill_tag", "count": 2, "failed": 1}
+    assert по_видам["build"] == {"kind": "build", "count": 1, "failed": 0}
+    # «Активные» — кто хоть что-то запускал, а не все заведённые.
+    assert тело["active_users"] == 1
+
+
+def test_регистрация_попадает_в_свой_день(клиент, владелец, сосед):
+    тело = клиент.get("/api/admin/stats").json()
+    сегодня = тело["registrations_by_day"][-1]
+    assert сегодня["count"] == 2          # владелец и сосед
+    assert sum(т["count"] for т in тело["registrations_by_day"]) == 2
+
+
+def test_старое_в_период_не_попадает(app, клиент, владелец):
+    """Окно — именно окно: задание месячной давности из недельной сводки уходит."""
+    давно = (datetime.datetime.now(datetime.timezone.utc)
+             - datetime.timedelta(days=40))
+    with app.state.db.session_scope() as s:
+        s.add(Job(user_id=владелец.id, kind="fill_tag", status="done",
+                  spent_units=777, created_at=давно))
+
+    неделя = клиент.get("/api/admin/stats", params={"days": 7}).json()
+    assert неделя["jobs_by_kind"] == []
+    assert sum(т["units"] for т in неделя["usage_by_day"]) == 0
+
+    год = клиент.get("/api/admin/stats", params={"days": 90}).json()
+    assert sum(т["units"] for т in год["usage_by_day"]) == 777
+
+
+def test_период_за_потолком_не_принимается(клиент, владелец):
+    """Без потолка `?days=100000` заставляет службу перебрать всю жизнь базы."""
+    assert клиент.get("/api/admin/stats", params={"days": 0}).status_code == 422
+    assert клиент.get("/api/admin/stats",
+                      params={"days": 100000}).status_code == 422
 
 
 # ── события безопасности ─────────────────────────────────────────────────────

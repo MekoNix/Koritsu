@@ -173,6 +173,21 @@ def test_участник_по_почте_и_смена_роли(клиент, �
     assert [m["user_id"] for m in остались] == [хозяин.id]
 
 
+def test_список_участников_называет_почты(клиент, хозяин, сосед):
+    """Список участников — это список людей, а не идентификаторов.
+
+    Почта в ответе нужна интерфейсу: своего имени у аккаунта нет, и решение
+    «кого убрать» человек принимает по почте, а не по uuid.
+    """
+    ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()
+    клиент.post(f"/api/workspaces/{ws['id']}/members",
+                json={"email": сосед.email, "role": EDITOR})
+    участники = клиент.get(f"/api/workspaces/{ws['id']}/members").json()["members"]
+    почты = {m["user_id"]: m["email"] for m in участники}
+    assert почты == {хозяин.id: хозяин.email, сосед.id: сосед.email}
+    assert all(m["created_at"] for m in участники), "даты вступления нет"
+
+
 def test_неизвестная_почта_и_неизвестная_роль(клиент, хозяин, сосед):
     ws = клиент.post("/api/workspaces", json={"name": "кафедра"}).json()
     нет = клиент.post(f"/api/workspaces/{ws['id']}/members",

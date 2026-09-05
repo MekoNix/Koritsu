@@ -7,7 +7,9 @@
  * проверяет `RequireAdmin` в `routes.tsx` — и, что важнее, сама служба:
  * весь `/api/admin` закрыт зависимостью `require_admin`.
  *
- * Графики — ночь 2. Здесь только таблицы.
+ * Вкладок пять, и первая — «Обзор» с графиками: владелец, открывший админку,
+ * первым делом спрашивает «что происходит», а не «покажи всех по алфавиту».
+ * Список людей после этого никуда не делся — он второй.
  */
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -18,7 +20,9 @@ import { Icon, type IconName } from '@/ui'
 type Tab = { to: string; key: string; icon: IconName }
 
 const TABS: readonly Tab[] = [
+  { to: 'overview', key: 'overview', icon: 'chart' },
   { to: 'users', key: 'users', icon: 'users' },
+  { to: 'plans', key: 'plans', icon: 'wallet' },
   { to: 'queue', key: 'queue', icon: 'queue' },
   { to: 'security', key: 'security', icon: 'shield' },
 ]

@@ -23,11 +23,23 @@ export const keys = {
     all: ['jobs'] as const,
     list: (status?: string) => ['jobs', 'list', status ?? 'all'] as const,
     one: (id: string) => ['jobs', 'one', id] as const,
+    /**
+     * Задания одного проекта — из них панель агента берёт историю прогонов.
+     * Ключ начинается с `jobs` намеренно: постановка задания уже гасит
+     * `keys.jobs.all`, и своего корня, который никто не сбрасывает, здесь не
+     * заводится.
+     */
+    ofProject: (projectId: string) => ['jobs', 'list', 'project', projectId] as const,
   },
   // Область B: пространства, проекты и материалы.
   workspaces: {
     all: ['workspaces'] as const,
     personal: ['workspaces', 'personal'] as const,
+    /** Список пространств человека; корзина — отдельный список, не фильтр. */
+    list: (trash: boolean) => ['workspaces', 'list', trash ? 'trash' : 'active'] as const,
+    /** Участники одного пространства. Под корнем `workspaces`: смена роли
+     *  обязана гаситься вместе с карточкой пространства. */
+    members: (workspaceId: string) => ['workspaces', workspaceId, 'members'] as const,
   },
   projects: {
     all: ['projects'] as const,
@@ -53,6 +65,18 @@ export const keys = {
     version: (projectId: string, key: string, n: number) =>
       ['projects', 'one', projectId, 'versions', key, n] as const,
   },
+  // Область «Задания» (kadai). Ключи работы начинаются с `projects.one`, как у
+  // отчётов, и по той же причине: ход работы, блоки и их версии принадлежат
+  // проекту, и сброс проекта обязан гасить их заодно. Список стадий — свой
+  // корень: он один на всю службу и от проекта не зависит.
+  kadai: {
+    stageNames: ['kadai', 'stages'] as const,
+    status: (projectId: string) => ['projects', 'one', projectId, 'kadai'] as const,
+    blocks: (projectId: string) => ['projects', 'one', projectId, 'blocks'] as const,
+    blockVersions: (projectId: string) => ['projects', 'one', projectId, 'block-versions'] as const,
+    blockVersion: (projectId: string, n: number) =>
+      ['projects', 'one', projectId, 'block-versions', n] as const,
+  },
   // Область E: настройки аккаунта.
   modelKeys: ['model-keys'] as const,
   keyProviders: ['key-providers'] as const,
@@ -65,6 +89,9 @@ export const keys = {
     queue: ['admin', 'queue'] as const,
     security: (kind: string | null, limit: number) =>
       ['admin', 'security', kind ?? 'all', limit] as const,
+    /** Ряды графиков «Обзора»; период — часть ключа, иначе 7 и 90 дней делили
+     *  бы одну строку кэша. */
+    stats: (days: number) => ['admin', 'stats', days] as const,
   },
   // Область D: схемы. Ключи свои, а не чужие `projects.*`, намеренно: под теми
   // лежат формы области B, и гасить их своим списком схем значило бы сбрасывать
@@ -80,5 +107,13 @@ export const keys = {
     /** Содержимое артефакта схемы — тот самый XML draw.io. */
     artifact: (projectId: string, artifactId: string) =>
       ['diagrams', 'artifact', projectId, artifactId] as const,
+  },
+  // Палитра поиска (Ctrl+K). Свой корень, а не `projects.*`: под тем лежит
+  // список одного пространства, а палитра ищет по всем сразу — гасить чужой
+  // список своим поиском значило бы перезапрашивать экран проектов впустую.
+  search: {
+    all: ['search'] as const,
+    projects: ['search', 'projects'] as const,
+    materials: (projectId: string) => ['search', 'materials', projectId] as const,
   },
 }

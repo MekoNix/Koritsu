@@ -5,6 +5,7 @@ routes — админка службы: `/api/admin`.
     PATCH /api/admin/users/{user_id}  200  сменить план, лимиты, права владельца
     GET   /api/admin/queue            200  очередь: сколько ждёт, слоты, воркеры
     GET   /api/admin/security         200  события безопасности, новые сверху
+    GET   /api/admin/stats            200  расход, задания и регистрации по дням
 
 **Не-админ получает `403 forbidden`, а не `404`.** Это исключение из правила
 «чужого не существует» (§3), и оно осознанное: `/api/admin` — не чужая строка, а
@@ -131,6 +132,22 @@ def события(s: SessionDep,
     """События безопасности из таблицы — тот же поток, что уходит в stderr."""
     строки = service.события(s, kind=kind, limit=limit)
     return {"events": [service.карточка_события(e) for e in строки]}
+
+
+@router.get("/stats", operation_id="admin_stats",
+            summary="Spending, jobs and registrations over the last days",
+            description=(
+                "Spending in internal units per day, jobs of the period "
+                "broken down by kind with the failed ones counted, "
+                "registrations per day and how many people ran anything. "
+                "Days are consecutive UTC days, empty ones included. "
+                "403 forbidden."))
+def сводка(s: SessionDep,
+           days: int = Query(service.СВОДКА_ДНЕЙ_ПО_УМОЛЧАНИЮ, ge=1,
+                             le=service.СВОДКА_ДНЕЙ_МАКСИМУМ,
+                             description="How many days back to count")) -> dict:
+    """Ряды для графиков админки. Почему отдельным маршрутом — см. `service.сводка`."""
+    return service.сводка(s, days=days)
 
 
 __all__ = ["router", "require_admin", "UserPatchIn", "FORBIDDEN"]

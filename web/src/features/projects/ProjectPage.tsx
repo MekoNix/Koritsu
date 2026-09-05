@@ -35,6 +35,7 @@ import {
   useToast,
 } from '@/ui'
 
+import { ExportDialog } from './ExportDialog'
 import { MaterialsPanel } from './MaterialsPanel'
 import { Panel } from './Panel'
 import { RenameProjectDialog } from './RenameProjectDialog'
@@ -54,6 +55,7 @@ export function ProjectPage() {
   const toast = useToast()
   const navigate = useNavigate()
   const [renaming, setRenaming] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const project = useProject(projectId)
   const workspace = useWorkspace(project.data?.workspace_id)
@@ -141,33 +143,45 @@ export function ProjectPage() {
           </p>
         </div>
 
-        {canEdit && (
-          <MenuRoot>
-            <MenuTrigger asChild>
-              <Button variant="secondary">
-                <Icon name="more" size={16} />
-                {t('common.action.more')}
-              </Button>
-            </MenuTrigger>
-            <MenuContent>
-              <MenuItem icon={<Icon name="edit" size={16} />} onSelect={() => setRenaming(true)}>
-                {t('projects.list.rename')}
-              </MenuItem>
-              <MenuItem
-                danger
-                icon={<Icon name="trash" size={16} />}
-                onSelect={() =>
-                  trash.mutate(projectId, {
-                    onSuccess: () => navigate('/projects'),
-                    onError: (e) => toast.error(errorText(e)),
-                  })
-                }
-              >
-                {t('projects.list.toTrash')}
-              </MenuItem>
-            </MenuContent>
-          </MenuRoot>
-        )}
+        <div className="flex items-center gap-s2">
+          {/* Выгрузка — «кнопка в проекте» (решение владельца §3), а не пункт
+              меню: её ищут глазами, а не через «Ещё». Читателю она не
+              показана: архив ложится на том в квоту владельца, и служба
+              требует за это роль `editor` (`export/routes.py`). */}
+          {canEdit && (
+            <Button variant="secondary" onClick={() => setExporting(true)}>
+              <Icon name="download" size={16} />
+              {t('projects.export.action')}
+            </Button>
+          )}
+          {canEdit && (
+            <MenuRoot>
+              <MenuTrigger asChild>
+                <Button variant="secondary">
+                  <Icon name="more" size={16} />
+                  {t('common.action.more')}
+                </Button>
+              </MenuTrigger>
+              <MenuContent>
+                <MenuItem icon={<Icon name="edit" size={16} />} onSelect={() => setRenaming(true)}>
+                  {t('projects.list.rename')}
+                </MenuItem>
+                <MenuItem
+                  danger
+                  icon={<Icon name="trash" size={16} />}
+                  onSelect={() =>
+                    trash.mutate(projectId, {
+                      onSuccess: () => navigate('/projects'),
+                      onError: (e) => toast.error(errorText(e)),
+                    })
+                  }
+                >
+                  {t('projects.list.toTrash')}
+                </MenuItem>
+              </MenuContent>
+            </MenuRoot>
+          )}
+        </div>
       </header>
 
       <Panel title={t('projects.page.modules')} note={t('projects.page.modulesNote')}>
@@ -214,6 +228,16 @@ export function ProjectPage() {
       <RenameProjectDialog
         project={renaming ? карточка : null}
         onClose={() => setRenaming(false)}
+      />
+
+      {/* Шаблон опознаётся по тегам: карточка проекта отдаёт их ключи, и
+          проект без единого ключа — это проект без шаблона, собирать Word из
+          которого нечего (то же правило у экрана отчёта). */}
+      <ExportDialog
+        projectId={карточка.id}
+        open={exporting}
+        onOpenChange={setExporting}
+        hasTemplate={(карточка.keys?.length ?? 0) > 0}
       />
     </div>
   )

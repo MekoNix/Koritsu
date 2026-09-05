@@ -9,4 +9,10 @@ export {
 } from './useNotifications'
 export { useJobStream, type Job, type JobStreamState } from './useJobStream'
 export { useUserEvents } from './useUserEvents'
+export {
+  useCurrentWorkspace,
+  useCurrentWorkspaceId,
+  setCurrentWorkspaceId,
+  type Workspace,
+} from './useCurrentWorkspace'
 export { useIsAdmin } from './useIsAdmin'

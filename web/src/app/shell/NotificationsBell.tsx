@@ -8,9 +8,29 @@
  * Открытие списка ничего не помечает прочитанным: человек мог открыть его,
  * чтобы посмотреть, и молча погашенный счётчик означал бы потерянное
  * уведомление. Помечает — кнопка «прочитать все» и клик по записи.
+ *
+ * **Клик ведёт на экран, где виден результат** (`features/notifications/link.ts`):
+ * разбор файла — в опись материалов, тег и сборка — на экран отчёта, kadai — на
+ * свою страницу. Проекта в данных нет — вести некуда, и запись просто ничего не
+ * открывает: ссылка в никуда хуже её отсутствия. Собранный файл
+ * (`data.artifacts`) скачивается прямо отсюда, не открывая экран, — это то
+ * самое «скачивание из уведомления» из решений владельца.
+ *
+ * Счётчик живёт потоком: `useUserEvents` гасит ключ `notifications`, как только
+ * служба что-то прислала, и число меняется само, без опроса по таймеру.
+ *
+ * Список открыт наружу (`features/notifications/bell.ts`): виджет дашборда
+ * ссылкой «все» открывает этот же колокольчик, потому что страницы, куда
+ * можно было бы уйти, нет.
  */
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+
 import { useMarkAllNotificationsRead, useMarkNotificationRead, useNotifications } from '@/api/hooks'
 import type { Notification } from '@/api/types'
+import { onOpenBell } from '@/features/notifications/bell'
+import { notificationDownload, notificationLink } from '@/features/notifications/link'
+import { TITLE_KEY, kindTitle, lookOf, when } from '@/features/notifications/present'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import {
@@ -23,28 +43,23 @@ import {
   MenuSeparator,
   MenuTrigger,
   SkeletonLines,
-  type IconName,
 } from '@/ui'
-
-/** Вид уведомления → иконка и цвет. Неизвестный вид — нейтральная иконка. */
-const LOOK: Record<string, { icon: IconName; color: string }> = {
-  job_done: { icon: 'checkCircle', color: 'text-ok' },
-  job_failed: { icon: 'error', color: 'text-err' },
-  job_cancelled: { icon: 'close', color: 'text-muted' },
-  limit_exhausted: { icon: 'warning', color: 'text-warn' },
-}
 
 export function NotificationsBell() {
   const t = useT()
+  const [open, setOpen] = useState(false)
   const { data, isLoading } = useNotifications(20)
   const markOne = useMarkNotificationRead()
   const markAll = useMarkAllNotificationsRead()
+
+  // Виджет дашборда открывает тот же список: страницы уведомлений нет.
+  useEffect(() => onOpenBell(() => setOpen(true)), [])
 
   const unread = data?.unread_count ?? 0
   const items = data?.notifications ?? []
 
   return (
-    <MenuRoot>
+    <MenuRoot open={open} onOpenChange={setOpen}>
       <MenuTrigger asChild>
         <Button
           variant="ghost"
@@ -62,7 +77,7 @@ export function NotificationsBell() {
           />
         </Button>
       </MenuTrigger>
-      <MenuContent className="w-[360px] max-w-[calc(100vw-24px)]">
+      <MenuContent className="max-h-[70vh] w-[380px] max-w-[calc(100vw-24px)] overflow-y-auto">
         <div className="flex items-center gap-s2 px-2.5 py-1.5">
           <span className="flex-1 text-xs uppercase tracking-wider text-muted">
             {t('shell.notifications.label')}
@@ -96,29 +111,23 @@ export function NotificationsBell() {
   )
 }
 
-/**
- * Заголовок записи. Служба присылает вид и данные, а не готовый текст (тексты
- * наружу по-английски), поэтому русский текст собирается здесь — по тому же
- * словарю, что и тосты. Неизвестный вид показывается кодом: это честнее
- * пустой строки и сразу видно, что в словарь надо дописать.
- */
-const TITLE_KEY: Record<string, string> = {
-  job_done: 'notifications.jobDone',
-  job_failed: 'notifications.jobFailed',
-  job_cancelled: 'notifications.jobCancelled',
-  limit_exhausted: 'notifications.limitExhausted',
-}
-
 function Row({ item, onRead }: { item: Notification; onRead: () => void }) {
   const t = useT()
-  const look = LOOK[item.kind] ?? { icon: 'info' as IconName, color: 'text-muted' }
+  const navigate = useNavigate()
+  const look = lookOf(item.kind)
   const key = TITLE_KEY[item.kind]
   const title = key ? t(key) : item.kind
+  const to = notificationLink(item.data)
+  const file = notificationDownload(item.data)
+  const вид = typeof item.data?.job_kind === 'string' ? item.data.job_kind : ''
+  const подпись = kindTitle(вид)
+
   return (
     <MenuItem
       className="items-start"
       onSelect={() => {
         if (!item.read_at) onRead()
+        if (to) navigate(to)
       }}
       icon={<Icon name={look.icon} size={18} className={look.color} />}
     >
@@ -131,20 +140,22 @@ function Row({ item, onRead }: { item: Notification; onRead: () => void }) {
         >
           {title}
         </span>
-        <span className="block text-xs text-muted">{when(item.created_at)}</span>
+        <span className="block truncate text-xs text-muted">
+          {подпись ? `${подпись} · ` : ''}
+          {when(item.created_at)}
+        </span>
       </span>
+      {file && (
+        <a
+          href={file.url}
+          // Клик по ссылке не должен выбирать пункт меню: скачивание не повод
+          // уходить с текущего экрана.
+          onClick={(e) => e.stopPropagation()}
+          className="ml-s2 shrink-0 self-center text-xs text-accent hover:underline"
+        >
+          {t('notifications.download')}
+        </a>
+      )}
     </MenuItem>
   )
-}
-
-/** Короткая отметка времени. Дата целиком нужна редко, минуты — всегда. */
-function when(iso: string): string {
-  const at = new Date(iso)
-  if (Number.isNaN(at.getTime())) return iso
-  return at.toLocaleString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }

@@ -16,12 +16,13 @@ import { Link } from 'react-router-dom'
 
 import { useT } from '@/i18n'
 import { Button, EmptyState, ErrorState, Input, SkeletonLines } from '@/ui'
-import { usePersonalWorkspace, useProjects } from '@/features/projects/data'
+import { useCurrentWorkspace } from '@/api/hooks'
+import { useProjects } from '@/features/projects/data'
 import type { Project } from '@/features/projects/types'
 
 export function ReportsHomePage() {
   const t = useT()
-  const workspace = usePersonalWorkspace()
+  const workspace = useCurrentWorkspace()
   const projects = useProjects(workspace.data?.id)
   const [query, setQuery] = useState('')
 

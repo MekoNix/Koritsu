@@ -200,7 +200,12 @@ export function TagEditor({
           {save.isError && <span className="text-err">{errorText(save.error)}</span>}
         </div>
 
-        <TagVersions projectId={projectId} tagKey={tag.key} canEdit={canEdit && !busy} />
+        <TagVersions
+          projectId={projectId}
+          tagKey={tag.key}
+          canEdit={canEdit && !busy}
+          currentText={серверный}
+        />
       </div>
     </div>
   )

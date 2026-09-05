@@ -642,7 +642,7 @@
      "workspaces"
     ],
     "summary": "List workspace members",
-    "description": "Lists the members and their roles. Any member may read it. 400 invalid_id, 404 not_found.",
+    "description": "Lists the members with their roles and email addresses. Any member may read it. 400 invalid_id, 404 not_found.",
     "operationId": "list_workspace_members",
     "parameters": [
      {
@@ -3138,6 +3138,56 @@
     }
    }
   },
+  "/api/admin/stats": {
+   "get": {
+    "tags": [
+     "admin"
+    ],
+    "summary": "Spending, jobs and registrations over the last days",
+    "description": "Spending in internal units per day, jobs of the period broken down by kind with the failed ones counted, registrations per day and how many people ran anything. Days are consecutive UTC days, empty ones included. 403 forbidden.",
+    "operationId": "admin_stats",
+    "parameters": [
+     {
+      "name": "days",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 365,
+       "minimum": 1,
+       "description": "How many days back to count",
+       "default": 30,
+       "title": "Days"
+      },
+      "description": "How many days back to count"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Admin Stats"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/billing/webhook": {
    "post": {
     "tags": [
@@ -3335,6 +3385,140 @@
           "additionalProperties": true
          },
          "title": "Response Artifact Notices"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/kadai/stages": {
+   "get": {
+    "tags": [
+     "kadai"
+    ],
+    "summary": "Names of the seven stages, in order",
+    "description": "The stages a piece of work goes through, in order. The interface draws its progress strip from this list, so it is data and not a constant in the client. Values are Russian on purpose: they are shown to a human as they are.",
+    "operationId": "kadai_stages",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Kadai Stages"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/kadai": {
+   "get": {
+    "tags": [
+     "kadai"
+    ],
+    "summary": "How far the work in this project has got",
+    "description": "A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. 400 invalid_id, 404 not_found.",
+    "operationId": "kadai_status",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Kadai Status"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/kadai/condition": {
+   "put": {
+    "tags": [
+     "kadai"
+    ],
+    "summary": "Name the material that holds the assignment",
+    "description": "Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "kadai_set_condition",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConditionIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Kadai Set Condition"
         }
        }
       }
@@ -5225,6 +5409,143 @@
     }
    }
   },
+  "/api/v1/kadai/stages": {
+   "get": {
+    "tags": [
+     "v1",
+     "kadai"
+    ],
+    "summary": "Names of the seven stages, in order",
+    "description": "The stages a piece of work goes through, in order. The interface draws its progress strip from this list, so it is data and not a constant in the client. Values are Russian on purpose: they are shown to a human as they are.",
+    "operationId": "kadai_stages_v1",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Kadai Stages V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/kadai": {
+   "get": {
+    "tags": [
+     "v1",
+     "kadai"
+    ],
+    "summary": "How far the work in this project has got",
+    "description": "A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. 400 invalid_id, 404 not_found.",
+    "operationId": "kadai_status_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Kadai Status V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/kadai/condition": {
+   "put": {
+    "tags": [
+     "v1",
+     "kadai"
+    ],
+    "summary": "Name the material that holds the assignment",
+    "description": "Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "kadai_set_condition_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConditionIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Kadai Set Condition V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/flowcharts/modes": {
    "get": {
     "tags": [
@@ -5869,6 +6190,21 @@
      "workspace_id"
     ],
     "title": "Body_create_project_v1"
+   },
+   "ConditionIn": {
+    "properties": {
+     "material_id": {
+      "type": "string",
+      "title": "Material Id",
+      "description": "Id of an already parsed material of this project"
+     }
+    },
+    "type": "object",
+    "required": [
+     "material_id"
+    ],
+    "title": "ConditionIn",
+    "description": "Какой материал проекта считать условием задачи."
    },
    "ConfirmIn": {
     "properties": {

@@ -174,6 +174,15 @@ export function useSseStream({
       setStatus('idle')
       return
     }
+    // Новый поток — новые кадры. Без этой строки кадры прошлого потока
+    // остаются в состоянии и приклеиваются к новому: второй прогон в том же
+    // окне показывал текст первого, склеенный со своим. Чистка стоит здесь, а
+    // не в ветке `!url`, намеренно — закрытый поток свои кадры сохраняет, и
+    // законченный прогон остаётся на экране до тех пор, пока не начат
+    // следующий.
+    setFrames([])
+    setLastEventId(null)
+
     const controller = new AbortController()
     abortRef.current = controller
     stoppedRef.current = false

@@ -133,6 +133,11 @@ test('путь человека: от регистрации до выхода',
   await page.getByRole('button', { name: t('reports.versions.title') }).click()
   const версии = page.getByRole('listitem').filter({ hasText: 'v1' })
   await версии.getByRole('button', { name: t('reports.versions.rollback') }).click()
+  // Возврат спрашивают: он переписывает то, что человек видит на экране.
+  await page
+    .getByRole('dialog', { name: t('reports.versions.rollbackTitle', { n: 1 }) })
+    .getByRole('button', { name: t('reports.versions.rollback') })
+    .click()
   // Возврат — это новая версия с прежним текстом, а не удаление второй.
   await expect(поле).toHaveValue(/поддельн/)
   await expect(page.getByText(t('reports.editor.byAgent', { n: 3 }))).toBeVisible()

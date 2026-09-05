@@ -18,6 +18,7 @@ import { api, keys as cacheKeys, unwrap } from '@/api'
 
 import type {
   AdminQueue,
+  AdminStats,
   AdminUser,
   AdminUsersPage,
   SecurityEvent,
@@ -33,6 +34,10 @@ export const QUEUE_REFETCH_MS = 5000
 
 /** Сколько событий безопасности показывать. Потолок маршрута — 1000. */
 export const EVENTS_LIMIT = 200
+
+/** Периоды «Обзора». Потолок маршрута — 365 дней. */
+export const PERIODS = [7, 30, 90] as const
+export type Period = (typeof PERIODS)[number]
 
 export function useAdminUsers(limit = USERS_LIMIT): UseQueryResult<AdminUser[]> {
   return useQuery({
@@ -67,6 +72,18 @@ export function useAdminQueue(): UseQueryResult<AdminQueue> {
     queryKey: cacheKeys.admin.queue,
     queryFn: () => unwrap<AdminQueue>(api.GET('/api/admin/queue')),
     refetchInterval: QUEUE_REFETCH_MS,
+  })
+}
+
+/**
+ * Ряды для графиков. Отдельный маршрут, а не выкладка из списка людей: тот
+ * знает расход одним числом за календарный месяц и про время не говорит
+ * ничего.
+ */
+export function useAdminStats(days: number): UseQueryResult<AdminStats> {
+  return useQuery({
+    queryKey: cacheKeys.admin.stats(days),
+    queryFn: () => unwrap<AdminStats>(api.GET('/api/admin/stats', { params: { query: { days } } })),
   })
 }
 

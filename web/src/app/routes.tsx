@@ -22,9 +22,11 @@ import { adminRoutes } from '@/features/admin/routes'
 import { authRoutes } from '@/features/auth/routes'
 import { dashboardRoutes } from '@/features/dashboard/routes'
 import { diagramsRoutes } from '@/features/diagrams/routes'
+import { kadaiRoutes } from '@/features/kadai/routes'
 import { projectsRoutes } from '@/features/projects/routes'
 import { reportsRoutes } from '@/features/reports/routes'
 import { settingsRoutes } from '@/features/settings/routes'
+import { workspaceRoutes } from '@/features/workspace/routes'
 
 import { NotFoundPage } from './NotFoundPage'
 import { RequireAuth } from './guards'
@@ -43,8 +45,10 @@ export const routes: RouteObject[] = [
       ...dashboardRoutes,
       ...projectsRoutes,
       ...reportsRoutes,
+      ...kadaiRoutes,
       ...diagramsRoutes,
       ...settingsRoutes,
+      ...workspaceRoutes,
       ...adminRoutes,
       { path: '*', element: <NotFoundPage /> },
     ],

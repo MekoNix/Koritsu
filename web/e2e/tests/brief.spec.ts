@@ -133,4 +133,20 @@ test.describe('правила брифа', () => {
     // отсутствия (`app/shell/moduleLinks.ts`).
     await expect(меню.getByRole('link', { name: /assembler/i })).toHaveCount(0)
   })
+
+  test('в сайдбаре есть «Задания» и нет модулей из макета, которых у службы нет', async ({
+    page,
+  }) => {
+    const меню = page.locator('aside')
+
+    // Модуль ночи 2: служба его отдаёт (`GET /api/modules`), страница есть.
+    await expect(меню.getByRole('link', { name: t('shell.nav.kadai'), exact: true })).toBeVisible()
+
+    // А эти три нарисованы в макетах, но модулями службы не являются. Строкой,
+    // а не ключом перевода: ключа у них нет и быть не должно — проверяется
+    // именно то, что слова не завелись (§2 брифа: неготовых пунктов нет).
+    for (const слово of [/карточк/i, /доск/i, /ассемблер/i]) {
+      await expect(меню.getByRole('link', { name: слово })).toHaveCount(0)
+    }
+  })
 })

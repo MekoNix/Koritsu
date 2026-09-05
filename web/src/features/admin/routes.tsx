@@ -14,6 +14,8 @@ import { Navigate, type RouteObject } from 'react-router-dom'
 import { RequireAdmin } from '@/app/guards'
 
 import { AdminPage } from './AdminPage'
+import { OverviewTab } from './OverviewTab'
+import { PlansTab } from './PlansTab'
 import { QueueTab } from './QueueTab'
 import { SecurityTab } from './SecurityTab'
 import { UsersTab } from './UsersTab'
@@ -27,11 +29,13 @@ export const adminRoutes: RouteObject[] = [
       </RequireAdmin>
     ),
     children: [
-      { index: true, element: <Navigate to="users" replace /> },
+      { index: true, element: <Navigate to="overview" replace /> },
+      { path: 'overview', element: <OverviewTab /> },
       { path: 'users', element: <UsersTab /> },
+      { path: 'plans', element: <PlansTab /> },
       { path: 'queue', element: <QueueTab /> },
       { path: 'security', element: <SecurityTab /> },
-      { path: '*', element: <Navigate to="/admin/users" replace /> },
+      { path: '*', element: <Navigate to="/admin/overview" replace /> },
     ],
   },
 ]

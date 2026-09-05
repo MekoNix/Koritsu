@@ -11,7 +11,8 @@
  */
 import { useT } from '@/i18n'
 import { Skeleton } from '@/ui'
-import { usePersonalWorkspace, useProjects } from '@/features/projects/data'
+import { useCurrentWorkspace } from '@/api/hooks'
+import { useProjects } from '@/features/projects/data'
 import { formatBytes, plural } from '@/features/projects/format'
 
 import { Widget } from './Widget'
@@ -19,7 +20,7 @@ import { useQueueSize } from './data'
 
 export function StatsWidget() {
   const t = useT()
-  const workspace = usePersonalWorkspace()
+  const workspace = useCurrentWorkspace()
   const projects = useProjects(workspace.data?.id)
   const queue = useQueueSize()
 

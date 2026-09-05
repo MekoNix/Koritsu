@@ -7,12 +7,18 @@
  *
  * Иконка — «отложенные действия», а не крутилка: крутилка в шапке читается как
  * «страница грузится» (замечание из правки 2 макетов).
+ *
+ * Вид задания называется по-русски тем же словарём, что у колокольчика
+ * (`notifications.present.kindTitle`): служба зовёт виды по-английски
+ * (`export`, `build`), и показывать её слова в шапке значило бы объяснять
+ * человеку устройство очереди.
  */
 import { useQuery } from '@tanstack/react-query'
 
 import { api, unwrap } from '@/api'
 import { keys } from '@/api/queryKeys'
 import { useT } from '@/i18n'
+import { kindTitle } from '@/features/notifications/present'
 import {
   Badge,
   Button,
@@ -88,7 +94,7 @@ export function JobsMenu() {
               )
             }
           >
-            <span className="min-w-0 flex-1 truncate">{job.kind}</span>
+            <span className="min-w-0 flex-1 truncate">{kindTitle(job.kind)}</span>
           </MenuItem>
         ))}
       </MenuContent>

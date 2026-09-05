@@ -19,13 +19,14 @@
  * читать можно, писать нет).
  */
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { isApiError } from '@/api'
 import { useUsage } from '@/api/hooks'
 import { useDocumentCrumb } from '@/app/shell/breadcrumbs'
 import { useT } from '@/i18n'
 import { Button, Dialog, EmptyState, ErrorState, ForbiddenState, Icon, SkeletonLines } from '@/ui'
+import { ExportDialog } from '@/features/projects/ExportDialog'
 import { MaterialsPanel } from '@/features/projects/MaterialsPanel'
 import { canEditWorkspace, useMaterials, useProject, useWorkspace } from '@/features/projects/data'
 
@@ -49,6 +50,7 @@ const ВЫСОТА = { height: 'calc(100vh - var(--topbar-h) - 2 * var(--space-5
 export function ReportWorkPage() {
   const t = useT()
   const { projectId = '' } = useParams()
+  const [params] = useSearchParams()
 
   const project = useProject(projectId)
   const workspace = useWorkspace(project.data?.workspace_id)
@@ -64,6 +66,7 @@ export function ReportWorkPage() {
   const [filter, setFilter] = useState<TagFilter>('all')
   const [askAll, setAskAll] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const fill = useFill(projectId, endpoint)
   const build = useBuild(projectId)
@@ -79,12 +82,26 @@ export function ReportWorkPage() {
     }
   }, [providers.data, endpoint])
 
-  // Первый тег выбирается сам: экран без выбранного тега — это пустая середина
-  // при полном списке слева, то есть лишний клик на каждом входе.
+  /**
+   * Какой тег открыт при входе.
+   *
+   * `?tag=<ключ>` — ссылка из панели агента: она приводит человека к тегу,
+   * который агент только что переписал, и открыть вместо него первый по списку
+   * значило бы отправить его искать правку глазами. Ключа нет или он чужой —
+   * первый тег: экран без выбранного тега это пустая середина при полном
+   * списке слева, то есть лишний клик на каждом входе.
+   *
+   * Адрес при дальнейшем выборе не переписывается: `?tag=` — это «куда
+   * привели», а не «что открыто сейчас».
+   */
   useEffect(() => {
-    const первый = tags.data?.[0]
-    if (selected === null && первый) setSelected(первый.key)
-  }, [tags.data, selected])
+    if (selected !== null) return
+    const список = tags.data
+    const первый = список?.[0]
+    if (!список || !первый) return
+    const изАдреса = список.find((x) => x.key === params.get('tag'))
+    setSelected((изАдреса ?? первый).key)
+  }, [tags.data, selected, params])
 
   const показанные = useMemo(() => filterTags(tags.data, query, filter), [tags.data, query, filter])
   const выбранный = tags.data?.find((x) => x.key === selected)
@@ -166,6 +183,12 @@ export function ReportWorkPage() {
           >
             <Icon name="agent" size={16} />
             {t('reports.work.fillAll')}
+          </Button>
+          {/* Та же выгрузка, что на странице работы, тем же окном: человек,
+              дописавший отчёт, забирает файл здесь, не возвращаясь в проект. */}
+          <Button variant="secondary" disabled={!canEdit} onClick={() => setExporting(true)}>
+            <Icon name="download" size={16} />
+            {t('projects.export.action')}
           </Button>
         </div>
       </header>
@@ -262,6 +285,14 @@ export function ReportWorkPage() {
           </p>
         </div>
       </Dialog>
+
+      {/* Шаблон здесь заведомо есть: экран без тегов до этого места не доходит. */}
+      <ExportDialog
+        projectId={projectId}
+        open={exporting}
+        onOpenChange={setExporting}
+        hasTemplate
+      />
 
       <Dialog
         open={filesOpen}

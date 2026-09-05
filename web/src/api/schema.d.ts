@@ -265,7 +265,7 @@ export interface paths {
         };
         /**
          * List workspace members
-         * @description Lists the members and their roles. Any member may read it. 400 invalid_id, 404 not_found.
+         * @description Lists the members with their roles and email addresses. Any member may read it. 400 invalid_id, 404 not_found.
          */
         get: operations["list_workspace_members"];
         put?: never;
@@ -1076,6 +1076,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Spending, jobs and registrations over the last days
+         * @description Spending in internal units per day, jobs of the period broken down by kind with the failed ones counted, registrations per day and how many people ran anything. Days are consecutive UTC days, empty ones included. 403 forbidden.
+         */
+        get: operations["admin_stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/billing/webhook": {
         parameters: {
             query?: never;
@@ -1169,6 +1189,66 @@ export interface paths {
          */
         get: operations["artifact_notices"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kadai/stages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Names of the seven stages, in order
+         * @description The stages a piece of work goes through, in order. The interface draws its progress strip from this list, so it is data and not a constant in the client. Values are Russian on purpose: they are shown to a human as they are.
+         */
+        get: operations["kadai_stages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/kadai": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How far the work in this project has got
+         * @description A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. 400 invalid_id, 404 not_found.
+         */
+        get: operations["kadai_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/kadai/condition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Name the material that holds the assignment
+         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        put: operations["kadai_set_condition"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1800,6 +1880,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/kadai/stages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Names of the seven stages, in order
+         * @description The stages a piece of work goes through, in order. The interface draws its progress strip from this list, so it is data and not a constant in the client. Values are Russian on purpose: they are shown to a human as they are.
+         */
+        get: operations["kadai_stages_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/kadai": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How far the work in this project has got
+         * @description A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. 400 invalid_id, 404 not_found.
+         */
+        get: operations["kadai_status_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/kadai/condition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Name the material that holds the assignment
+         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        put: operations["kadai_set_condition_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/flowcharts/modes": {
         parameters: {
             query?: never;
@@ -2110,6 +2250,17 @@ export interface components {
             name: string;
             /** Template */
             template?: string | null;
+        };
+        /**
+         * ConditionIn
+         * @description Какой материал проекта считать условием задачи.
+         */
+        ConditionIn: {
+            /**
+             * Material Id
+             * @description Id of an already parsed material of this project
+             */
+            material_id: string;
         };
         /** ConfirmIn */
         ConfirmIn: {
@@ -4624,6 +4775,40 @@ export interface operations {
             };
         };
     };
+    admin_stats: {
+        parameters: {
+            query?: {
+                /** @description How many days back to count */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     billing_webhook: {
         parameters: {
             query?: never;
@@ -4768,6 +4953,107 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_stages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_set_condition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConditionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -6000,6 +6286,107 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_stages_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_set_condition_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConditionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */

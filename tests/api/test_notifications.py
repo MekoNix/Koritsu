@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from api.jobs.models import Job
 from api.notifications.models import Notification
-from api.notifications.service import при_завершении
+from api.notifications.service import артефакты, при_завершении
 
 from .b_fixtures import прогнать, _чистый_реестр  # noqa: F401
 from .c_fixtures import войти, клиент, сосед, хозяин  # noqa: F401
@@ -147,6 +147,53 @@ def test_кончившийся_лимит_это_отдельный_вид(app,
         s.flush()
         при_завершении(s, задание)
     assert уведомления(app, хозяин.id)[0].kind == "limit_exhausted"
+
+
+# ── ссылка на файл ───────────────────────────────────────────────────────────
+
+def test_артефакты_разбирают_оба_договора():
+    """`export` кладёт один архив, `build` — пару выходов; читаются оба.
+
+    Разбор, а не одно поле, потому что договоров два и оба уже написаны:
+    менять их ради колокольчика значило бы переписать два обработчика и их
+    результаты, уже лежащие в базе.
+    """
+    assert артефакты({"artifact": "0123456789abcdef"}) == {
+        "file": "0123456789abcdef"}
+    assert артефакты({"artifacts": {"docx": "aa", "pdf": "bb"}}) == {
+        "docx": "aa", "pdf": "bb"}
+    # Ничего не скачивается — и поля не будет: пустой словарь в `data` означал
+    # бы «файл есть, но пустой».
+    assert артефакты({"ok": True}) == {}
+    assert артефакты(None) == {}
+    assert артефакты({"artifact": "", "artifacts": {"docx": None}}) == {}
+
+
+def test_уведомление_о_выгрузке_несёт_ссылку_на_архив(app, клиент, хозяин):
+    """Скачивание из уведомления (решение владельца §3): идентификатор архива
+    лежит в `data.artifacts`, а не разыскивается по карточке задания."""
+    job_id = поставить(клиент)
+    прогнать(app)
+    with app.state.db.session_scope() as s:
+        задание = s.get(Job, job_id)
+        задание.kind = "export"
+        задание.result = {"artifact": "0123456789abcdef", "bytes": 42}
+        s.query(Notification).filter(Notification.job_id == job_id).delete()
+        s.flush()
+        при_завершении(s, задание)
+
+    данные = уведомления(app, хозяин.id)[0].data
+    assert данные["artifacts"] == {"file": "0123456789abcdef"}
+    # Проект нужен рядом со ссылкой: артефакт скачивается маршрутом проекта.
+    assert "project_id" in данные
+
+
+def test_упавшее_задание_ссылки_не_несёт(app, клиент, хозяин):
+    """Файла нет — и поля нет: строка колокольчика не должна предлагать
+    скачать то, чего служба не построила."""
+    поставить(клиент, fail=True)
+    прогнать(app)
+    assert "artifacts" not in уведомления(app, хозяин.id)[0].data
 
 
 # ── маршруты ─────────────────────────────────────────────────────────────────

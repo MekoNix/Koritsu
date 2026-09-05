@@ -14,7 +14,7 @@ import { execFileSync } from 'node:child_process'
 
 import { expect, test } from '@playwright/test'
 
-import { signUpAndLogin, t } from './helpers'
+import { TAG_ONE, signUpAndLogin, t, templateDocx } from './helpers'
 import { DB_FILE } from './stand'
 
 /** Выдать право администратора прямо в базе тома. */
@@ -68,4 +68,84 @@ test('право администратора открывает /admin и не 
     0,
   )
   await expect(page.locator('a[href="/admin"]')).toHaveCount(0)
+})
+
+/**
+ * Обзор админки: три графика с данными.
+ *
+ * Данные заводятся тем же путём, каким они появляются у владельца, — работой и
+ * прогоном: регистрация даёт точку в ряду регистраций, прогон модели — расход
+ * за сутки и строку в разбивке по видам. Подкладывать числа в базу здесь
+ * нельзя: проверяется, что сайт показывает то, что служба посчитала, а не то,
+ * что проверка ей подложила.
+ */
+test('обзор админки: расход, виды заданий и регистрации нарисованы с данными', async ({ page }) => {
+  test.setTimeout(180_000)
+  const email = await signUpAndLogin(page, 'overview')
+
+  // ── работа и один прогон: иначе рисовать нечего ───────────────────────────
+  await page.getByRole('link', { name: t('shell.nav.projects') }).click()
+  await page
+    .getByRole('button', { name: t('projects.list.create') })
+    .first()
+    .click()
+  const создание = page.getByRole('dialog')
+  await создание.getByLabel(t('projects.create.name')).fill('Работа для обзора')
+  await создание.locator('input[type="file"]').setInputFiles(templateDocx())
+  await создание.getByRole('button', { name: t('common.action.create') }).click()
+  await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/)
+  const projectId = (page.url().match(/projects\/([0-9a-f-]{36})/) as RegExpMatchArray)[1] as string
+
+  await page.goto(`/reports/${projectId}`)
+  const поле = page.getByRole('textbox', { name: t('reports.editor.field', { tag: TAG_ONE }) })
+  await expect(поле).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: t('reports.editor.generate'), exact: true }).click()
+  await expect(page.getByText(t('reports.tags.byAgent', { n: 1 }))).toBeVisible({ timeout: 90_000 })
+
+  сделатьАдмином(email)
+
+  // ── обзор ─────────────────────────────────────────────────────────────────
+  await page.goto('/admin')
+  // Голый `/admin` — это обзор: вкладка названа адресом, а не состоянием
+  // страницы.
+  await expect(page).toHaveURL(/\/admin\/overview$/)
+  await expect(page.getByRole('heading', { name: t('admin.overview.usage') })).toBeVisible({
+    timeout: 30_000,
+  })
+  // Данные есть — значит пустых состояний нет ни у сводки, ни у видов.
+  await expect(page.getByText(t('admin.overview.empty'))).toHaveCount(0)
+  await expect(page.getByText(t('admin.overview.noJobs'))).toHaveCount(0)
+
+  // Три графика, каждый — картинка со своим именем: это единственное, чем один
+  // рисованный svg отличается от соседнего для того, кто смотрит не глазами.
+  for (const ключ of ['usage', 'kinds', 'registrations']) {
+    await expect(page.getByRole('img', { name: t(`admin.overview.${ключ}`) })).toBeVisible()
+  }
+
+  /** Таблица графика для скринридера: те же числа, только текстом. */
+  const таблица = (подпись: string) =>
+    page.locator('table').filter({ has: page.locator('caption', { hasText: подпись }) })
+
+  // Ряд расхода — по строке на каждый день периода (умолчание — 30), и хотя бы
+  // в одном дне число не нулевое: прогон только что был.
+  const расход = таблица(t('admin.overview.usage'))
+  await expect(расход.locator('tbody tr')).toHaveCount(30)
+  const списано = await расход.locator('tbody tr td:nth-child(2)').allInnerTexts()
+  expect(списано.some((число) => /[1-9]/.test(число))).toBe(true)
+
+  // Разбивка по видам: прогон, который мы только что заказали, в ней есть.
+  const виды = таблица(t('admin.overview.kinds'))
+  await expect(виды.locator('tbody tr').filter({ hasText: 'fill_tag' })).toHaveCount(1)
+
+  // Регистрации: свой человек заведён сегодня, значит день не пустой.
+  const регистрации = таблица(t('admin.overview.registrations'))
+  const заведено = await регистрации.locator('tbody tr td:nth-child(2)').allInnerTexts()
+  expect(заведено.some((число) => /[1-9]/.test(число))).toBe(true)
+
+  // Период — переключателем, и ряд перерисовывается под него.
+  await page
+    .getByRole('radiogroup', { name: t('admin.overview.period') })
+    .getByRole('radio', { name: t('admin.overview.days', { n: 7 }) })
+    .click()
+  await expect(таблица(t('admin.overview.usage')).locator('tbody tr')).toHaveCount(7)
 })

@@ -19,6 +19,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { ApiError, errorText } from '@/api'
+import { useCurrentWorkspace } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import {
@@ -38,7 +39,7 @@ import {
 import { CreateProjectDialog } from './CreateProjectDialog'
 import { Panel } from './Panel'
 import { RenameProjectDialog } from './RenameProjectDialog'
-import { usePersonalWorkspace, useProjects, useRestoreProject, useTrashProject } from './data'
+import { useProjects, useRestoreProject, useTrashProject } from './data'
 import { formatBytes, formatWhen, plural } from './format'
 import type { Project } from './types'
 
@@ -52,7 +53,7 @@ export function ProjectsListPage() {
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState<Project | null>(null)
 
-  const workspace = usePersonalWorkspace()
+  const workspace = useCurrentWorkspace()
   const projects = useProjects(workspace.data?.id, tab === 'trash')
   const trash = useTrashProject()
   const restore = useRestoreProject()

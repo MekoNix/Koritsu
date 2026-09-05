@@ -109,6 +109,7 @@ def _наполнить() -> None:
     зависимости доступа и базу, и на уровне модуля это круг импортов.
     """
     from .flowcharts import MODULE as блок_схемы, router as блок_схемы_router
+    from .kadai import MODULE as задания, router as задания_router
     from .uml import MODULE as uml, router as uml_router
 
     # `reports` — модуль без своих маршрутов: отчёты собираются существующими
@@ -116,6 +117,10 @@ def _наполнить() -> None:
     # сайдбаре он первый; заводить ради неё пустой роутер незачем.
     register(ModuleInfo(id="reports", title="Reports", ready=True,
                         routes_prefix="/api/projects"))
+    # `kadai` стоит вторым: это второй способ получить работу — не заполнение
+    # шаблона, а одна задача условием на входе. Порядок здесь — порядок пунктов
+    # сайдбара, и заданиям место рядом с отчётами, а не после схем.
+    register(задания, задания_router)
     register(блок_схемы, блок_схемы_router)
     register(uml, uml_router)
 

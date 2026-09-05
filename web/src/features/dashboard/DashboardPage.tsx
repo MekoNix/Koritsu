@@ -9,8 +9,8 @@
  *
  * Чего на дашборде нет и не будет: дедлайнов, семестров, учебных групп —
  * приложением пользуется не только студент, и таких данных у службы нет
- * (правка 2 макетов). Список уведомлений — ночь 2, пока он только в
- * колокольчике.
+ * (правка 2 макетов). Уведомления — виджет с пятью последними и колокольчик в
+ * шапке; отдельной страницы у них нет (решение владельца).
  *
  * Сетка — двенадцать колонок на широком экране, шесть на среднем, одна на
  * узком; своё место каждый виджет объявляет сам классом `lg:col-span-*`, чтобы
@@ -22,6 +22,7 @@ import { useT } from '@/i18n'
 import { ClockWidget } from './ClockWidget'
 import { ModuleWidgets } from './ModuleWidgets'
 import { MyWorksWidget } from './MyWorksWidget'
+import { NotificationsWidget } from './NotificationsWidget'
 import { StatsWidget } from './StatsWidget'
 import { UsageWidget } from './UsageWidget'
 import { WordToPdfWidget } from './WordToPdfWidget'
@@ -60,6 +61,7 @@ export function DashboardPage() {
         <ModuleWidgets />
         <StatsWidget />
         <MyWorksWidget />
+        <NotificationsWidget />
       </div>
     </div>
   )

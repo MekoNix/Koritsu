@@ -24,6 +24,8 @@ import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { Button, Icon, Skeleton, type IconName } from '@/ui'
 
+import { WorkspaceSwitcher } from '@/features/workspace/WorkspaceSwitcher'
+
 import { MODULE_LINKS } from './moduleLinks'
 
 type Item = {
@@ -102,6 +104,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <Icon name={collapsed ? 'panelOpen' : 'panelClose'} size={18} />
         </Button>
       </div>
+
+      {/* Рабочее пространство — рамка, в которой показаны все работы; стоит
+          над пунктами меню и в их число не входит (см. WorkspaceSwitcher). */}
+      <WorkspaceSwitcher collapsed={collapsed} />
 
       <nav className="flex flex-col gap-s1" aria-label={t('shell.sidebar.modules')}>
         {fixedTop.map((item) => (

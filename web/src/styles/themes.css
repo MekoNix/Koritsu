@@ -27,7 +27,7 @@
   --err:#C93C34; --err-bg:rgba(201,60,52,.10); --info:#0B63C4; --info-bg:rgba(11,99,196,.10);
   --agent:#8E3BD6; --agent-ink:#FFFFFF; --agent-bg:rgba(142,59,214,.10);
   /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
-  --mod-dashboard:#5F6674; --mod-flowcharts:#4F5DE8; --mod-uml:#1F7A6A; --mod-reports:#B4551F;
+  --mod-dashboard:#5F6674; --mod-flowcharts:#4F5DE8; --mod-uml:#1F7A6A; --mod-reports:#B4551F; --mod-kadai:#7A4BC4;
   /* форма и глубина */
   --radius-sm:6px; --radius:8px; --radius-lg:12px; --radius-full:999px; --btn-radius:6px;
   --border-w:1px; --shadow-1:0 1px 2px rgba(20,24,40,.06); --shadow-2:0 12px 28px -18px rgba(20,24,40,.22); --blur:none; --pattern:none;
@@ -65,7 +65,7 @@
   --err:#E5534B; --err-bg:rgba(229,83,75,.14); --info:#58A6FF; --info-bg:rgba(88,166,255,.14);
   --agent:#C77DFF; --agent-ink:#1A0B2E; --agent-bg:rgba(199,125,255,.14);
   /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
-  --mod-dashboard:#8A909B; --mod-flowcharts:#7C88E8; --mod-uml:#4FB6A0; --mod-reports:#DE8A5E;
+  --mod-dashboard:#8A909B; --mod-flowcharts:#7C88E8; --mod-uml:#4FB6A0; --mod-reports:#DE8A5E; --mod-kadai:#A98BE8;
   /* форма и глубина */
   --radius-sm:6px; --radius:8px; --radius-lg:12px; --radius-full:999px; --btn-radius:6px;
   --border-w:1px; --shadow-1:none; --shadow-2:0 12px 28px -18px rgba(0,0,0,.85); --blur:none; --pattern:none;
@@ -103,7 +103,7 @@
   --err:#A8402F; --err-bg:rgba(168,64,47,.12); --info:#3B5E8C; --info-bg:rgba(59,94,140,.12);
   --agent:#7B4B9E; --agent-ink:#FBF8F2; --agent-bg:rgba(123,75,158,.12);
   /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
-  --mod-dashboard:#5B6E8C; --mod-flowcharts:#2B4372; --mod-uml:#3F6F5E; --mod-reports:#A8622F;
+  --mod-dashboard:#5B6E8C; --mod-flowcharts:#2B4372; --mod-uml:#3F6F5E; --mod-reports:#A8622F; --mod-kadai:#6E4EA8;
   /* форма и глубина */
   --radius-sm:10px; --radius:14px; --radius-lg:20px; --radius-full:999px; --btn-radius:999px;
   --border-w:1px; --shadow-1:0 1px 2px rgba(70,60,40,.06), 0 10px 24px -18px rgba(70,60,40,.5); --shadow-2:0 24px 48px -20px rgba(70,60,40,.55); --blur:none; --pattern:radial-gradient(120% 80% at 50% -10%, rgba(255,253,247,.9), transparent 65%);
@@ -141,7 +141,7 @@
   --err:#E3907F; --err-bg:rgba(227,144,127,.14); --info:#8FB8D8; --info-bg:rgba(143,184,216,.14);
   --agent:#C9A6E6; --agent-ink:#1C1A17; --agent-bg:rgba(201,166,230,.14);
   /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
-  --mod-dashboard:#A8B6C8; --mod-flowcharts:#9FB4E0; --mod-uml:#8FC7B0; --mod-reports:#E0B36A;
+  --mod-dashboard:#A8B6C8; --mod-flowcharts:#9FB4E0; --mod-uml:#8FC7B0; --mod-reports:#E0B36A; --mod-kadai:#C0A4E0;
   /* форма и глубина */
   --radius-sm:10px; --radius:14px; --radius-lg:20px; --radius-full:999px; --btn-radius:999px;
   --border-w:1px; --shadow-1:0 1px 2px rgba(0,0,0,.3), 0 10px 24px -18px rgba(0,0,0,.8); --shadow-2:0 24px 48px -20px rgba(0,0,0,.8); --blur:none; --pattern:radial-gradient(120% 80% at 50% -10%, rgba(255,240,215,.05), transparent 65%);
@@ -179,7 +179,7 @@
   --err:#D64545; --err-bg:rgba(214,69,69,.10); --info:#2F7BD0; --info-bg:rgba(47,123,208,.10);
   --agent:#7C3AED; --agent-ink:#FFFFFF; --agent-bg:rgba(124,58,237,.10);
   /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
-  --mod-dashboard:#6B7280; --mod-flowcharts:#5E6AD2; --mod-uml:#2E9E88; --mod-reports:#C2601F;
+  --mod-dashboard:#6B7280; --mod-flowcharts:#5E6AD2; --mod-uml:#2E9E88; --mod-reports:#C2601F; --mod-kadai:#7C4DD0;
   /* форма и глубина */
   --radius-sm:8px; --radius:10px; --radius-lg:14px; --radius-full:999px; --btn-radius:8px;
   --border-w:1px; --shadow-1:0 1px 2px rgba(0,0,0,.05); --shadow-2:0 16px 40px -16px rgba(0,0,0,.2); --blur:none; --pattern:radial-gradient(80% 60% at 50% -20%, rgba(94,106,210,.10), transparent 70%);
@@ -217,7 +217,7 @@
   --err:#EB5757; --err-bg:rgba(235,87,87,.14); --info:#4C9AE8; --info-bg:rgba(76,154,232,.14);
   --agent:#C084FC; --agent-ink:#120A1F; --agent-bg:rgba(192,132,252,.14);
   /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
-  --mod-dashboard:#8A8F98; --mod-flowcharts:#7C8AF5; --mod-uml:#4CB7A0; --mod-reports:#E08A5B;
+  --mod-dashboard:#8A8F98; --mod-flowcharts:#7C8AF5; --mod-uml:#4CB7A0; --mod-reports:#E08A5B; --mod-kadai:#A88BF0;
   /* форма и глубина */
   --radius-sm:8px; --radius:10px; --radius-lg:14px; --radius-full:999px; --btn-radius:8px;
   --border-w:1px; --shadow-1:none; --shadow-2:0 16px 48px -16px rgba(0,0,0,.8); --blur:none; --pattern:radial-gradient(80% 60% at 50% -20%, rgba(94,106,210,.20), transparent 70%);
@@ -255,7 +255,7 @@
   --err:#C0392B; --err-bg:rgba(192,57,43,.12); --info:#1F5FA8; --info-bg:rgba(31,95,168,.12);
   --agent:#6D3FC4; --agent-ink:#FFFFFF; --agent-bg:rgba(109,63,196,.12);
   /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
-  --mod-dashboard:#525965; --mod-flowcharts:#2F5EA8; --mod-uml:#2E8069; --mod-reports:#B0662F;
+  --mod-dashboard:#525965; --mod-flowcharts:#2F5EA8; --mod-uml:#2E8069; --mod-reports:#B0662F; --mod-kadai:#6F53B8;
   /* форма и глубина */
   --radius-sm:16px; --radius:22px; --radius-lg:28px; --radius-full:999px; --btn-radius:999px;
   --border-w:1px; --shadow-1:inset 0 1px 0 rgba(255,255,255,.85), 0 12px 32px -18px rgba(0,0,0,.35); --shadow-2:inset 0 1px 0 rgba(255,255,255,.9), 0 24px 56px -20px rgba(0,0,0,.45); --blur:blur(18px) saturate(160%); --pattern:radial-gradient(58% 46% at 10% 4%, rgba(120,160,255,.30), transparent 62%), radial-gradient(46% 38% at 90% 0%, rgba(255,150,200,.20), transparent 62%), radial-gradient(64% 58% at 55% 112%, rgba(90,220,205,.18), transparent 62%);
@@ -293,7 +293,7 @@
   --err:#FF8A8A; --err-bg:rgba(255,138,138,.18); --info:#9DD0FF; --info-bg:rgba(157,208,255,.18);
   --agent:#D7B4FF; --agent-ink:#2A1B40; --agent-bg:rgba(215,180,255,.2);
   /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
-  --mod-dashboard:#C4CDDB; --mod-flowcharts:#A8C0FF; --mod-uml:#8FE0C6; --mod-reports:#FFC59A;
+  --mod-dashboard:#C4CDDB; --mod-flowcharts:#A8C0FF; --mod-uml:#8FE0C6; --mod-reports:#FFC59A; --mod-kadai:#D8BCFF;
   /* форма и глубина */
   --radius-sm:16px; --radius:22px; --radius-lg:28px; --radius-full:999px; --btn-radius:999px;
   --border-w:1px; --shadow-1:inset 0 1px 0 rgba(255,255,255,.35), 0 12px 32px -18px rgba(0,0,0,.7); --shadow-2:inset 0 1px 0 rgba(255,255,255,.4), 0 24px 56px -20px rgba(0,0,0,.85); --blur:blur(18px) saturate(160%); --pattern:radial-gradient(58% 46% at 12% 6%, rgba(88,132,255,.34), transparent 62%), radial-gradient(46% 38% at 88% 2%, rgba(255,118,190,.20), transparent 62%), radial-gradient(64% 58% at 52% 112%, rgba(56,214,196,.18), transparent 62%);

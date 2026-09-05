@@ -14,6 +14,7 @@ import { useCallback, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 
 import { useUserEvents } from '@/api/hooks'
+import { AgentPanel } from '@/features/agent'
 
 import { BreadcrumbProvider } from './breadcrumbs'
 import { Sidebar } from './Sidebar'
@@ -58,6 +59,10 @@ export function AppShell() {
           </main>
         </div>
       </div>
+      {/* Панель агента: поверх любого экрана, немодальная, Ctrl+J. Смонтирована
+          всегда — иначе горячая клавиша работала бы не отовсюду, а прогон
+          обрывался бы закрытием окна. Пока закрыта, не рисует ничего. */}
+      <AgentPanel />
     </BreadcrumbProvider>
   )
 }

@@ -20,6 +20,7 @@ deps — кто спрашивает: одна точка, через котор
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Annotated, Any
 
 from fastapi import Depends
@@ -63,4 +64,35 @@ def user_id_by_email(s: Session, email: str) -> str | None:
     return s.scalar(select(User.id).where(func.lower(User.email) == нужная))
 
 
-__all__ = ["current_user", "CurrentUser", "user_id_by_email", "UNAUTHORIZED"]
+def emails_by_ids(s: Session, ids: Sequence[str]) -> dict[str, str]:
+    """Почты по идентификаторам: `{id: email}`. Нужно списку участников.
+
+    Список участников хранит только идентификаторы (`workspace_members`), а
+    человеку показывать нечего: чужой uuid не отличить от соседнего, и «кого
+    убрать» по нему не решается. Почта — то единственное имя, которое у
+    аккаунта есть (своего имени служба не хранит), и знает её тот же, кто по
+    ней приглашал.
+
+    Одним запросом на весь список, а не по строке: пространство на два десятка
+    человек иначе стоило бы два десятка обходов таблицы ради одной колонки.
+
+    Две ветки — по той же причине, что и у `user_id_by_email`: таблица `users`
+    принадлежит аккаунтам, а маршрут — нам.
+    """
+    нужные = [str(i) for i in ids if i]
+    if not нужные:
+        return {}
+    try:
+        from ..accounts import User                     # type: ignore
+    except Exception:                                   # noqa: BLE001 — B ещё нет
+        места = ", ".join(f":i{n}" for n in range(len(нужные)))
+        строки = s.execute(
+            text(f"SELECT id, email FROM users WHERE id IN ({места})"),
+            {f"i{n}": знач for n, знач in enumerate(нужные)}).all()
+        return {str(строка[0]): str(строка[1]) for строка in строки}
+    return {str(айди): str(почта) for айди, почта in
+            s.execute(select(User.id, User.email).where(User.id.in_(нужные))).all()}
+
+
+__all__ = ["current_user", "CurrentUser", "user_id_by_email", "emails_by_ids",
+           "UNAUTHORIZED"]

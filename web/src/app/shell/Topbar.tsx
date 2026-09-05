@@ -7,13 +7,22 @@
  * у самой шапки заливки нет (фон страницы виден насквозь, содержимое под ней
  * размывается), а справа стоит одна скруглённая группа, а не пять кнопок в ряд.
  *
- * Поиск и окно агента на этой ночи — заглушки: и то и другое делается ночью 2
- * (Ctrl+K по проектам и материалам, Ctrl+J — панель агента). Кнопки стоят на
- * своих местах и честно говорят, что пока не работают, — это лучше, чем
- * переставлять шапку через неделю.
+ * Кнопка «Поиск» и `Ctrl+K` открывают одну и ту же палитру
+ * (`features/search`): она живёт здесь, потому что и кнопка, и сочетание — это
+ * шапка, а искать человек может с любого экрана.
+ *
+ * Кнопка «Агент» открывает и закрывает панель агента (`features/agent`) — ту
+ * же, что `Ctrl+J`. Самой панели шапка не знает: она держит только признак
+ * открытости (`useAgentPanelOpen`), а живёт панель в оболочке. Иначе шапка
+ * оказалась бы родителем окна, которое стоит поверх всей страницы.
  */
+import { useState } from 'react'
+
 import { useT } from '@/i18n'
-import { Button, Icon, useToast } from '@/ui'
+import { toggleAgentPanel, useAgentPanelOpen } from '@/features/agent'
+import { SearchPalette } from '@/features/search/SearchPalette'
+import { useHotkey } from '@/lib/hotkeys'
+import { Button, Icon } from '@/ui'
 
 import { Breadcrumbs } from './breadcrumbs'
 import { JobsMenu } from './JobsMenu'
@@ -22,7 +31,10 @@ import { UserMenu } from './UserMenu'
 
 export function Topbar() {
   const t = useT()
-  const toast = useToast()
+  const agentOpen = useAgentPanelOpen()
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  useHotkey('ctrl+k', () => setSearchOpen((open) => !open))
 
   return (
     <header className="sticky top-0 z-20 flex h-topbar items-center gap-s3 bg-[color-mix(in_srgb,var(--bg)_68%,transparent)] px-s4 backdrop-blur-theme">
@@ -35,7 +47,9 @@ export function Topbar() {
           variant="ghost"
           size="sm"
           className="rounded-full text-ink"
-          onClick={() => toast.warn(t('shell.search.label'), t('shell.search.soon'))}
+          aria-haspopup="dialog"
+          aria-expanded={searchOpen}
+          onClick={() => setSearchOpen(true)}
         >
           <Icon name="search" size={16} />
           {t('shell.search.label')}
@@ -48,7 +62,8 @@ export function Topbar() {
           variant="agent"
           size="sm"
           className="rounded-full"
-          onClick={() => toast.agent(t('shell.agent.label'), t('shell.agent.soon'))}
+          aria-expanded={agentOpen}
+          onClick={toggleAgentPanel}
         >
           <Icon name="agent" size={16} />
           {t('shell.agent.label')}
@@ -66,6 +81,8 @@ export function Topbar() {
 
         <UserMenu />
       </div>
+
+      <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </header>
   )
 }

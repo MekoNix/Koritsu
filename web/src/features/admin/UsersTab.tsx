@@ -1,10 +1,18 @@
 /**
- * UsersTab — таблица людей с поиском и страницами.
+ * UsersTab — таблица людей: поиск, отбор по плану, сортировка, страницы, CSV.
  *
- * Поиск и страницы считает сайт (`filter.ts`): служба отдаёт список одним
- * куском и ни того, ни другого не умеет. Это честно сказано подписью под
- * таблицей — иначе на большой базе человек решит, что видит всех, а увидит
- * первую тысячу.
+ * Всё это считает сайт (`filter.ts`, `table.ts`): служба отдаёт список одним
+ * куском и ни поиска, ни сортировки, ни страниц не умеет. Это честно сказано
+ * подписью под таблицей — иначе на большой базе человек решит, что видит всех,
+ * а увидит первую тысячу.
+ *
+ * Порядок действий над списком закреплён: сначала отбор (поиск и план), потом
+ * сортировка, потом страница. Иначе страница 2 отсортированного списка и
+ * страница 2 отобранного показывали бы разное при одинаковом виде экрана.
+ *
+ * Расход в столбце — за календарный месяц: это то самое число, что называет
+ * человеку `GET /api/usage`. Не за период «Обзора»: два разных окна в одном
+ * экране — это два числа, которые обязаны совпасть и не совпадут.
  *
  * Строка кликабельна целиком и является кнопкой: карточка открывается и с
  * клавиатуры, а не только мышью.
@@ -12,17 +20,43 @@
 import { useMemo, useState } from 'react'
 
 import { useT } from '@/i18n'
-import { Avatar, Chip, EmptyState, ErrorState, Icon, Input, Progress, SkeletonLines } from '@/ui'
+import {
+  Avatar,
+  Chip,
+  EmptyState,
+  ErrorState,
+  Icon,
+  Input,
+  Progress,
+  Select,
+  SkeletonLines,
+} from '@/ui'
 import { formatBytes, formatDate, formatUnits } from '@/features/settings/format'
 
 import { useAdminUsers } from './api'
 import { countAdmins, filterUsers, pageCount, pageOf } from './filter'
+import { CsvButton, SortHeader } from './parts'
+import { filterByPlan, nextSort, planCounts, sortRows, type SortState } from './table'
 import { UserDialog } from './UserDialog'
 import type { AdminUser } from './types'
 
-const TH =
-  'sticky top-0 z-[1] whitespace-nowrap border-b border-line bg-surface px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted'
 const TD = 'border-b border-line px-3 py-2 align-middle'
+
+/** Столбцы, по которым сортируют. Ключ = имя ключа перевода. */
+type Col = 'user' | 'plan' | 'spent' | 'storage' | 'status' | 'created'
+
+/** Чем меряется столбец при сортировке. Одно место, чтобы шапка и порядок
+ *  строк не разошлись. */
+const ПО: Record<Col, (user: AdminUser) => string | number> = {
+  user: (u) => u.email,
+  plan: (u) => u.plan,
+  spent: (u) => u.spent_units,
+  storage: (u) => u.bytes_used,
+  // Состояние — не строка, а очерёдность беды: удалённые, потом
+  // неподтверждённые, потом обычные. Сортировка по слову дала бы алфавит.
+  status: (u) => (u.deleted_at ? 0 : u.email_confirmed ? 2 : 1),
+  created: (u) => u.created_at ?? '',
+}
 
 function statusOf(user: AdminUser) {
   if (user.deleted_at) return { tone: 'err', key: 'deleted' } as const
@@ -34,17 +68,28 @@ export function UsersTab() {
   const t = useT()
   const users = useAdminUsers()
   const [query, setQuery] = useState('')
+  const [plan, setPlan] = useState('')
+  const [sort, setSort] = useState<SortState<Col>>(null)
   const [page, setPage] = useState(1)
   const [opened, setOpened] = useState<AdminUser | null>(null)
 
   const all = useMemo(() => users.data ?? [], [users.data])
-  const found = useMemo(() => filterUsers(all, query), [all, query])
+  const планы = useMemo(() => planCounts(all), [all])
+  const found = useMemo(
+    () => sortOf(filterByPlan(filterUsers(all, query), plan), sort),
+    [all, query, plan, sort],
+  )
   const pages = pageCount(found.length)
   const current = Math.min(page, pages)
   const rows = useMemo(() => pageOf(found, current), [found, current])
 
   if (users.isLoading) return <SkeletonLines count={8} />
   if (users.error) return <ErrorState error={users.error} onRetry={() => void users.refetch()} />
+
+  const сортировать = (col: Col) => {
+    setSort((было) => nextSort(было, col))
+    setPage(1)
+  }
 
   return (
     <div className="flex flex-col gap-s3">
@@ -60,11 +105,57 @@ export function UsersTab() {
           icon={<Icon name="search" size={16} />}
           wrapperClassName="w-[320px] max-w-full"
         />
+        <Select
+          aria-label={t('admin.users.planFilter')}
+          value={plan}
+          onChange={(e) => {
+            setPlan(e.target.value)
+            setPage(1)
+          }}
+          className="w-[200px]"
+        >
+          <option value="">{t('admin.users.planAll')}</option>
+          {планы.map((строка) => (
+            <option key={строка.plan} value={строка.plan}>
+              {строка.plan} ({строка.count})
+            </option>
+          ))}
+        </Select>
         <span className="text-xs text-muted">
-          {query
+          {query || plan
             ? t('admin.users.found', { found: found.length, total: all.length })
             : t('admin.users.total', { total: all.length, admins: countAdmins(all) })}
         </span>
+        <span className="grow" />
+        <CsvButton
+          name="koritsu-users.csv"
+          disabled={found.length === 0}
+          headers={[
+            t('admin.users.col.user'),
+            'id',
+            t('admin.users.col.plan'),
+            t('admin.users.role.admin'),
+            t('admin.users.col.spent'),
+            t('admin.users.col.storage'),
+            t('admin.users.col.status'),
+            t('admin.users.col.created'),
+          ]}
+          // Выгружается отобранное и отсортированное целиком, а не страница:
+          // человек, нажавший «CSV» после поиска, ждёт найденное, а не двадцать
+          // строк из него.
+          rows={() =>
+            found.map((user) => [
+              user.email,
+              user.id,
+              user.plan,
+              user.is_admin ? 1 : 0,
+              user.spent_units,
+              user.bytes_used,
+              t(`admin.users.status.${statusOf(user).key}`),
+              user.created_at ?? '',
+            ])
+          }
+        />
       </div>
 
       {found.length === 0 ? (
@@ -74,12 +165,24 @@ export function UsersTab() {
           <table className="w-full border-separate border-spacing-0 text-sm">
             <thead>
               <tr>
-                <th className={TH}>{t('admin.users.col.user')}</th>
-                <th className={TH}>{t('admin.users.col.plan')}</th>
-                <th className={`${TH} text-right`}>{t('admin.users.col.spent')}</th>
-                <th className={TH}>{t('admin.users.col.storage')}</th>
-                <th className={TH}>{t('admin.users.col.status')}</th>
-                <th className={TH}>{t('admin.users.col.created')}</th>
+                <SortHeader col="user" state={sort} onSort={сортировать}>
+                  {t('admin.users.col.user')}
+                </SortHeader>
+                <SortHeader col="plan" state={sort} onSort={сортировать}>
+                  {t('admin.users.col.plan')}
+                </SortHeader>
+                <SortHeader col="spent" state={sort} onSort={сортировать} className="text-right">
+                  {t('admin.users.col.spent')}
+                </SortHeader>
+                <SortHeader col="storage" state={sort} onSort={сортировать}>
+                  {t('admin.users.col.storage')}
+                </SortHeader>
+                <SortHeader col="status" state={sort} onSort={сортировать}>
+                  {t('admin.users.col.status')}
+                </SortHeader>
+                <SortHeader col="created" state={sort} onSort={сортировать}>
+                  {t('admin.users.col.created')}
+                </SortHeader>
               </tr>
             </thead>
             <tbody>
@@ -187,4 +290,9 @@ export function UsersTab() {
       />
     </div>
   )
+}
+
+/** Порядок строк: выбранный столбец или тот, в котором отдала служба. */
+function sortOf(users: AdminUser[], sort: SortState<Col>): AdminUser[] {
+  return sort ? sortRows(users, ПО[sort.col], sort.dir) : users
 }

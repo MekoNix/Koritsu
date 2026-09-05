@@ -10,6 +10,7 @@
  * Адреса — те, о которых договорились агенты ночи:
  *
  *     reports     /reports/<id проекта>
+ *     kadai       /kadai/<id проекта>
  *     flowcharts  /flowcharts/<id проекта>
  *     uml         /uml/<id проекта>
  *
@@ -32,6 +33,11 @@ export const PROJECT_MODULE_LINKS: Record<string, ProjectModuleLink> = {
     href: (id) => `/reports/${id}`,
     icon: 'file',
     colorVar: '--mod-reports',
+  },
+  kadai: {
+    href: (id) => `/kadai/${id}`,
+    icon: 'tasks',
+    colorVar: '--mod-kadai',
   },
   flowcharts: {
     href: (id) => `/flowcharts/${id}`,
