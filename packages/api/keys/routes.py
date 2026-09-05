@@ -56,16 +56,34 @@ def список(s: SessionDep, user: CurrentUser) -> list[dict]:
 @router.get("/providers", operation_id="list_key_providers",
             summary="Providers that accept a key",
             description=(
-                "Lists the model providers a key can be stored for. "
+                "Lists the model providers a key can be stored for, and where "
+                "a key for each would come from: `own` (yours), `shared` (the "
+                "one the service runs on) or `none` (nothing to pay with). "
                 "401 unauthenticated."))
-def поставщики() -> dict:
-    """Для каких пресетов ключ имеет смысл.
+def поставщики(request: Request, s: SessionDep, user: CurrentUser) -> dict:
+    """Для каких пресетов ключ имеет смысл и чем по каждому платить.
 
     Открытый маршрут по содержанию (список имён пресетов — не секрет), но
     закрытый по месту: он под `/api`, то есть за той же cookie-сессией, что и
     остальное. Ключ этот список не раскрывает ничей.
+
+    **`key_source` — не удобство, а условие работы экрана.** Пресет выбирается
+    перед прогоном, и выбрать тот, которым платить нечем, значит получить отказ
+    вместо работы; свои ключи сайт видит списком выше, а общий ключ службы
+    (`KORITSU_PROVIDER_KEY_<ПРЕСЕТ>`) не виден ниоткуда — сказать про него может
+    только служба. Отдаётся именно источник, а не «есть/нет»: «работает на общем
+    ключе» человеку надо знать, потому что расход в кабинете поставщика он у
+    себя не увидит.
+
+    Тем же ответом, а не соседним маршрутом: список пресетов без того, чем по
+    ним платить, — это половина ответа, за которой всё равно идут вторым
+    запросом.
     """
-    return {"providers": list(service.providers())}
+    settings = request.app.state.settings
+    имена = list(service.providers())
+    return {"providers": имена,
+            "key_source": {имя: service.source_of(settings, s, user.id, имя)
+                           for имя in имена}}
 
 
 @router.post("", status_code=201, operation_id="add_model_key",

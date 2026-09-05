@@ -1,0 +1,6387 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Koritsu API",
+  "description": "Two entrances, one set of handlers: `/api` for the site (cookie session) and `/api/v1` for external clients (bearer token). Only `/api/v1` is versioned and documented.",
+  "version": "2.0.0a5"
+ },
+ "paths": {
+  "/api/auth/register": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Register with email and password",
+    "description": "Creates an account and emails a confirmation link. The answer is the same whether or not the address is already taken. 422 validation_failed, 429 rate_limited.",
+    "operationId": "register",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RegisterIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Register"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/confirm": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Confirm an email address by token",
+    "description": "Confirms an email address by the token from the letter. No session cookie is issued: the reader signs in afterwards. 400 invalid_token, 400 token_expired.",
+    "operationId": "confirm_email",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConfirmIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Confirm Email"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/login": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Sign in and receive a session cookie",
+    "description": "Checks the password and sets the session cookie. 401 invalid_credentials, 403 email_not_confirmed, 429 rate_limited.",
+    "operationId": "login",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Login"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/logout": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Sign out on this device",
+    "description": "Revokes this session and clears the cookie. Needs no authentication and answers alike with or without a live session.",
+    "operationId": "logout",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Logout"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/logout-all": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Sign out on every device",
+    "description": "Revokes every session of the signed-in user and clears the cookie. 401 unauthenticated.",
+    "operationId": "logout_all",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Logout All"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/me": {
+   "get": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "The signed-in user",
+    "description": "Returns the account behind the session cookie. 401 unauthenticated.",
+    "operationId": "get_current_user",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Get Current User"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/password/forgot": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Ask for a password reset link",
+    "description": "Emails a password reset link. The answer is the same whether or not the address is known.",
+    "operationId": "forgot_password",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ForgotIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Forgot Password"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/password/reset": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Set a new password by token",
+    "description": "Sets a new password by the token from the letter, revokes every session and confirms the address. 400 invalid_token, 400 token_expired, 422 validation_failed.",
+    "operationId": "reset_password",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ResetIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Reset Password"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/workspaces": {
+   "get": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "List workspaces the caller belongs to",
+    "description": "Lists the workspaces the caller is a member of, personal one first, each with the caller's own role. `trash=true` lists the ones in the trash instead. 401 unauthorized.",
+    "operationId": "list_workspaces",
+    "parameters": [
+     {
+      "name": "trash",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Trash"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response List Workspaces"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "Create a workspace",
+    "description": "Creates a workspace; the caller becomes its owner and its first member. 422 validation_failed.",
+    "operationId": "create_workspace",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceNameIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Create Workspace"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/workspaces/personal": {
+   "get": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "The caller's personal workspace",
+    "description": "Returns the caller's personal workspace, creating it when the account is older than this code. 401 unauthorized.",
+    "operationId": "get_personal_workspace",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Get Personal Workspace"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/workspaces/{workspace_id}": {
+   "get": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "One workspace",
+    "description": "One workspace with the caller's own role. A workspace the caller is not a member of answers 404, not 403. 400 invalid_id, 404 not_found.",
+    "operationId": "get_workspace",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Workspace"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "Rename a workspace",
+    "description": "Renames a workspace. Owner only. 400 invalid_id, 403 forbidden, 404 not_found, 422 validation_failed.",
+    "operationId": "rename_workspace",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceNameIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Rename Workspace"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "Move a workspace to the trash",
+    "description": "Moves a workspace to the trash together with its projects; they stay on the volume until purge_after. Owner only, and the personal workspace cannot be trashed. 403 forbidden, 404 not_found, 409 personal_workspace, 409 in_trash.",
+    "operationId": "trash_workspace",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Trash Workspace"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/workspaces/{workspace_id}/restore": {
+   "post": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "Restore a workspace from the trash",
+    "description": "Restores a workspace from the trash. Owner only. 403 forbidden, 404 not_found, 409 not_in_trash.",
+    "operationId": "restore_workspace",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Restore Workspace"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/workspaces/{workspace_id}/members": {
+   "get": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "List workspace members",
+    "description": "Lists the members and their roles. Any member may read it. 400 invalid_id, 404 not_found.",
+    "operationId": "list_workspace_members",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response List Workspace Members"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "Add a member by email",
+    "description": "Invites a person by email address. Owner only. 400 unknown_role, 403 forbidden, 404 no_such_user, 409 already_member.",
+    "operationId": "add_workspace_member",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MemberIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Add Workspace Member"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/workspaces/{workspace_id}/members/{user_id}": {
+   "patch": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "Change a member's role",
+    "description": "Changes a member's role (owner, editor, viewer). Owner only, and the last owner cannot be demoted. 400 unknown_role, 403 forbidden, 404 not_found, 409 last_owner.",
+    "operationId": "set_workspace_member_role",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     },
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "User Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MemberRoleIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Set Workspace Member Role"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "workspaces"
+    ],
+    "summary": "Remove a member",
+    "description": "Removes a member from the workspace. Owner only, and the last owner cannot be removed. 403 forbidden, 404 not_found, 409 last_owner.",
+    "operationId": "remove_workspace_member",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     },
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "User Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Remove Workspace Member"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects": {
+   "post": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Create a project in a workspace",
+    "description": "Creates a project and its directory on the volume. Multipart: the name and an optional DOCX template; without a template the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.",
+    "operationId": "create_project",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_create_project"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Create Project"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "List projects of a workspace",
+    "description": "Lists the projects of one workspace; `trash=true` lists the ones in the trash instead. 400 invalid_id, 404 not_found.",
+    "operationId": "list_projects",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     },
+     {
+      "name": "trash",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Trash"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response List Projects"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}": {
+   "get": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "One project",
+    "description": "One project: name, workspace, the tag keys of its manifest and the size of its directory. Paths are never returned. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "get_project",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Project"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Rename a project",
+    "description": "Renames a project, in the database and in its settings on the volume. Editor role. 403 forbidden, 404 not_found, 409 in_trash, 422 validation_failed.",
+    "operationId": "rename_project",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectNameIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Rename Project"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Move a project to the trash",
+    "description": "Moves a project to the trash; its directory stays on the volume until purge_after. Editor role. 403 forbidden, 404 not_found, 409 in_trash.",
+    "operationId": "trash_project",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Trash Project"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/restore": {
+   "post": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Restore a project from the trash",
+    "description": "Restores a project from the trash. Editor role. 403 forbidden, 404 not_found.",
+    "operationId": "restore_project",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Restore Project"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/tags": {
+   "get": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Tags of the project template",
+    "description": "Every tag of the template, in the order they appear in the document: key, label, type, whether it is required, and whether it is filled, with the source and the number of the current version when it is. Tags no longer present in the template are left out. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "list_project_tags",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response List Project Tags"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/values": {
+   "get": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Current tag values of a project",
+    "description": "The current value of every tag of the project, in the shape the report builder reads. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "get_project_values",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Project Values"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/values/{key}": {
+   "put": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Set one tag value by hand",
+    "description": "Writes one tag value as a new version marked source=manual; previous versions are kept. The body is the value itself, a JSON object. Editor role. 400 invalid_value, 403 forbidden, 404 not_found, 409 in_trash.",
+    "operationId": "set_project_value",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Key"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "title": "Value"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Set Project Value"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/keys": {
+   "get": {
+    "tags": [
+     "keys"
+    ],
+    "summary": "List your provider keys",
+    "description": "Lists your live provider keys: provider, last four characters and dates. The key itself is never returned. 401 unauthenticated.",
+    "operationId": "list_model_keys",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "type": "array",
+         "title": "Response List Model Keys"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "keys"
+    ],
+    "summary": "Add a provider key",
+    "description": "Stores a provider key encrypted; a previous key of the same provider is revoked. The response carries the last four characters only. 422 validation_failed.",
+    "operationId": "add_model_key",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ModelKeyIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Add Model Key"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/keys/providers": {
+   "get": {
+    "tags": [
+     "keys"
+    ],
+    "summary": "Providers that accept a key",
+    "description": "Lists the model providers a key can be stored for, and where a key for each would come from: `own` (yours), `shared` (the one the service runs on) or `none` (nothing to pay with). 401 unauthenticated.",
+    "operationId": "list_key_providers",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response List Key Providers"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/keys/{key_id}": {
+   "delete": {
+    "tags": [
+     "keys"
+    ],
+    "summary": "Revoke a provider key",
+    "description": "Revokes one of your keys. A key that belongs to someone else and a key that never existed answer alike. 404 not_found.",
+    "operationId": "revoke_model_key",
+    "parameters": [
+     {
+      "name": "key_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Key Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/materials": {
+   "post": {
+    "tags": [
+     "materials"
+    ],
+    "summary": "Upload a material into the project",
+    "description": "Accepts a file (multipart field `file`), stores the bytes and queues a `parse` job for them. Answers 202 with the job card and `pending_id`, the identifier the material will have once it is parsed. The same bytes uploaded twice are one material and are parsed once. Editor role. 400 no_file, 402 limit_exhausted, 403 forbidden, 404 not_found, 413 file_too_large, 413 quota_exceeded, 415 unsupported_type.",
+    "operationId": "upload_material",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Upload Material"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         }
+        },
+        "required": [
+         "file"
+        ]
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "materials"
+    ],
+    "summary": "List project materials",
+    "description": "Cards of every parsed material of the project, in upload order. Files still being parsed are in `GET ./materials/pending`. 400 invalid_id, 404 not_found.",
+    "operationId": "list_materials",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": true
+         },
+         "title": "Response List Materials"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/materials/pending": {
+   "get": {
+    "tags": [
+     "materials"
+    ],
+    "summary": "Materials accepted but not parsed yet",
+    "description": "Files the project has accepted and whose `parse` job has not finished. Each entry carries the identifier the material will have (`pending_id`), the name it was uploaded under and the job card. An entry leaves this list when the job finishes: on success the material shows up in `GET ./materials`, on failure the job card in `GET /api/jobs` says why. 400 invalid_id, 404 not_found.",
+    "operationId": "list_pending_materials",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": true
+         },
+         "title": "Response List Pending Materials"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/materials/{material_id}": {
+   "get": {
+    "tags": [
+     "materials"
+    ],
+    "summary": "Material card",
+    "description": "The card of one material: kind, size, what its content is numbered by and how much of it, notes of the parser. 400 invalid_id, 404 not_found.",
+    "operationId": "get_material",
+    "parameters": [
+     {
+      "name": "material_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Material Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Material"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "materials"
+    ],
+    "summary": "Remove a material from the project",
+    "description": "Removes the material and the images extracted from it (PDF and Word pages). An extracted image is kept when a tag value of the project still refers to it; the response lists what was removed and what was kept. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "delete_material",
+    "parameters": [
+     {
+      "name": "material_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Material Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Delete Material"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/materials/{material_id}/text": {
+   "get": {
+    "tags": [
+     "materials"
+    ],
+    "summary": "A chunk of the material text",
+    "description": "A chunk of the material text with an anchor a reader can check. Bounds are inclusive and start at 1; bounds outside the material are clamped, and the anchor says what was returned. 400 invalid_id, 404 not_found.",
+    "operationId": "get_material_text",
+    "parameters": [
+     {
+      "name": "material_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Material Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "start",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 1
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Start"
+      }
+     },
+     {
+      "name": "end",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 1
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "End"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Material Text"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/materials/{material_id}/blob": {
+   "get": {
+    "tags": [
+     "materials"
+    ],
+    "summary": "Download the original file",
+    "description": "The original file, byte for byte, always as application/octet-stream. 400 invalid_id, 404 not_found.",
+    "operationId": "download_material",
+    "parameters": [
+     {
+      "name": "material_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Material Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/jobs": {
+   "post": {
+    "tags": [
+     "jobs"
+    ],
+    "summary": "Put a job into the queue",
+    "description": "Accepts a job and answers at once with its card; the work happens in a worker process. Editor role in the project. A second job of the same user waits in the queue instead of being refused. 400 unknown_job_kind, 400 project_required, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 in_trash.",
+    "operationId": "jobs_create",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/JobIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Jobs Create"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "jobs"
+    ],
+    "summary": "List your jobs",
+    "description": "Your own jobs, newest first. Jobs of other people are never listed, not even in a shared project. 400 invalid_id, 400 unknown_job_status.",
+    "operationId": "jobs_list",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Only jobs of this project",
+       "title": "Project Id"
+      },
+      "description": "Only jobs of this project"
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Only jobs in this state: queued, running, done, failed, cancelled",
+       "title": "Status"
+      },
+      "description": "Only jobs in this state: queued, running, done, failed, cancelled"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 500,
+       "minimum": 1,
+       "default": 100,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Jobs List"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/jobs/{job_id}": {
+   "get": {
+    "tags": [
+     "jobs"
+    ],
+    "summary": "One job",
+    "description": "One job of yours: state, progress, result or error. Asking resets the retention clock: a job is kept for as long as it is looked at. 400 invalid_id, 404 not_found.",
+    "operationId": "jobs_get",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Job Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Jobs Get"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/jobs/{job_id}/cancel": {
+   "post": {
+    "tags": [
+     "jobs"
+    ],
+    "summary": "Ask a job to stop",
+    "description": "A waiting job is cancelled at once; a running one is asked to stop between steps, so whatever it has already finished is kept. 400 invalid_id, 404 not_found, 409 already_finished.",
+    "operationId": "jobs_cancel",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Job Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Jobs Cancel"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/jobs/{job_id}/events": {
+   "get": {
+    "tags": [
+     "jobs"
+    ],
+    "summary": "Events of a job since a sequence number",
+    "description": "Events of one job in order, starting after `after`. Text pieces are already glued together, roughly every 100 ms. The same rows a server-sent stream reads. 400 invalid_id, 404 not_found.",
+    "operationId": "jobs_events",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Job Id"
+      }
+     },
+     {
+      "name": "after",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "description": "Return events with seq greater than this",
+       "default": 0,
+       "title": "After"
+      },
+      "description": "Return events with seq greater than this"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 2000,
+       "minimum": 1,
+       "default": 500,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Jobs Events"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/usage": {
+   "get": {
+    "tags": [
+     "usage"
+    ],
+    "summary": "Your monthly limit and what you have spent",
+    "description": "The plan, its monthly cap in internal units, what you have spent since the first of the month and what is left, plus what one job of each kind costs. A job is refused with 402 limit_exhausted once its price no longer fits into what is left.",
+    "operationId": "get_usage",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Get Usage"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/jobs/{job_id}/stream": {
+   "get": {
+    "tags": [
+     "events"
+    ],
+    "summary": "Server-sent stream of one job",
+    "description": "Events of one job as `text/event-stream`: `id` is the sequence number, the event name is the event kind, the data is one JSON line. Starts after `after` (or after the `Last-Event-ID` header) and closes itself once the job reaches a final state. 400 invalid_id, 404 not_found.",
+    "operationId": "jobs_stream",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Job Id"
+      }
+     },
+     {
+      "name": "after",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "description": "Resume after this sequence number",
+       "default": 0,
+       "title": "After"
+      },
+      "description": "Resume after this sequence number"
+     },
+     {
+      "name": "Last-Event-ID",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Sequence number to resume after; wins over `after`",
+       "title": "Last-Event-Id"
+      },
+      "description": "Sequence number to resume after; wins over `after`"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/events": {
+   "get": {
+    "tags": [
+     "events"
+    ],
+    "summary": "Server-sent stream of your notifications",
+    "description": "One stream per person: `notification` for anything worth a bell, `job_finished` when a job of yours reaches a final state. `id` is the creation time, which the browser sends back as `Last-Event-ID` on reconnect. There are no emails; this stream and `GET /api/notifications` are the only announcements.",
+    "operationId": "user_events",
+    "parameters": [
+     {
+      "name": "after",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "ISO time to resume after",
+       "title": "After"
+      },
+      "description": "ISO time to resume after"
+     },
+     {
+      "name": "Last-Event-ID",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "ISO time to resume after; wins over `after`",
+       "title": "Last-Event-Id"
+      },
+      "description": "ISO time to resume after; wins over `after`"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/notifications": {
+   "get": {
+    "tags": [
+     "notifications"
+    ],
+    "summary": "Your notifications",
+    "description": "Your own notifications, newest first, with the unread count. There are no emails: this list and the event stream are the only ways a finished job announces itself.",
+    "operationId": "list_notifications",
+    "parameters": [
+     {
+      "name": "unread",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "true for unread only, false for read only",
+       "title": "Unread"
+      },
+      "description": "true for unread only, false for read only"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 500,
+       "minimum": 1,
+       "default": 100,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response List Notifications"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/notifications/{notification_id}/read": {
+   "post": {
+    "tags": [
+     "notifications"
+    ],
+    "summary": "Mark one notification read",
+    "description": "Marks one notification of yours as read. Reading twice keeps the first timestamp. 400 invalid_id, 404 not_found.",
+    "operationId": "read_notification",
+    "parameters": [
+     {
+      "name": "notification_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Notification Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Read Notification"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/notifications/read-all": {
+   "post": {
+    "tags": [
+     "notifications"
+    ],
+    "summary": "Mark every unread notification read",
+    "description": "Marks all your unread notifications read in one go and answers with how many were marked.",
+    "operationId": "read_all_notifications",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Read All Notifications"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/values/{key}/versions": {
+   "get": {
+    "tags": [
+     "versions"
+    ],
+    "summary": "History of one tag value",
+    "description": "Every version of one tag, oldest first: who wrote it, in which run, by which model and with which flags. The values themselves are not here; ask for one version. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "list_value_versions",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Key"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response List Value Versions"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/values/{key}/versions/{n}": {
+   "get": {
+    "tags": [
+     "versions"
+    ],
+    "summary": "One version of a tag value",
+    "description": "The header of one version and the value itself, in the shape the report builder reads. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "get_value_version",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Key"
+      }
+     },
+     {
+      "name": "n",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "N"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Value Version"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/values/{key}/rollback": {
+   "post": {
+    "tags": [
+     "versions"
+    ],
+    "summary": "Bring back an earlier version of a tag",
+    "description": "Writes the chosen version again as a new one; nothing is deleted, so the answer carries a higher number than asked for. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 409 in_trash.",
+    "operationId": "rollback_value",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Key"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RollbackIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Rollback Value"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/blocks": {
+   "get": {
+    "tags": [
+     "versions"
+    ],
+    "summary": "Current block list of a project without a template",
+    "description": "The ordered list of named blocks a template-less project is made of. Empty when the project has never had one. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "get_project_blocks",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Project Blocks"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/blocks/versions": {
+   "get": {
+    "tags": [
+     "versions"
+    ],
+    "summary": "History of the block list",
+    "description": "Every version of the block list, oldest first. The list is versioned whole: half the edits move blocks around, and a per-block version answers nothing about that. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "list_block_versions",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response List Block Versions"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/blocks/versions/{n}": {
+   "get": {
+    "tags": [
+     "versions"
+    ],
+    "summary": "One version of the block list",
+    "description": "The header of one version and the blocks it held. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "get_block_version",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "n",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "N"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Block Version"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/blocks/rollback": {
+   "post": {
+    "tags": [
+     "versions"
+    ],
+    "summary": "Bring back an earlier block list",
+    "description": "Writes the chosen version of the whole list again as a new one. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 409 in_trash.",
+    "operationId": "rollback_blocks",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RollbackIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Rollback Blocks"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/tokens": {
+   "get": {
+    "tags": [
+     "tokens"
+    ],
+    "summary": "List your API tokens",
+    "description": "Your tokens, newest first: prefix, name, scopes and dates. Revoked ones stay in the list, marked with revoked_at. The token string is never listed. 401 token_not_allowed.",
+    "operationId": "list_api_tokens",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ApiTokenOut"
+         },
+         "type": "array",
+         "title": "Response List Api Tokens"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "tokens"
+    ],
+    "summary": "Create an API token",
+    "description": "Issues a token for the /api/v1 entrance and returns its string once: the service keeps only a hash, so a lost token is revoked and reissued, never recovered. 400 unknown_scope, 401 token_not_allowed.",
+    "operationId": "create_api_token",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApiTokenIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiTokenCreated"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/tokens/{token_id}": {
+   "delete": {
+    "tags": [
+     "tokens"
+    ],
+    "summary": "Revoke an API token",
+    "description": "Revokes one of your tokens at once; requests carrying it answer 401 token_revoked from then on. A token that belongs to someone else and one that never existed answer alike. 404 not_found, 401 token_not_allowed.",
+    "operationId": "revoke_api_token",
+    "parameters": [
+     {
+      "name": "token_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Token Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApiTokenOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/admin/users": {
+   "get": {
+    "tags": [
+     "admin"
+    ],
+    "summary": "List people with plan, quota and spending",
+    "description": "Everyone registered, newest first: plan, storage quota and bytes used, spending in internal units this calendar month. 403 forbidden.",
+    "operationId": "admin_list_users",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 1000,
+       "minimum": 1,
+       "default": 200,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Admin List Users"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/admin/users/{user_id}": {
+   "patch": {
+    "tags": [
+     "admin"
+    ],
+    "summary": "Change plan, limits or administrator access",
+    "description": "Changes a person's plan, per-user limit overrides and administrator flag. Fields left out are left alone; limits are replaced as a whole. 404 not_found, 403 forbidden.",
+    "operationId": "admin_patch_user",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "User Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UserPatchIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Admin Patch User"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/admin/queue": {
+   "get": {
+    "tags": [
+     "admin"
+    ],
+    "summary": "Queue state, slots and workers",
+    "description": "How many jobs wait and run, broken down by kind; the slot limits this machine runs with; and the workers currently holding a job, with the age of their last heartbeat. 403 forbidden.",
+    "operationId": "admin_queue",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Admin Queue"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/admin/security": {
+   "get": {
+    "tags": [
+     "admin"
+    ],
+    "summary": "Security events, newest first",
+    "description": "Failed logins, account locks, rate limits, refused CSRF and revoked tokens: when, from which address, about whom. Never carries passwords, token strings or email addresses. 403 forbidden.",
+    "operationId": "admin_security_events",
+    "parameters": [
+     {
+      "name": "kind",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 32
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Only events of this kind",
+       "title": "Kind"
+      },
+      "description": "Only events of this kind"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 1000,
+       "minimum": 1,
+       "default": 100,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Admin Security Events"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/billing/webhook": {
+   "post": {
+    "tags": [
+     "billing"
+    ],
+    "summary": "Payment webhook, not implemented yet",
+    "description": "Reserved for the payment provider. Answers 501 not_implemented and does not read the request body; subscriptions are switched on by the owner in the admin area for now.",
+    "operationId": "billing_webhook",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/export": {
+   "post": {
+    "tags": [
+     "export"
+    ],
+    "summary": "Export the files of a project",
+    "description": "Queues an `export` job: the original materials and the artifacts of the project, plus the current tag values and block list, are packed into one zip and stored as a project artifact. Answers 202 with the job card; when the job is done its result carries `artifact`, which `GET /api/projects/{project_id}/artifacts/{artifact_id}` downloads. Editor role. 400 invalid_id, 403 forbidden, 402 limit_exhausted, 404 not_found, 409 in_trash.",
+    "operationId": "export_project",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Export Project"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/modules": {
+   "get": {
+    "tags": [
+     "modules"
+    ],
+    "summary": "Modules the interface may show",
+    "description": "Every module the interface is allowed to show, in sidebar order: id, English title and where its routes live. Modules that are not ready are absent from the list entirely; there is no placeholder for them.",
+    "operationId": "list_modules",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "type": "array",
+         "title": "Response List Modules"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/artifacts/{artifact_id}": {
+   "get": {
+    "tags": [
+     "artifacts"
+    ],
+    "summary": "Download a project artifact",
+    "description": "The bytes of an artifact produced in this project: a drawio XML diagram, a built report, an export. The content type follows the bytes; the answer is always an attachment and is never sniffed by the browser. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "download_artifact",
+    "parameters": [
+     {
+      "name": "artifact_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Artifact Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/artifacts/{artifact_id}/notices": {
+   "get": {
+    "tags": [
+     "artifacts"
+    ],
+    "summary": "Notices the artifact was built with",
+    "description": "What the builder said while making this artifact: what did not make it into the diagram, what the tracer did not understand. An empty list means there was nothing to say. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "artifact_notices",
+    "parameters": [
+     {
+      "name": "artifact_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Artifact Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": true
+         },
+         "title": "Response Artifact Notices"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/flowcharts/modes": {
+   "get": {
+    "tags": [
+     "flowcharts"
+    ],
+    "summary": "Drawing modes of the flowchart builder",
+    "description": "Every mode the builder accepts, with a short description of what it draws, in Russian for the site to translate. The id goes into the mode field of the two building routes. The GOST mode is listed once, as gost_19_701_90; its former name loopLimit is still accepted in requests.",
+    "operationId": "flowcharts_modes",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "type": "array",
+         "title": "Response Flowcharts Modes"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/flowcharts/preview": {
+   "post": {
+    "tags": [
+     "flowcharts"
+    ],
+    "summary": "Draw a flowchart without saving it",
+    "description": "Draws a flowchart from source code and returns the drawio XML without touching the volume: nothing is stored and no project is needed. For the editor screen, where the picture is redrawn while the code is typed. Any signed-in user, at most 30 requests per minute. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 413 source_too_large, 422 diagram_failed, 429 rate_limited.",
+    "operationId": "flowcharts_preview",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FlowchartPreviewIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Flowcharts Preview"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/flowcharts": {
+   "post": {
+    "tags": [
+     "flowcharts"
+    ],
+    "summary": "Build a flowchart and keep it in the project",
+    "description": "Builds a flowchart from source code or from a text material of the project and stores the drawio XML as a project artifact. The answer carries the artifact id: download it with GET /api/projects/{project_id}/artifacts/{artifact_id} or put it into a diagram tag value. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "operationId": "flowcharts_create",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FlowchartIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Flowcharts Create"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/uml/themes": {
+   "get": {
+    "tags": [
+     "uml"
+    ],
+    "summary": "Palettes of the UML diagram builder",
+    "description": "Every palette the builder accepts. The name goes into the theme field of the building routes. The css palette paints with CSS variables, so one diagram fits both a dark page and a light report.",
+    "operationId": "uml_themes",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "type": "string"
+         },
+         "type": "array",
+         "title": "Response Uml Themes"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/uml/classes/preview": {
+   "post": {
+    "tags": [
+     "uml"
+    ],
+    "summary": "Draw a class diagram without saving it",
+    "description": "Draws a UML class diagram from sources in the body and returns the drawio XML without touching the volume. Any signed-in user, at most 30 requests per minute. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 413 source_too_large, 422 diagram_failed, 429 rate_limited.",
+    "operationId": "uml_classes_preview",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UmlPreviewIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Uml Classes Preview"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/uml/objects/preview": {
+   "post": {
+    "tags": [
+     "uml"
+    ],
+    "summary": "Draw an object diagram without saving it",
+    "description": "Draws a UML object diagram from sources in the body and returns the drawio XML without touching the volume. The first source is the entry point, the rest are neighbouring files. Any signed-in user, at most 30 requests per minute. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 413 source_too_large, 422 diagram_failed, 429 rate_limited.",
+    "operationId": "uml_objects_preview",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UmlPreviewIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Uml Objects Preview"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/uml/classes": {
+   "post": {
+    "tags": [
+     "uml"
+    ],
+    "summary": "Build a class diagram and keep it in the project",
+    "description": "Builds a UML class diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The answer carries the artifact id and the classes that got drawn. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "operationId": "uml_classes",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UmlIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Uml Classes"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/uml/objects": {
+   "post": {
+    "tags": [
+     "uml"
+    ],
+    "summary": "Build an object diagram and keep it in the project",
+    "description": "Builds a UML object diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The first source is the entry point, the rest are neighbouring files. The answer carries the artifact id, the instances that got drawn and the notes of the tracer. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "operationId": "uml_objects",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UmlIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Uml Objects"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/ping": {
+   "get": {
+    "tags": [
+     "v1",
+     "v1"
+    ],
+    "summary": "Liveness probe for external clients",
+    "description": "Answers while the external entrance is up. Needs no token and discloses nothing about the service.",
+    "operationId": "ping",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Ping"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects": {
+   "post": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Create a project in a workspace",
+    "description": "Creates a project and its directory on the volume. Multipart: the name and an optional DOCX template; without a template the report is built from scratch. Editor role in the workspace. 400 bad_template, 403 forbidden, 404 not_found, 409 project_exists.",
+    "operationId": "create_project_v1",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_create_project_v1"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Create Project V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "List projects of a workspace",
+    "description": "Lists the projects of one workspace; `trash=true` lists the ones in the trash instead. 400 invalid_id, 404 not_found.",
+    "operationId": "list_projects_v1",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     },
+     {
+      "name": "trash",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Trash"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response List Projects V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}": {
+   "get": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "One project",
+    "description": "One project: name, workspace, the tag keys of its manifest and the size of its directory. Paths are never returned. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "get_project_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Project V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Rename a project",
+    "description": "Renames a project, in the database and in its settings on the volume. Editor role. 403 forbidden, 404 not_found, 409 in_trash, 422 validation_failed.",
+    "operationId": "rename_project_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectNameIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Rename Project V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Move a project to the trash",
+    "description": "Moves a project to the trash; its directory stays on the volume until purge_after. Editor role. 403 forbidden, 404 not_found, 409 in_trash.",
+    "operationId": "trash_project_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Trash Project V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/restore": {
+   "post": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Restore a project from the trash",
+    "description": "Restores a project from the trash. Editor role. 403 forbidden, 404 not_found.",
+    "operationId": "restore_project_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Restore Project V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/tags": {
+   "get": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Tags of the project template",
+    "description": "Every tag of the template, in the order they appear in the document: key, label, type, whether it is required, and whether it is filled, with the source and the number of the current version when it is. Tags no longer present in the template are left out. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "list_project_tags_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response List Project Tags V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/values": {
+   "get": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Current tag values of a project",
+    "description": "The current value of every tag of the project, in the shape the report builder reads. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "get_project_values_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Project Values V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/values/{key}": {
+   "put": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Set one tag value by hand",
+    "description": "Writes one tag value as a new version marked source=manual; previous versions are kept. The body is the value itself, a JSON object. Editor role. 400 invalid_value, 403 forbidden, 404 not_found, 409 in_trash.",
+    "operationId": "set_project_value_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Key"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "title": "Value"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Set Project Value V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/materials": {
+   "post": {
+    "tags": [
+     "v1",
+     "materials"
+    ],
+    "summary": "Upload a material into the project",
+    "description": "Accepts a file (multipart field `file`), stores the bytes and queues a `parse` job for them. Answers 202 with the job card and `pending_id`, the identifier the material will have once it is parsed. The same bytes uploaded twice are one material and are parsed once. Editor role. 400 no_file, 402 limit_exhausted, 403 forbidden, 404 not_found, 413 file_too_large, 413 quota_exceeded, 415 unsupported_type.",
+    "operationId": "upload_material_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Upload Material V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         }
+        },
+        "required": [
+         "file"
+        ]
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "v1",
+     "materials"
+    ],
+    "summary": "List project materials",
+    "description": "Cards of every parsed material of the project, in upload order. Files still being parsed are in `GET ./materials/pending`. 400 invalid_id, 404 not_found.",
+    "operationId": "list_materials_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": true
+         },
+         "title": "Response List Materials V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/materials/pending": {
+   "get": {
+    "tags": [
+     "v1",
+     "materials"
+    ],
+    "summary": "Materials accepted but not parsed yet",
+    "description": "Files the project has accepted and whose `parse` job has not finished. Each entry carries the identifier the material will have (`pending_id`), the name it was uploaded under and the job card. An entry leaves this list when the job finishes: on success the material shows up in `GET ./materials`, on failure the job card in `GET /api/jobs` says why. 400 invalid_id, 404 not_found.",
+    "operationId": "list_pending_materials_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": true
+         },
+         "title": "Response List Pending Materials V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/materials/{material_id}": {
+   "get": {
+    "tags": [
+     "v1",
+     "materials"
+    ],
+    "summary": "Material card",
+    "description": "The card of one material: kind, size, what its content is numbered by and how much of it, notes of the parser. 400 invalid_id, 404 not_found.",
+    "operationId": "get_material_v1",
+    "parameters": [
+     {
+      "name": "material_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Material Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Material V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "v1",
+     "materials"
+    ],
+    "summary": "Remove a material from the project",
+    "description": "Removes the material and the images extracted from it (PDF and Word pages). An extracted image is kept when a tag value of the project still refers to it; the response lists what was removed and what was kept. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "delete_material_v1",
+    "parameters": [
+     {
+      "name": "material_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Material Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Delete Material V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/materials/{material_id}/text": {
+   "get": {
+    "tags": [
+     "v1",
+     "materials"
+    ],
+    "summary": "A chunk of the material text",
+    "description": "A chunk of the material text with an anchor a reader can check. Bounds are inclusive and start at 1; bounds outside the material are clamped, and the anchor says what was returned. 400 invalid_id, 404 not_found.",
+    "operationId": "get_material_text_v1",
+    "parameters": [
+     {
+      "name": "material_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Material Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "start",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 1
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Start"
+      }
+     },
+     {
+      "name": "end",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 1
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "End"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Get Material Text V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/materials/{material_id}/blob": {
+   "get": {
+    "tags": [
+     "v1",
+     "materials"
+    ],
+    "summary": "Download the original file",
+    "description": "The original file, byte for byte, always as application/octet-stream. 400 invalid_id, 404 not_found.",
+    "operationId": "download_material_v1",
+    "parameters": [
+     {
+      "name": "material_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Material Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/jobs": {
+   "post": {
+    "tags": [
+     "v1",
+     "jobs"
+    ],
+    "summary": "Put a job into the queue",
+    "description": "Accepts a job and answers at once with its card; the work happens in a worker process. Editor role in the project. A second job of the same user waits in the queue instead of being refused. 400 unknown_job_kind, 400 project_required, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 in_trash.",
+    "operationId": "jobs_create_v1",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/JobIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Jobs Create V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "v1",
+     "jobs"
+    ],
+    "summary": "List your jobs",
+    "description": "Your own jobs, newest first. Jobs of other people are never listed, not even in a shared project. 400 invalid_id, 400 unknown_job_status.",
+    "operationId": "jobs_list_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Only jobs of this project",
+       "title": "Project Id"
+      },
+      "description": "Only jobs of this project"
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Only jobs in this state: queued, running, done, failed, cancelled",
+       "title": "Status"
+      },
+      "description": "Only jobs in this state: queued, running, done, failed, cancelled"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 500,
+       "minimum": 1,
+       "default": 100,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Jobs List V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/jobs/{job_id}": {
+   "get": {
+    "tags": [
+     "v1",
+     "jobs"
+    ],
+    "summary": "One job",
+    "description": "One job of yours: state, progress, result or error. Asking resets the retention clock: a job is kept for as long as it is looked at. 400 invalid_id, 404 not_found.",
+    "operationId": "jobs_get_v1",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Job Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Jobs Get V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/jobs/{job_id}/cancel": {
+   "post": {
+    "tags": [
+     "v1",
+     "jobs"
+    ],
+    "summary": "Ask a job to stop",
+    "description": "A waiting job is cancelled at once; a running one is asked to stop between steps, so whatever it has already finished is kept. 400 invalid_id, 404 not_found, 409 already_finished.",
+    "operationId": "jobs_cancel_v1",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Job Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Jobs Cancel V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/jobs/{job_id}/events": {
+   "get": {
+    "tags": [
+     "v1",
+     "jobs"
+    ],
+    "summary": "Events of a job since a sequence number",
+    "description": "Events of one job in order, starting after `after`. Text pieces are already glued together, roughly every 100 ms. The same rows a server-sent stream reads. 400 invalid_id, 404 not_found.",
+    "operationId": "jobs_events_v1",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Job Id"
+      }
+     },
+     {
+      "name": "after",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "description": "Return events with seq greater than this",
+       "default": 0,
+       "title": "After"
+      },
+      "description": "Return events with seq greater than this"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 2000,
+       "minimum": 1,
+       "default": 500,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Jobs Events V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/jobs/{job_id}/stream": {
+   "get": {
+    "tags": [
+     "v1",
+     "events"
+    ],
+    "summary": "Server-sent stream of one job",
+    "description": "Events of one job as `text/event-stream`: `id` is the sequence number, the event name is the event kind, the data is one JSON line. Starts after `after` (or after the `Last-Event-ID` header) and closes itself once the job reaches a final state. 400 invalid_id, 404 not_found.",
+    "operationId": "jobs_stream_v1",
+    "parameters": [
+     {
+      "name": "job_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Job Id"
+      }
+     },
+     {
+      "name": "after",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "description": "Resume after this sequence number",
+       "default": 0,
+       "title": "After"
+      },
+      "description": "Resume after this sequence number"
+     },
+     {
+      "name": "Last-Event-ID",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Sequence number to resume after; wins over `after`",
+       "title": "Last-Event-Id"
+      },
+      "description": "Sequence number to resume after; wins over `after`"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/events": {
+   "get": {
+    "tags": [
+     "v1",
+     "events"
+    ],
+    "summary": "Server-sent stream of your notifications",
+    "description": "One stream per person: `notification` for anything worth a bell, `job_finished` when a job of yours reaches a final state. `id` is the creation time, which the browser sends back as `Last-Event-ID` on reconnect. There are no emails; this stream and `GET /api/notifications` are the only announcements.",
+    "operationId": "user_events_v1",
+    "parameters": [
+     {
+      "name": "after",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "ISO time to resume after",
+       "title": "After"
+      },
+      "description": "ISO time to resume after"
+     },
+     {
+      "name": "Last-Event-ID",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "ISO time to resume after; wins over `after`",
+       "title": "Last-Event-Id"
+      },
+      "description": "ISO time to resume after; wins over `after`"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/export": {
+   "post": {
+    "tags": [
+     "v1",
+     "export"
+    ],
+    "summary": "Export the files of a project",
+    "description": "Queues an `export` job: the original materials and the artifacts of the project, plus the current tag values and block list, are packed into one zip and stored as a project artifact. Answers 202 with the job card; when the job is done its result carries `artifact`, which `GET /api/projects/{project_id}/artifacts/{artifact_id}` downloads. Editor role. 400 invalid_id, 403 forbidden, 402 limit_exhausted, 404 not_found, 409 in_trash.",
+    "operationId": "export_project_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Export Project V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/modules": {
+   "get": {
+    "tags": [
+     "v1",
+     "modules"
+    ],
+    "summary": "Modules the interface may show",
+    "description": "Every module the interface is allowed to show, in sidebar order: id, English title and where its routes live. Modules that are not ready are absent from the list entirely; there is no placeholder for them.",
+    "operationId": "list_modules_v1",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "type": "array",
+         "title": "Response List Modules V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/artifacts/{artifact_id}": {
+   "get": {
+    "tags": [
+     "v1",
+     "artifacts"
+    ],
+    "summary": "Download a project artifact",
+    "description": "The bytes of an artifact produced in this project: a drawio XML diagram, a built report, an export. The content type follows the bytes; the answer is always an attachment and is never sniffed by the browser. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "download_artifact_v1",
+    "parameters": [
+     {
+      "name": "artifact_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Artifact Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/artifacts/{artifact_id}/notices": {
+   "get": {
+    "tags": [
+     "v1",
+     "artifacts"
+    ],
+    "summary": "Notices the artifact was built with",
+    "description": "What the builder said while making this artifact: what did not make it into the diagram, what the tracer did not understand. An empty list means there was nothing to say. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "artifact_notices_v1",
+    "parameters": [
+     {
+      "name": "artifact_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Artifact Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": true
+         },
+         "title": "Response Artifact Notices V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/flowcharts/modes": {
+   "get": {
+    "tags": [
+     "v1",
+     "flowcharts"
+    ],
+    "summary": "Drawing modes of the flowchart builder",
+    "description": "Every mode the builder accepts, with a short description of what it draws, in Russian for the site to translate. The id goes into the mode field of the two building routes. The GOST mode is listed once, as gost_19_701_90; its former name loopLimit is still accepted in requests.",
+    "operationId": "flowcharts_modes_v1",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "type": "array",
+         "title": "Response Flowcharts Modes V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/flowcharts/preview": {
+   "post": {
+    "tags": [
+     "v1",
+     "flowcharts"
+    ],
+    "summary": "Draw a flowchart without saving it",
+    "description": "Draws a flowchart from source code and returns the drawio XML without touching the volume: nothing is stored and no project is needed. For the editor screen, where the picture is redrawn while the code is typed. Any signed-in user, at most 30 requests per minute. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 413 source_too_large, 422 diagram_failed, 429 rate_limited.",
+    "operationId": "flowcharts_preview_v1",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FlowchartPreviewIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Flowcharts Preview V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/flowcharts": {
+   "post": {
+    "tags": [
+     "v1",
+     "flowcharts"
+    ],
+    "summary": "Build a flowchart and keep it in the project",
+    "description": "Builds a flowchart from source code or from a text material of the project and stores the drawio XML as a project artifact. The answer carries the artifact id: download it with GET /api/projects/{project_id}/artifacts/{artifact_id} or put it into a diagram tag value. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_mode, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "operationId": "flowcharts_create_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FlowchartIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Flowcharts Create V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/uml/themes": {
+   "get": {
+    "tags": [
+     "v1",
+     "uml"
+    ],
+    "summary": "Palettes of the UML diagram builder",
+    "description": "Every palette the builder accepts. The name goes into the theme field of the building routes. The css palette paints with CSS variables, so one diagram fits both a dark page and a light report.",
+    "operationId": "uml_themes_v1",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "type": "string"
+         },
+         "type": "array",
+         "title": "Response Uml Themes V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/uml/classes/preview": {
+   "post": {
+    "tags": [
+     "v1",
+     "uml"
+    ],
+    "summary": "Draw a class diagram without saving it",
+    "description": "Draws a UML class diagram from sources in the body and returns the drawio XML without touching the volume. Any signed-in user, at most 30 requests per minute. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 413 source_too_large, 422 diagram_failed, 429 rate_limited.",
+    "operationId": "uml_classes_preview_v1",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UmlPreviewIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Uml Classes Preview V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/uml/objects/preview": {
+   "post": {
+    "tags": [
+     "v1",
+     "uml"
+    ],
+    "summary": "Draw an object diagram without saving it",
+    "description": "Draws a UML object diagram from sources in the body and returns the drawio XML without touching the volume. The first source is the entry point, the rest are neighbouring files. Any signed-in user, at most 30 requests per minute. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 413 source_too_large, 422 diagram_failed, 429 rate_limited.",
+    "operationId": "uml_objects_preview_v1",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UmlPreviewIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Uml Objects Preview V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/uml/classes": {
+   "post": {
+    "tags": [
+     "v1",
+     "uml"
+    ],
+    "summary": "Build a class diagram and keep it in the project",
+    "description": "Builds a UML class diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The answer carries the artifact id and the classes that got drawn. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "operationId": "uml_classes_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UmlIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Uml Classes V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/uml/objects": {
+   "post": {
+    "tags": [
+     "v1",
+     "uml"
+    ],
+    "summary": "Build an object diagram and keep it in the project",
+    "description": "Builds a UML object diagram from text materials of the project or from sources in the body and stores the drawio XML as a project artifact. The first source is the entry point, the rest are neighbouring files. The answer carries the artifact id, the instances that got drawn and the notes of the tracer. Editor role. 400 invalid_source, 400 unknown_lang, 400 unknown_theme, 403 forbidden, 404 not_found, 413 source_too_large, 422 diagram_failed.",
+    "operationId": "uml_objects_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UmlIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Uml Objects V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/health": {
+   "get": {
+    "summary": "Health probe for the reverse proxy",
+    "description": "Reports whether the process serves requests and the database answers. Both answers carry the same body; the proxy reads the status code. 503 when the database does not answer.",
+    "operationId": "health",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HealthOut"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "The database does not answer",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HealthOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "ApiTokenCreated": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Token id, used to revoke it"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Human-readable name"
+     },
+     "prefix": {
+      "type": "string",
+      "title": "Prefix",
+      "description": "First characters, to tell tokens apart"
+     },
+     "scopes": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Scopes",
+      "description": "What this token may do"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At",
+      "description": "When it was issued"
+     },
+     "last_used_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Used At",
+      "description": "Last use, written at most once a minute"
+     },
+     "revoked_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Revoked At",
+      "description": "When it was revoked, if it was"
+     },
+     "token": {
+      "type": "string",
+      "title": "Token",
+      "description": "The token string; shown once and never stored in clear"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "prefix",
+     "scopes",
+     "token"
+    ],
+    "title": "ApiTokenCreated",
+    "description": "Ответ на создание: карточка и сама строка ключа, в первый и последний раз."
+   },
+   "ApiTokenIn": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 64,
+      "title": "Name",
+      "description": "Human-readable name, e.g. 'CI' or 'laptop'"
+     },
+     "scopes": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Scopes",
+      "description": "What the token may do; at least one of: projects:read, projects:write, materials:write, runs:run"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name",
+     "scopes"
+    ],
+    "title": "ApiTokenIn",
+    "description": "Тело `POST /api/tokens`: как назвать и что этим ключом можно."
+   },
+   "ApiTokenOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Token id, used to revoke it"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Human-readable name"
+     },
+     "prefix": {
+      "type": "string",
+      "title": "Prefix",
+      "description": "First characters, to tell tokens apart"
+     },
+     "scopes": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Scopes",
+      "description": "What this token may do"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At",
+      "description": "When it was issued"
+     },
+     "last_used_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Used At",
+      "description": "Last use, written at most once a minute"
+     },
+     "revoked_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Revoked At",
+      "description": "When it was revoked, if it was"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "prefix",
+     "scopes"
+    ],
+    "title": "ApiTokenOut",
+    "description": "Карточка ключа. Строки ключа в ней нет и быть не может."
+   },
+   "Body_create_project": {
+    "properties": {
+     "workspace_id": {
+      "type": "string",
+      "title": "Workspace Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "default": ""
+     },
+     "template": {
+      "anyOf": [
+       {
+        "type": "string",
+        "contentMediaType": "application/octet-stream"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template"
+     }
+    },
+    "type": "object",
+    "required": [
+     "workspace_id"
+    ],
+    "title": "Body_create_project"
+   },
+   "Body_create_project_v1": {
+    "properties": {
+     "workspace_id": {
+      "type": "string",
+      "title": "Workspace Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "default": ""
+     },
+     "template": {
+      "anyOf": [
+       {
+        "type": "string",
+        "contentMediaType": "application/octet-stream"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template"
+     }
+    },
+    "type": "object",
+    "required": [
+     "workspace_id"
+    ],
+    "title": "Body_create_project_v1"
+   },
+   "ConfirmIn": {
+    "properties": {
+     "token": {
+      "type": "string",
+      "maxLength": 256,
+      "title": "Token"
+     }
+    },
+    "type": "object",
+    "required": [
+     "token"
+    ],
+    "title": "ConfirmIn"
+   },
+   "ErrorBody": {
+    "properties": {
+     "code": {
+      "type": "string",
+      "title": "Code",
+      "description": "Stable machine-readable code, e.g. not_found"
+     },
+     "message": {
+      "type": "string",
+      "title": "Message",
+      "description": "Human-readable text, English"
+     },
+     "where": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Where",
+      "description": "Field or parameter the error is about, e.g. body.email"
+     }
+    },
+    "type": "object",
+    "required": [
+     "code",
+     "message"
+    ],
+    "title": "ErrorBody",
+    "description": "Тело ошибки: что случилось и, если это применимо, где."
+   },
+   "ErrorOut": {
+    "properties": {
+     "error": {
+      "$ref": "#/components/schemas/ErrorBody"
+     }
+    },
+    "type": "object",
+    "required": [
+     "error"
+    ],
+    "title": "ErrorOut",
+    "description": "Единственная форма отказа службы. Другой нет ни у одного маршрута."
+   },
+   "FlowchartIn": {
+    "properties": {
+     "source": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source",
+      "description": "Source code; give this or material_id"
+     },
+     "material_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Material Id",
+      "description": "Id of a text material of the project"
+     },
+     "lang": {
+      "type": "string",
+      "title": "Lang",
+      "description": "Source language: py, cs or cpp",
+      "default": "py"
+     },
+     "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "Drawing mode, see GET /api/flowcharts/modes; loopLimit is accepted as the former name of gost_19_701_90",
+      "default": "default"
+     }
+    },
+    "type": "object",
+    "title": "FlowchartIn",
+    "description": "Что рисуем: код текстом или материал проекта, и как именно."
+   },
+   "FlowchartPreviewIn": {
+    "properties": {
+     "source": {
+      "type": "string",
+      "title": "Source",
+      "description": "Source code to draw"
+     },
+     "lang": {
+      "type": "string",
+      "title": "Lang",
+      "description": "Source language: py, cs or cpp",
+      "default": "py"
+     },
+     "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "Drawing mode, see GET /api/flowcharts/modes; loopLimit is accepted as the former name of gost_19_701_90",
+      "default": "default"
+     }
+    },
+    "type": "object",
+    "required": [
+     "source"
+    ],
+    "title": "FlowchartPreviewIn",
+    "description": "То же, но без проекта: материалов здесь нет, только текст."
+   },
+   "ForgotIn": {
+    "properties": {
+     "email": {
+      "type": "string",
+      "maxLength": 320,
+      "title": "Email"
+     }
+    },
+    "type": "object",
+    "required": [
+     "email"
+    ],
+    "title": "ForgotIn"
+   },
+   "HealthOut": {
+    "properties": {
+     "status": {
+      "type": "string",
+      "title": "Status",
+      "description": "ok when the process serves requests"
+     },
+     "env": {
+      "type": "string",
+      "title": "Env",
+      "description": "dev or prod"
+     },
+     "db": {
+      "type": "string",
+      "title": "Db",
+      "description": "ok when the database answers"
+     }
+    },
+    "type": "object",
+    "required": [
+     "status",
+     "env",
+     "db"
+    ],
+    "title": "HealthOut",
+    "description": "Ответ `/health` — единственный маршрут службы, чей отказ не `ErrorOut`.\n\nИсключение намеренное и ровно одно. `/health` отвечает не клиенту, а прокси,\nи в обоих случаях — и когда жив, и когда база не отвечает — отдаёт одно и то\nже тело: прокси читает не `code`, а статус. Завернуть 503 в форму ошибки\nзначило бы описать `/health` двумя телами вместо одного, ничего не выиграв."
+   },
+   "JobIn": {
+    "properties": {
+     "kind": {
+      "type": "string",
+      "title": "Kind",
+      "description": "What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, probe"
+     },
+     "project_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Project Id",
+      "description": "Project the job works in; required by most kinds"
+     },
+     "payload": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Payload",
+      "description": "Arguments of the job; the shape depends on the kind"
+     }
+    },
+    "type": "object",
+    "required": [
+     "kind"
+    ],
+    "title": "JobIn",
+    "description": "Тело постановки задания.\n\nИмя по-английски, как у соседей (`ProjectNameIn`, `ModelKeyIn`): оно уезжает\nв OpenAPI и становится именем типа в клиенте сайта (§5)."
+   },
+   "LoginIn": {
+    "properties": {
+     "email": {
+      "type": "string",
+      "maxLength": 320,
+      "title": "Email"
+     },
+     "password": {
+      "type": "string",
+      "maxLength": 1024,
+      "title": "Password"
+     }
+    },
+    "type": "object",
+    "required": [
+     "email",
+     "password"
+    ],
+    "title": "LoginIn",
+    "description": "Вход. Длина пароля здесь **не** проверяется: старый пароль может быть\nкороче нынешнего предела, и человеку надо дать войти и сменить его."
+   },
+   "MemberIn": {
+    "properties": {
+     "email": {
+      "type": "string",
+      "maxLength": 320,
+      "minLength": 3,
+      "title": "Email"
+     },
+     "role": {
+      "type": "string",
+      "title": "Role",
+      "default": "editor"
+     }
+    },
+    "type": "object",
+    "required": [
+     "email"
+    ],
+    "title": "MemberIn",
+    "description": "Кого зовём и кем. Почта, а не идентификатор: чужой uuid человеку неоткуда\nвзять, а почту коллеги он знает."
+   },
+   "MemberRoleIn": {
+    "properties": {
+     "role": {
+      "type": "string",
+      "title": "Role"
+     }
+    },
+    "type": "object",
+    "required": [
+     "role"
+    ],
+    "title": "MemberRoleIn"
+   },
+   "ModelKeyIn": {
+    "properties": {
+     "provider": {
+      "type": "string",
+      "maxLength": 64,
+      "title": "Provider",
+      "description": "Preset name from the model layer"
+     },
+     "key": {
+      "type": "string",
+      "maxLength": 512,
+      "title": "Key",
+      "description": "Provider API key"
+     }
+    },
+    "type": "object",
+    "required": [
+     "provider",
+     "key"
+    ],
+    "title": "ModelKeyIn",
+    "description": "Тело `POST /api/keys`.\n\nПоле называется `key`, а не `secret`: человек несёт сюда то, что у\nпоставщика называется API key, и переименовывать это по дороге значит\nзаставлять его гадать, туда ли он вставил."
+   },
+   "ProjectNameIn": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Name"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "title": "ProjectNameIn",
+    "description": "Тело переименования. Имя по-английски, как у соседей: оно уезжает в\nOpenAPI и становится именем типа в клиенте сайта (§5)."
+   },
+   "RegisterIn": {
+    "properties": {
+     "email": {
+      "type": "string",
+      "maxLength": 320,
+      "title": "Email"
+     },
+     "password": {
+      "type": "string",
+      "maxLength": 1024,
+      "minLength": 10,
+      "title": "Password"
+     }
+    },
+    "type": "object",
+    "required": [
+     "email",
+     "password"
+    ],
+    "title": "RegisterIn",
+    "description": "Регистрация. Длина пароля проверяется формой, а не обработчиком: беда\nформы уезжает клиенту с адресом поля (`where: body.password`)."
+   },
+   "ResetIn": {
+    "properties": {
+     "token": {
+      "type": "string",
+      "maxLength": 256,
+      "title": "Token"
+     },
+     "password": {
+      "type": "string",
+      "maxLength": 1024,
+      "minLength": 10,
+      "title": "Password"
+     }
+    },
+    "type": "object",
+    "required": [
+     "token",
+     "password"
+    ],
+    "title": "ResetIn"
+   },
+   "RollbackIn": {
+    "properties": {
+     "n": {
+      "type": "integer",
+      "minimum": 1.0,
+      "title": "N",
+      "description": "Version number to bring back"
+     }
+    },
+    "type": "object",
+    "required": [
+     "n"
+    ],
+    "title": "RollbackIn",
+    "description": "Тело возврата: номер версии, к которой возвращаемся.\n\nТело, а не путь, потому что возврат — действие над тегом, а не обращение к\nверсии: `POST …/values/{key}/versions/{n}` читалось бы как «создать версию\nномер n», чего служба не умеет и не должна."
+   },
+   "UmlIn": {
+    "properties": {
+     "sources": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "$ref": "#/components/schemas/UmlSourceIn"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Sources",
+      "description": "Material ids of the project, or objects with name and source"
+     },
+     "lang": {
+      "type": "string",
+      "title": "Lang",
+      "description": "Source language: py, cs or cpp",
+      "default": "py"
+     },
+     "theme": {
+      "type": "string",
+      "title": "Theme",
+      "description": "Palette, see GET /api/uml/themes",
+      "default": "dark"
+     }
+    },
+    "type": "object",
+    "required": [
+     "sources"
+    ],
+    "title": "UmlIn",
+    "description": "Что рисуем: материалы проекта, исходники в теле или и то и другое."
+   },
+   "UmlPreviewIn": {
+    "properties": {
+     "sources": {
+      "items": {
+       "$ref": "#/components/schemas/UmlSourceIn"
+      },
+      "type": "array",
+      "title": "Sources",
+      "description": "Sources to draw"
+     },
+     "lang": {
+      "type": "string",
+      "title": "Lang",
+      "description": "Source language: py, cs or cpp",
+      "default": "py"
+     },
+     "theme": {
+      "type": "string",
+      "title": "Theme",
+      "description": "Palette, see GET /api/uml/themes",
+      "default": "dark"
+     }
+    },
+    "type": "object",
+    "required": [
+     "sources"
+    ],
+    "title": "UmlPreviewIn",
+    "description": "То же, но без проекта: материалов здесь нет, только исходники в теле."
+   },
+   "UmlSourceIn": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "File name, for messages only",
+      "default": ""
+     },
+     "source": {
+      "type": "string",
+      "title": "Source",
+      "description": "Source code"
+     }
+    },
+    "type": "object",
+    "required": [
+     "source"
+    ],
+    "title": "UmlSourceIn",
+    "description": "Исходник в теле запроса: как называется и что в нём написано.\n\nИмя нужно разбору (в замечание «файл не разобрался» едет именно оно) и\nчеловеку в ответе. Путём оно не является и в путь не превращается нигде."
+   },
+   "UserPatchIn": {
+    "properties": {
+     "plan": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 32
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Plan",
+      "description": "Subscription plan, e.g. free or pro"
+     },
+     "is_admin": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Is Admin",
+      "description": "Grant or revoke administrator access"
+     },
+     "limits": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Limits",
+      "description": "Per-user limit overrides, replaced as a whole; known keys: monthly_units, quota_bytes. Empty means defaults."
+     }
+    },
+    "type": "object",
+    "title": "UserPatchIn",
+    "description": "Тело `PATCH /api/admin/users/{id}`: только то, что владелец и правит.\n\nВсе поля необязательны, и не заданное не трогается: правка «сменить план»\nне должна молча обнулять лимиты, поставленные в прошлый раз."
+   },
+   "WorkspaceNameIn": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Name"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "title": "WorkspaceNameIn",
+    "description": "Тело создания и переименования. Имя обрезается по краям и не бывает пустым."
+   }
+  }
+ },
+ "tags": [
+  {
+   "name": "v1",
+   "description": "External entrance for scripts and agents. Takes an API token: `Authorization: Bearer kor_...`, issued at `POST /api/tokens` from the site and shown once. Every token carries scopes (`projects:read`, `projects:write`, `materials:write`, `runs:run`) and is limited to 60 requests per minute. The handlers are the very same ones the site calls; only the way the caller is identified differs, so operation ids here carry a `_v1` suffix. Accounts, provider keys, tokens themselves and the admin area are not reachable with a token."
+  }
+ ]
+}

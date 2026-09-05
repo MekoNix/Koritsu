@@ -44,6 +44,30 @@ def test_поставщики_только_с_ключом(клиент, хоз�
     assert "claude_cli_proba" not in список
 
 
+def test_key_source_говорит_чем_платить(клиент, хозяин, monkeypatch):
+    """`key_source` на каждый пресет: `none` → `shared` → `own`.
+
+    Экран прогона выбирает пресет ДО нажатия, и выбрать тот, которым платить
+    нечем, — это отказ вместо работы. Свой ключ сайт видит списком, общий ключ
+    службы не виден ниоткуда, кроме этого поля, поэтому оно и проверяется на
+    всех трёх состояниях подряд, а не на одном.
+    """
+    источник = lambda: клиент.get("/api/keys/providers").json()["key_source"]  # noqa: E731
+
+    assert источник()["deepseek"] == "none", "ни своего, ни общего"
+
+    monkeypatch.setenv(keys.service.ОБЩИЙ_ПРЕФИКС + "DEEPSEEK", "sk-общий-владельца")
+    assert источник()["deepseek"] == "shared"
+    assert источник()["anthropic"] == "none", "общий у одного не красит соседей"
+
+    assert клиент.post("/api/keys",
+                       json={"provider": "deepseek", "key": КЛЮЧ}).status_code == 201
+    assert источник()["deepseek"] == "own", "свой ключ впереди общего"
+    # Ключ не уезжает вместе с источником — то же отрицательное утверждение,
+    # что и во всём этом файле.
+    assert КЛЮЧ not in клиент.get("/api/keys/providers").text
+
+
 def test_неизвестный_поставщик(клиент, хозяин):
     ответ = клиент.post("/api/keys", json={"provider": "chatgpt", "key": КЛЮЧ})
     assert ответ.status_code == 400

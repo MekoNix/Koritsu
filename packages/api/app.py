@@ -45,7 +45,7 @@ from pydantic import BaseModel, Field
 from . import csrf, errors, log, models, routes      # noqa: F401  (models — ради метаданных)
 from .admin import service as admin_service          # журнал безопасности в базу
 from .db import Db, migrate
-from .settings import Settings
+from .settings import Settings, предупредить_о_подмене
 
 ВЕРСИЯ = "2.0.0a5"
 
@@ -80,6 +80,10 @@ def create_app(settings: Settings) -> FastAPI:
     приложение на временном томе, зависел бы от окружения машины.
     """
     log.setup(settings)
+    # До миграции и до первого запроса: подменённый адрес модели — это то, что
+    # оператор обязан увидеть в первых строках журнала, а не найти по странному
+    # поведению прогонов.
+    предупредить_о_подмене(settings)
     migrate(settings)
     db = Db(settings)
 

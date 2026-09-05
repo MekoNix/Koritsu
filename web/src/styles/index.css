@@ -1,0 +1,124 @@
+/*
+ * index.css — единственный корневой стиль сайта.
+ *
+ * Порядок важен: сначала шрифт и переменные тем, потом Tailwind. Tailwind
+ * читает переменные (`tailwind.config.ts`), и если бы он приехал первым,
+ * `bg-surface` в собранном CSS указывал бы на ещё не объявленное значение.
+ *
+ * Шрифт — npm-пакетом, не с Google Fonts (решение владельца): и потому что
+ * внешних зависимостей у сайта за логином быть не должно, и потому что
+ * кириллическое подмножество надо приложить самим — Google отдаёт его только
+ * по `unicode-range`, а при офлайновой сборке образа этого нет вовсе.
+ * Берутся только кириллица и латиница, только нужные начертания.
+ */
+
+@import '@fontsource/ibm-plex-sans/cyrillic-400.css';
+@import '@fontsource/ibm-plex-sans/cyrillic-500.css';
+@import '@fontsource/ibm-plex-sans/cyrillic-600.css';
+@import '@fontsource/ibm-plex-sans/cyrillic-700.css';
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/ibm-plex-sans/latin-700.css';
+
+/*
+ * «Бумага» — единственная тема, которая не переходит на `--font-ui` (решение
+ * владельца): её характер держится на паре «засечки в заголовке + гротеск в
+ * тексте», и подмена шрифта его стирает. Поэтому оба её шрифта приезжают
+ * пакетами, а не надеются на систему: Literata (заголовки) и Golos Text
+ * (текст), оба с полной кириллицей.
+ */
+@import '@fontsource/literata/cyrillic-400.css';
+@import '@fontsource/literata/cyrillic-600.css';
+@import '@fontsource/literata/cyrillic-700.css';
+@import '@fontsource/literata/latin-400.css';
+@import '@fontsource/literata/latin-600.css';
+@import '@fontsource/literata/latin-700.css';
+@import '@fontsource/golos-text/cyrillic-400.css';
+@import '@fontsource/golos-text/cyrillic-500.css';
+@import '@fontsource/golos-text/cyrillic-600.css';
+@import '@fontsource/golos-text/latin-400.css';
+@import '@fontsource/golos-text/latin-500.css';
+@import '@fontsource/golos-text/latin-600.css';
+
+@import './themes.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: var(--size-md);
+    line-height: var(--leading-normal);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Фоновый узор темы («Бумага», «Liquid Glass»). Отдельным слоем, потому что
+     он не должен прокручиваться вместе с содержимым и ловить клики. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: var(--pattern, none);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Видимый фокус — на всём интерактивном (требование §9 спецификации).
+     Убирать его нельзя нигде: без него клавиатура становится слепой. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--accent-bg);
+  }
+
+  a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+}
+
+@layer utilities {
+  /* Только для скринридера: подпись есть, места не занимает. */
+  .sr-only-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+/* Уважать «поменьше движения»: анимации гасятся, а не ускоряются. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+pnpm-lock.yaml
+openapi.json
+src/api/schema.d.ts
+src/styles/themes.css

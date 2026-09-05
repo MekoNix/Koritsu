@@ -44,7 +44,7 @@ import argparse
 import sys
 
 from .errors import ConfigError
-from .settings import Settings
+from .settings import Settings, предупредить_о_подмене
 
 # Куда слушать, если снаружи не сказали. Петля, а не `0.0.0.0`: служба стоит за
 # Caddy (§3), и умолчание, открывающее порт наружу, — это забытая настройка,
@@ -131,6 +131,9 @@ def worker(args) -> int:
 
     s = настройки()
     setup(s)
+    # Тот же довод, что в `app.create_app`: к модели ходит именно этот процесс,
+    # и подменённый адрес виден в его журнале, а не в чужом.
+    предупредить_о_подмене(s)
     довести(s)
     print(f"koritsu worker: том {s.data_dir}, слотов {s.job_slots}, "
           f"на человека {s.jobs_per_user}")

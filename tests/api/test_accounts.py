@@ -107,7 +107,28 @@ def test_наружу_не_уезжает_ни_хеш_ни_секрет_втор
     завести_и_подтвердить(client, caplog)
     тело = войти(client).json()["user"]
     assert set(тело) == {"id", "email", "plan", "email_confirmed",
-                         "totp_enabled", "created_at"}
+                         "totp_enabled", "is_admin", "created_at"}
+
+
+def test_профиль_отдаёт_признак_админа_как_он_есть_в_базе(client, caplog, app):
+    """Интерфейс скрывает `/admin` по этому полю, поэтому оно обязано быть и
+    обязано отражать колонку, а не всегда врать «нет».
+
+    Проверяются оба значения: поле, у которого один из двух ответов никогда не
+    встречается в тестах, — это поле, про которое неизвестно, работает ли оно.
+    """
+    завести_и_подтвердить(client, caplog)
+    войти(client)
+
+    assert client.get("/api/auth/me").json()["user"]["is_admin"] is False
+
+    # Флаг ставится руками в базе: маршрута «сделай меня админом» нет и не
+    # будет (так же делает `tests/api/test_admin.py`).
+    with app.state.db.session_scope() as s:
+        строка = s.execute(select(User).where(User.email == ПОЧТА)).scalar_one()
+        строка.is_admin = True
+
+    assert client.get("/api/auth/me").json()["user"]["is_admin"] is True
 
 
 def test_вход_без_подтверждения_не_пускает(client, caplog):

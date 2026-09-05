@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Koritsu</title>
+    <script>
+      // Тема, светлый/тёмный и шрифт применяются ДО первого рендера: иначе страница
+      // успевает мигнуть чужими цветами. Тот же разбор, что в `src/theme/store.ts`,
+      // но без импортов — модуль приедет позже разметки, а мигание видно сразу.
+      ;(function () {
+        var NATIVE = { slate: 'dark', paper: 'light', linear: 'dark', glass: 'dark' }
+        var theme = 'slate'
+        var mode = 'dark'
+        var font = null
+        var density = null
+        try {
+          var s = JSON.parse(localStorage.getItem('koritsu.appearance') || '{}')
+          if (NATIVE[s.theme]) theme = s.theme
+          mode = s.mode === 'light' || s.mode === 'dark' ? s.mode : NATIVE[theme]
+          if (typeof s.font === 'string' && s.font) font = s.font
+          if (s.density === 'compact') density = 'compact'
+        } catch (e) {
+          /* испорченный localStorage — берём умолчание, а не падаем */
+        }
+        var el = document.documentElement
+        el.setAttribute('data-theme', theme)
+        el.setAttribute('data-mode', mode)
+        if (density) el.setAttribute('data-density', density)
+        if (font) el.style.setProperty('--font-ui', font)
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

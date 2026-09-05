@@ -70,12 +70,37 @@ def настройки(request: Request) -> Settings:
     return request.app.state.settings
 
 
+def теги_шаблона(проект: orchestrator.Project) -> list[tuple]:
+    """Теги шаблона парами `(ключ, запись манифеста)`, в порядке документа.
+
+    **Манифест, а не `project.keys()`.** Второй перечисляет ключи, у которых уже
+    есть версия значения, то есть на новом проекте отдаёт пустоту — а вопрос
+    «какие теги в этой работе» задаётся ровно до первого прогона: без ответа на
+    него слева нечего показать и нечего заполнять. Теги манифеста этот вопрос
+    и есть.
+
+    Тег, которого в шаблоне больше нет (`missing`), не показывается: его запись
+    держится ради промпта, а заполнять его некуда — в документе для него места
+    не осталось.
+
+    Манифеста нет — пустой список, а не отказ: карточку проекта нельзя ронять
+    из-за того, что на томе недостаёт файла; беда уходит в журнал, а человек
+    видит проект без тегов, что и есть правда о нём.
+    """
+    try:
+        манифест = проект.manifest()
+    except orchestrator.OrchestratorError:
+        беды.warning("проект %s: манифеста нет — теги не показываю", проект.path)
+        return []
+    return [(ключ, спец) for ключ, спец in манифест.tags.items() if not спец.missing]
+
+
 def карточка(p: Project, settings: Settings, *, теги: bool = False) -> dict:
     """Проект наружу. Пути в ответе нет — только идентификаторы и число байт.
 
-    Теги (`project.keys()`) читаются с диска, поэтому в списке их нет: список из
-    сотни проектов означал бы сотню обходов каталогов ради колонки, которую в
-    списке не показывают.
+    Теги читаются с диска, поэтому в списке их нет: список из сотни проектов
+    означал бы сотню обходов каталогов ради колонки, которую в списке не
+    показывают.
     """
     каталог = dir_for(settings, p.owner_id, p.id)
     тело = {"id": p.id, "workspace_id": p.workspace_id, "owner_id": p.owner_id,
@@ -83,7 +108,7 @@ def карточка(p: Project, settings: Settings, *, теги: bool = False) 
             "updated_at": iso(p.updated_at), "deleted_at": iso(p.deleted_at),
             "purge_after": iso(p.purge_after), "bytes_used": dir_size(каталог)}
     if теги:
-        тело["keys"] = orchestrator.Project(каталог).keys()
+        тело["keys"] = [ключ for ключ, _ in теги_шаблона(orchestrator.Project(каталог))]
     return тело
 
 
@@ -237,7 +262,50 @@ def восстановить(project_id: str, request: Request, s: SessionDep,
     return карточка(p, settings)
 
 
-# ── значения тегов (тонко, поверх orchestrator) ──────────────────────────────
+# ── теги и их значения (тонко, поверх orchestrator) ──────────────────────────
+
+@router.get("/{project_id}/tags", operation_id="list_project_tags",
+            summary="Tags of the project template",
+            description=(
+                "Every tag of the template, in the order they appear in the "
+                "document: key, label, type, whether it is required, and "
+                "whether it is filled, with the source and the number of the "
+                "current version when it is. Tags no longer present in the "
+                "template are left out. 400 invalid_id, 404 not_found, "
+                "409 in_trash."))
+def теги_проекта(project_id: str, request: Request, s: SessionDep,
+                 user: CurrentUser) -> dict:
+    """Теги шаблона со состоянием заполнения — то, из чего сделана колонка тегов.
+
+    **Зачем отдельный маршрут, а не поля в карточке проекта.** Карточка
+    отвечает на вопрос «что это за проект» и уезжает в списках; здесь на каждый
+    тег читается шапка текущей версии (`head_version` — файл на тег), и класть
+    это в карточку значило бы платить обходом каталога значений за каждую
+    строку списка проектов.
+
+    **Метка и тип — оттуда же, откуда ключи.** Без них экран показывает все
+    теги одинаково: таблица, картинка и абзац текста заполняются по-разному, и
+    решать это по имени ключа сайт не должен.
+
+    Заполненность — это `head_version`, а не «в `values()` есть ключ»: рядом с
+    признаком нужны `source` (своё или от модели — пометка спецификации) и
+    номер версии, за которым идёт история, и второй обход тома ради тех же
+    файлов был бы платой ни за что.
+    """
+    settings = настройки(request)
+    p = доступный(s, user, project_id, VIEWER)
+    проект = открыть(p, settings)
+    теги = []
+    for ключ, спец in теги_шаблона(проект):
+        шапка = проект.head_version(ключ)
+        теги.append({"key": ключ, "label": спец.label, "type": спец.type,
+                     "required": bool(спец.required),
+                     "filled": шапка is not None,
+                     "source": None if шапка is None else шапка.source,
+                     "version": None if шапка is None else шапка.n,
+                     "at": None if шапка is None else шапка.at})
+    return {"tags": теги}
+
 
 @router.get("/{project_id}/values", operation_id="get_project_values",
             summary="Current tag values of a project",

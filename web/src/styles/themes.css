@@ -1,0 +1,357 @@
+/*
+ * themes.css — переменные четырёх тем × светлый/тёмный.
+ *
+ * Перенесено из макетов (`~/koritsu2-extras/labs/refsheet/themes/<id>-<mode>.css`),
+ * где каждая тема лежала отдельным файлом с `:root`. Здесь тот же набор значений
+ * разложен по селекторам `[data-theme][data-mode]`: атрибуты ставятся на `<html>`
+ * (`src/theme/apply.ts`, и до первого рендера — встроенным скриптом в `index.html`).
+ *
+ * Правило: тема — это ТОЛЬКО значения переменных. Ни одного правила раскладки
+ * здесь нет и быть не должно — иначе смена темы начнёт двигать разметку.
+ * Полный список переменных — договор из спецификации §3.
+ *
+ * Файл сгенерирован; правки вносить сюда (макеты — только источник первого
+ * переноса, обратно они не читаются).
+ */
+
+[data-theme='slate'][data-mode='light'] {
+  --theme-id:'slate'; --theme-mode:'light'; color-scheme:light;
+  /* поверхности */
+  --bg:#F3F4F7; --surface:#FFFFFF; --surface-2:#EDEFF3; --surface-3:#F7F8FA; --overlay:rgba(14,16,19,.45);
+  --surface-elevated:var(--surface); /* плавающие слои (меню, модалки, окно агента) — поверх любого фона */
+  /* текст и границы */
+  --ink:#1C1F26; --ink-strong:#0E1013; --muted:#5F6674; --line:#DDE1E8; --line-strong:#B4BBC8;
+  /* смысловые цвета */
+  --accent:#4F5DE8; --accent-ink:#FFFFFF; --accent-bg:rgba(79,93,232,.10);
+  --ok:#1F8A3B; --ok-bg:rgba(31,138,59,.10); --warn:#9A6700; --warn-bg:rgba(154,103,0,.10);
+  --err:#C93C34; --err-bg:rgba(201,60,52,.10); --info:#0B63C4; --info-bg:rgba(11,99,196,.10);
+  --agent:#8E3BD6; --agent-ink:#FFFFFF; --agent-bg:rgba(142,59,214,.10);
+  /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
+  --mod-dashboard:#5F6674; --mod-flowcharts:#4F5DE8; --mod-uml:#1F7A6A; --mod-reports:#B4551F;
+  /* форма и глубина */
+  --radius-sm:6px; --radius:8px; --radius-lg:12px; --radius-full:999px; --btn-radius:6px;
+  --border-w:1px; --shadow-1:0 1px 2px rgba(20,24,40,.06); --shadow-2:0 12px 28px -18px rgba(20,24,40,.22); --blur:none; --pattern:none;
+  /* типографика */
+  --font-display:'Manrope', system-ui, sans-serif; --font-body:'Manrope', system-ui, sans-serif; --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --display-size:32px; --display-weight:700; --display-spacing:-0.025em; --display-transform:none; --btn-weight:600;
+  --size-xs:12px; --size-sm:13px; --size-md:15px; --size-lg:18px; --size-xl:24px; --size-2xl:32px;
+  --leading-tight:1.2; --leading-normal:1.55;
+  /* ритм */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px; --space-6:32px; --space-8:48px;
+  --sidebar-w:240px; --sidebar-w-collapsed:64px; --topbar-h:52px; --content-max:1440px;
+  /* домен: блок-схемы */
+  --node-fill:var(--surface-2); --node-line:var(--line-strong); --node-text:var(--ink);
+  --node-branch:var(--warn); --node-io:var(--info); --node-loop:var(--ok);
+  --edge:var(--muted); --edge-label:var(--muted);
+  /* домен: теги отчёта */
+  --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: подсветка кода */
+  --code-kw:#8E3BD6; --code-str:#1F8A3B; --code-num:#B35C00; --code-comment:#6E7583; --code-fn:#0B63C4;
+  /* домен: ассемблер, карточки, доска */
+  --mem-cell:var(--surface-2); --mem-changed:var(--warn-bg); --mem-pointer:var(--accent); --reg-active:var(--accent-bg);
+  --card-front:var(--surface); --card-back:var(--surface-2); --ink-stroke:var(--ink);
+}
+
+[data-theme='slate'][data-mode='dark'] {
+  --theme-id:'slate'; --theme-mode:'dark'; color-scheme:dark;
+  /* поверхности */
+  --bg:#08090B; --surface:#0F1114; --surface-2:#15181D; --surface-3:#0B0C0F; --overlay:rgba(2,3,4,.7);
+  --surface-elevated:var(--surface); /* плавающие слои (меню, модалки, окно агента) — поверх любого фона */
+  /* текст и границы */
+  --ink:#DFE2E8; --ink-strong:#FFFFFF; --muted:#7D848F; --line:#1C1F25; --line-strong:#2F343D;
+  /* смысловые цвета */
+  --accent:#6E7CFF; --accent-ink:#0E1013; --accent-bg:rgba(110,124,255,.16);
+  --ok:#3FB950; --ok-bg:rgba(63,185,80,.14); --warn:#D29922; --warn-bg:rgba(210,153,34,.14);
+  --err:#E5534B; --err-bg:rgba(229,83,75,.14); --info:#58A6FF; --info-bg:rgba(88,166,255,.14);
+  --agent:#C77DFF; --agent-ink:#1A0B2E; --agent-bg:rgba(199,125,255,.14);
+  /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
+  --mod-dashboard:#8A909B; --mod-flowcharts:#7C88E8; --mod-uml:#4FB6A0; --mod-reports:#DE8A5E;
+  /* форма и глубина */
+  --radius-sm:6px; --radius:8px; --radius-lg:12px; --radius-full:999px; --btn-radius:6px;
+  --border-w:1px; --shadow-1:none; --shadow-2:0 12px 28px -18px rgba(0,0,0,.85); --blur:none; --pattern:none;
+  /* типографика */
+  --font-display:'Manrope', system-ui, sans-serif; --font-body:'Manrope', system-ui, sans-serif; --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --display-size:32px; --display-weight:700; --display-spacing:-0.025em; --display-transform:none; --btn-weight:600;
+  --size-xs:12px; --size-sm:13px; --size-md:15px; --size-lg:18px; --size-xl:24px; --size-2xl:32px;
+  --leading-tight:1.2; --leading-normal:1.55;
+  /* ритм */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px; --space-6:32px; --space-8:48px;
+  --sidebar-w:240px; --sidebar-w-collapsed:64px; --topbar-h:52px; --content-max:1440px;
+  /* домен: блок-схемы */
+  --node-fill:var(--surface-2); --node-line:var(--line-strong); --node-text:var(--ink);
+  --node-branch:var(--warn); --node-io:var(--info); --node-loop:var(--ok);
+  --edge:var(--muted); --edge-label:var(--muted);
+  /* домен: теги отчёта */
+  --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: подсветка кода */
+  --code-kw:#C77DFF; --code-str:#7EE787; --code-num:#FFA657; --code-comment:#8A909B; --code-fn:#79C0FF;
+  /* домен: ассемблер, карточки, доска */
+  --mem-cell:var(--surface-2); --mem-changed:var(--warn-bg); --mem-pointer:var(--accent); --reg-active:var(--accent-bg);
+  --card-front:var(--surface); --card-back:var(--surface-2); --ink-stroke:var(--ink);
+}
+
+[data-theme='paper'][data-mode='light'] {
+  --theme-id:'paper'; --theme-mode:'light'; color-scheme:light;
+  /* поверхности */
+  --bg:#EDE8DE; --surface:#FBF8F2; --surface-2:#F3EFE6; --surface-3:#F6F2EA; --overlay:rgba(60,50,35,.45);
+  --surface-elevated:var(--surface); /* плавающие слои (меню, модалки, окно агента) — поверх любого фона */
+  /* текст и границы */
+  --ink:#23252B; --ink-strong:#141519; --muted:#6E685B; --line:#DCD5C6; --line-strong:#B9B09C;
+  /* смысловые цвета */
+  --accent:#2B4372; --accent-ink:#FBF8F2; --accent-bg:rgba(43,67,114,.10);
+  --ok:#4A7A52; --ok-bg:rgba(74,122,82,.12); --warn:#8F6212; --warn-bg:rgba(156,106,22,.12);
+  --err:#A8402F; --err-bg:rgba(168,64,47,.12); --info:#3B5E8C; --info-bg:rgba(59,94,140,.12);
+  --agent:#7B4B9E; --agent-ink:#FBF8F2; --agent-bg:rgba(123,75,158,.12);
+  /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
+  --mod-dashboard:#5B6E8C; --mod-flowcharts:#2B4372; --mod-uml:#3F6F5E; --mod-reports:#A8622F;
+  /* форма и глубина */
+  --radius-sm:10px; --radius:14px; --radius-lg:20px; --radius-full:999px; --btn-radius:999px;
+  --border-w:1px; --shadow-1:0 1px 2px rgba(70,60,40,.06), 0 10px 24px -18px rgba(70,60,40,.5); --shadow-2:0 24px 48px -20px rgba(70,60,40,.55); --blur:none; --pattern:radial-gradient(120% 80% at 50% -10%, rgba(255,253,247,.9), transparent 65%);
+  /* типографика */
+  --font-display:'Literata', Georgia, serif; --font-body:'Golos Text', system-ui, sans-serif; --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --display-size:38px; --display-weight:600; --display-spacing:-0.015em; --display-transform:none; --btn-weight:500;
+  --size-xs:12px; --size-sm:13px; --size-md:15px; --size-lg:18px; --size-xl:24px; --size-2xl:32px;
+  --leading-tight:1.2; --leading-normal:1.55;
+  /* ритм */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px; --space-6:32px; --space-8:48px;
+  --sidebar-w:240px; --sidebar-w-collapsed:64px; --topbar-h:52px; --content-max:1280px;
+  /* домен: блок-схемы */
+  --node-fill:var(--surface-2); --node-line:var(--line-strong); --node-text:var(--ink);
+  --node-branch:var(--warn); --node-io:var(--info); --node-loop:var(--ok);
+  --edge:var(--muted); --edge-label:var(--muted);
+  /* домен: теги отчёта */
+  --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: подсветка кода */
+  --code-kw:#2B4372; --code-str:#4A7A52; --code-num:#8F6212; --code-comment:#8A8374; --code-fn:#7B4B9E;
+  /* домен: ассемблер, карточки, доска */
+  --mem-cell:var(--surface-2); --mem-changed:var(--warn-bg); --mem-pointer:var(--accent); --reg-active:var(--accent-bg);
+  --card-front:var(--surface); --card-back:var(--surface-2); --ink-stroke:var(--ink);
+}
+
+[data-theme='paper'][data-mode='dark'] {
+  --theme-id:'paper'; --theme-mode:'dark'; color-scheme:dark;
+  /* поверхности */
+  --bg:#1C1A17; --surface:#262320; --surface-2:#2E2B27; --surface-3:#161411; --overlay:rgba(0,0,0,.6);
+  --surface-elevated:var(--surface); /* плавающие слои (меню, модалки, окно агента) — поверх любого фона */
+  /* текст и границы */
+  --ink:#E8E2D6; --ink-strong:#F7F2E8; --muted:#A39B8B; --line:#3A3631; --line-strong:#544E46;
+  /* смысловые цвета */
+  --accent:#9FB4E0; --accent-ink:#1C1A17; --accent-bg:rgba(159,180,224,.14);
+  --ok:#8FC79A; --ok-bg:rgba(143,199,154,.14); --warn:#E0B36A; --warn-bg:rgba(224,179,106,.14);
+  --err:#E3907F; --err-bg:rgba(227,144,127,.14); --info:#8FB8D8; --info-bg:rgba(143,184,216,.14);
+  --agent:#C9A6E6; --agent-ink:#1C1A17; --agent-bg:rgba(201,166,230,.14);
+  /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
+  --mod-dashboard:#A8B6C8; --mod-flowcharts:#9FB4E0; --mod-uml:#8FC7B0; --mod-reports:#E0B36A;
+  /* форма и глубина */
+  --radius-sm:10px; --radius:14px; --radius-lg:20px; --radius-full:999px; --btn-radius:999px;
+  --border-w:1px; --shadow-1:0 1px 2px rgba(0,0,0,.3), 0 10px 24px -18px rgba(0,0,0,.8); --shadow-2:0 24px 48px -20px rgba(0,0,0,.8); --blur:none; --pattern:radial-gradient(120% 80% at 50% -10%, rgba(255,240,215,.05), transparent 65%);
+  /* типографика */
+  --font-display:'Literata', Georgia, serif; --font-body:'Golos Text', system-ui, sans-serif; --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --display-size:38px; --display-weight:600; --display-spacing:-0.015em; --display-transform:none; --btn-weight:500;
+  --size-xs:12px; --size-sm:13px; --size-md:15px; --size-lg:18px; --size-xl:24px; --size-2xl:32px;
+  --leading-tight:1.2; --leading-normal:1.55;
+  /* ритм */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px; --space-6:32px; --space-8:48px;
+  --sidebar-w:240px; --sidebar-w-collapsed:64px; --topbar-h:52px; --content-max:1280px;
+  /* домен: блок-схемы */
+  --node-fill:var(--surface-2); --node-line:var(--line-strong); --node-text:var(--ink);
+  --node-branch:var(--warn); --node-io:var(--info); --node-loop:var(--ok);
+  --edge:var(--muted); --edge-label:var(--muted);
+  /* домен: теги отчёта */
+  --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: подсветка кода */
+  --code-kw:#C9A6E6; --code-str:#8FC79A; --code-num:#E0B36A; --code-comment:#8B8476; --code-fn:#9FB4E0;
+  /* домен: ассемблер, карточки, доска */
+  --mem-cell:var(--surface-2); --mem-changed:var(--warn-bg); --mem-pointer:var(--accent); --reg-active:var(--accent-bg);
+  --card-front:var(--surface); --card-back:var(--surface-2); --ink-stroke:var(--ink);
+}
+
+[data-theme='linear'][data-mode='light'] {
+  --theme-id:'linear'; --theme-mode:'light'; color-scheme:light;
+  /* поверхности */
+  --bg:#FCFCFD; --surface:#FFFFFF; --surface-2:#F3F4F6; --surface-3:#F6F7F9; --overlay:rgba(8,9,10,.4);
+  --surface-elevated:var(--surface); /* плавающие слои (меню, модалки, окно агента) — поверх любого фона */
+  /* текст и границы */
+  --ink:#282A30; --ink-strong:#0F1011; --muted:#6B7280; --line:rgba(0,0,0,.08); --line-strong:rgba(0,0,0,.22);
+  /* смысловые цвета */
+  --accent:#5E6AD2; --accent-ink:#FFFFFF; --accent-bg:rgba(94,106,210,.10);
+  --ok:#2E9E6B; --ok-bg:rgba(46,158,107,.10); --warn:#B7791F; --warn-bg:rgba(183,121,31,.10);
+  --err:#D64545; --err-bg:rgba(214,69,69,.10); --info:#2F7BD0; --info-bg:rgba(47,123,208,.10);
+  --agent:#7C3AED; --agent-ink:#FFFFFF; --agent-bg:rgba(124,58,237,.10);
+  /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
+  --mod-dashboard:#6B7280; --mod-flowcharts:#5E6AD2; --mod-uml:#2E9E88; --mod-reports:#C2601F;
+  /* форма и глубина */
+  --radius-sm:8px; --radius:10px; --radius-lg:14px; --radius-full:999px; --btn-radius:8px;
+  --border-w:1px; --shadow-1:0 1px 2px rgba(0,0,0,.05); --shadow-2:0 16px 40px -16px rgba(0,0,0,.2); --blur:none; --pattern:radial-gradient(80% 60% at 50% -20%, rgba(94,106,210,.10), transparent 70%);
+  /* типографика */
+  --font-display:'Inter', system-ui, sans-serif; --font-body:'Inter', system-ui, sans-serif; --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --display-size:34px; --display-weight:600; --display-spacing:-0.04em; --display-transform:none; --btn-weight:500;
+  --size-xs:12px; --size-sm:13px; --size-md:15px; --size-lg:18px; --size-xl:24px; --size-2xl:32px;
+  --leading-tight:1.2; --leading-normal:1.55;
+  /* ритм */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px; --space-6:32px; --space-8:48px;
+  --sidebar-w:240px; --sidebar-w-collapsed:64px; --topbar-h:52px; --content-max:1440px;
+  /* домен: блок-схемы */
+  --node-fill:var(--surface-2); --node-line:var(--line-strong); --node-text:var(--ink);
+  --node-branch:var(--warn); --node-io:var(--info); --node-loop:var(--ok);
+  --edge:var(--muted); --edge-label:var(--muted);
+  /* домен: теги отчёта */
+  --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: подсветка кода */
+  --code-kw:#8B5CF6; --code-str:#2E9E6B; --code-num:#B7791F; --code-comment:#7C8290; --code-fn:#2F7BD0;
+  /* домен: ассемблер, карточки, доска */
+  --mem-cell:var(--surface-2); --mem-changed:var(--warn-bg); --mem-pointer:var(--accent); --reg-active:var(--accent-bg);
+  --card-front:var(--surface); --card-back:var(--surface-2); --ink-stroke:var(--ink);
+}
+
+[data-theme='linear'][data-mode='dark'] {
+  --theme-id:'linear'; --theme-mode:'dark'; color-scheme:dark;
+  /* поверхности */
+  --bg:#08090A; --surface:rgba(255,255,255,.045); --surface-2:rgba(255,255,255,.07); --surface-3:#0F1012; --overlay:rgba(0,0,0,.65);
+  --surface-elevated:#121316; /* плавающие слои (меню, модалки, окно агента) — поверх любого фона */
+  /* текст и границы */
+  --ink:#F7F8F8; --ink-strong:#FFFFFF; --muted:#8A8F98; --line:rgba(255,255,255,.09); --line-strong:rgba(255,255,255,.22);
+  /* смысловые цвета */
+  --accent:#7C8AF5; --accent-ink:#0B0C0E; --accent-bg:rgba(124,138,245,.20);
+  --ok:#4CB782; --ok-bg:rgba(76,183,130,.14); --warn:#F2C94C; --warn-bg:rgba(242,201,76,.14);
+  --err:#EB5757; --err-bg:rgba(235,87,87,.14); --info:#4C9AE8; --info-bg:rgba(76,154,232,.14);
+  --agent:#C084FC; --agent-ink:#120A1F; --agent-bg:rgba(192,132,252,.14);
+  /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
+  --mod-dashboard:#8A8F98; --mod-flowcharts:#7C8AF5; --mod-uml:#4CB7A0; --mod-reports:#E08A5B;
+  /* форма и глубина */
+  --radius-sm:8px; --radius:10px; --radius-lg:14px; --radius-full:999px; --btn-radius:8px;
+  --border-w:1px; --shadow-1:none; --shadow-2:0 16px 48px -16px rgba(0,0,0,.8); --blur:none; --pattern:radial-gradient(80% 60% at 50% -20%, rgba(94,106,210,.20), transparent 70%);
+  /* типографика */
+  --font-display:'Inter', system-ui, sans-serif; --font-body:'Inter', system-ui, sans-serif; --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --display-size:34px; --display-weight:600; --display-spacing:-0.04em; --display-transform:none; --btn-weight:500;
+  --size-xs:12px; --size-sm:13px; --size-md:15px; --size-lg:18px; --size-xl:24px; --size-2xl:32px;
+  --leading-tight:1.2; --leading-normal:1.55;
+  /* ритм */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px; --space-6:32px; --space-8:48px;
+  --sidebar-w:240px; --sidebar-w-collapsed:64px; --topbar-h:52px; --content-max:1440px;
+  /* домен: блок-схемы */
+  --node-fill:var(--surface-2); --node-line:var(--line-strong); --node-text:var(--ink);
+  --node-branch:var(--warn); --node-io:var(--info); --node-loop:var(--ok);
+  --edge:var(--muted); --edge-label:var(--muted);
+  /* домен: теги отчёта */
+  --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: подсветка кода */
+  --code-kw:#C084FC; --code-str:#4CB782; --code-num:#F2C94C; --code-comment:#8A8F98; --code-fn:#4C9AE8;
+  /* домен: ассемблер, карточки, доска */
+  --mem-cell:var(--surface-2); --mem-changed:var(--warn-bg); --mem-pointer:var(--accent); --reg-active:var(--accent-bg);
+  --card-front:var(--surface); --card-back:var(--surface-2); --ink-stroke:var(--ink);
+}
+
+[data-theme='glass'][data-mode='light'] {
+  --theme-id:'glass'; --theme-mode:'light'; color-scheme:light;
+  /* поверхности */
+  --bg:#DCE3EC; --surface:rgba(255,255,255,.58); --surface-2:rgba(255,255,255,.42); --surface-3:rgba(255,255,255,.8); --overlay:rgba(40,44,50,.35);
+  --surface-elevated:rgba(255,255,255,.74); /* плавающие слои (меню, модалки, окно агента) — поверх любого фона */
+  /* текст и границы */
+  --ink:#1B2028; --ink-strong:#0D1116; --muted:#525965; --line:rgba(255,255,255,.8); --line-strong:rgba(0,0,0,.22);
+  /* смысловые цвета */
+  --accent:#2F5EA8; --accent-ink:#FFFFFF; --accent-bg:rgba(47,94,168,.12);
+  --ok:#1F7A4A; --ok-bg:rgba(31,122,74,.12); --warn:#8A5A00; --warn-bg:rgba(138,90,0,.12);
+  --err:#C0392B; --err-bg:rgba(192,57,43,.12); --info:#1F5FA8; --info-bg:rgba(31,95,168,.12);
+  --agent:#6D3FC4; --agent-ink:#FFFFFF; --agent-bg:rgba(109,63,196,.12);
+  /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
+  --mod-dashboard:#525965; --mod-flowcharts:#2F5EA8; --mod-uml:#2E8069; --mod-reports:#B0662F;
+  /* форма и глубина */
+  --radius-sm:16px; --radius:22px; --radius-lg:28px; --radius-full:999px; --btn-radius:999px;
+  --border-w:1px; --shadow-1:inset 0 1px 0 rgba(255,255,255,.85), 0 12px 32px -18px rgba(0,0,0,.35); --shadow-2:inset 0 1px 0 rgba(255,255,255,.9), 0 24px 56px -20px rgba(0,0,0,.45); --blur:blur(18px) saturate(160%); --pattern:radial-gradient(58% 46% at 10% 4%, rgba(120,160,255,.30), transparent 62%), radial-gradient(46% 38% at 90% 0%, rgba(255,150,200,.20), transparent 62%), radial-gradient(64% 58% at 55% 112%, rgba(90,220,205,.18), transparent 62%);
+  /* типографика */
+  --font-display:'Onest', system-ui, sans-serif; --font-body:'Onest', system-ui, sans-serif; --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --display-size:36px; --display-weight:600; --display-spacing:-0.03em; --display-transform:none; --btn-weight:500;
+  --size-xs:12px; --size-sm:13px; --size-md:15px; --size-lg:18px; --size-xl:24px; --size-2xl:32px;
+  --leading-tight:1.2; --leading-normal:1.55;
+  /* ритм */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px; --space-6:32px; --space-8:48px;
+  --sidebar-w:240px; --sidebar-w-collapsed:64px; --topbar-h:52px; --content-max:1440px;
+  /* домен: блок-схемы */
+  --node-fill:var(--surface-2); --node-line:var(--line-strong); --node-text:var(--ink);
+  --node-branch:var(--warn); --node-io:var(--info); --node-loop:var(--ok);
+  --edge:var(--muted); --edge-label:var(--muted);
+  /* домен: теги отчёта */
+  --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: подсветка кода */
+  --code-kw:#6D3FC4; --code-str:#1F7A4A; --code-num:#8A5A00; --code-comment:#6A707A; --code-fn:#1F5FA8;
+  /* домен: ассемблер, карточки, доска */
+  --mem-cell:var(--surface-2); --mem-changed:var(--warn-bg); --mem-pointer:var(--accent); --reg-active:var(--accent-bg);
+  --card-front:var(--surface); --card-back:var(--surface-2); --ink-stroke:var(--ink);
+}
+
+[data-theme='glass'][data-mode='dark'] {
+  --theme-id:'glass'; --theme-mode:'dark'; color-scheme:dark;
+  /* поверхности */
+  --bg:#141922; --surface:rgba(255,255,255,.10); --surface-2:rgba(255,255,255,.15); --surface-3:rgba(8,11,16,.45); --overlay:rgba(6,9,14,.55);
+  --surface-elevated:rgba(26,32,44,.72); /* плавающие слои (меню, модалки, окно агента) — поверх любого фона */
+  /* текст и границы */
+  --ink:#EEF2F8; --ink-strong:#FFFFFF; --muted:rgba(233,239,248,.66); --line:rgba(255,255,255,.16); --line-strong:rgba(255,255,255,.4);
+  /* смысловые цвета */
+  --accent:#8FB8FF; --accent-ink:#0B1220; --accent-bg:rgba(143,184,255,.22);
+  --ok:#7DE2B0; --ok-bg:rgba(125,226,176,.18); --warn:#FFD27D; --warn-bg:rgba(255,210,125,.18);
+  --err:#FF8A8A; --err-bg:rgba(255,138,138,.18); --info:#9DD0FF; --info-bg:rgba(157,208,255,.18);
+  --agent:#D7B4FF; --agent-ink:#2A1B40; --agent-bg:rgba(215,180,255,.2);
+  /* цвет модуля (расширение: в Спектре — свой у каждого, иначе = accent/muted) */
+  --mod-dashboard:#C4CDDB; --mod-flowcharts:#A8C0FF; --mod-uml:#8FE0C6; --mod-reports:#FFC59A;
+  /* форма и глубина */
+  --radius-sm:16px; --radius:22px; --radius-lg:28px; --radius-full:999px; --btn-radius:999px;
+  --border-w:1px; --shadow-1:inset 0 1px 0 rgba(255,255,255,.35), 0 12px 32px -18px rgba(0,0,0,.7); --shadow-2:inset 0 1px 0 rgba(255,255,255,.4), 0 24px 56px -20px rgba(0,0,0,.85); --blur:blur(18px) saturate(160%); --pattern:radial-gradient(58% 46% at 12% 6%, rgba(88,132,255,.34), transparent 62%), radial-gradient(46% 38% at 88% 2%, rgba(255,118,190,.20), transparent 62%), radial-gradient(64% 58% at 52% 112%, rgba(56,214,196,.18), transparent 62%);
+  /* типографика */
+  --font-display:'Onest', system-ui, sans-serif; --font-body:'Onest', system-ui, sans-serif; --font-mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --display-size:36px; --display-weight:600; --display-spacing:-0.03em; --display-transform:none; --btn-weight:500;
+  --size-xs:12px; --size-sm:13px; --size-md:15px; --size-lg:18px; --size-xl:24px; --size-2xl:32px;
+  --leading-tight:1.2; --leading-normal:1.55;
+  /* ритм */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px; --space-6:32px; --space-8:48px;
+  --sidebar-w:240px; --sidebar-w-collapsed:64px; --topbar-h:52px; --content-max:1440px;
+  /* домен: блок-схемы */
+  --node-fill:var(--surface-2); --node-line:var(--line-strong); --node-text:var(--ink);
+  --node-branch:var(--warn); --node-io:var(--info); --node-loop:var(--ok);
+  --edge:var(--muted); --edge-label:var(--muted);
+  /* домен: теги отчёта */
+  --tag-fill:var(--accent-bg); --tag-line:var(--accent); --tag-filled:var(--ok); --tag-empty:var(--muted);
+  /* домен: подсветка кода */
+  --code-kw:#D7B4FF; --code-str:#7DE2B0; --code-num:#FFD27D; --code-comment:rgba(255,255,255,.6); --code-fn:#9DD0FF;
+  /* домен: ассемблер, карточки, доска */
+  --mem-cell:var(--surface-2); --mem-changed:var(--warn-bg); --mem-pointer:var(--accent); --reg-active:var(--accent-bg);
+  --card-front:var(--surface); --card-back:var(--surface-2); --ink-stroke:var(--ink);
+}
+
+
+/* ── шрифт интерфейса ────────────────────────────────────────────────────────
+ *
+ * `--font-ui` — то, что человек выбирает в настройках (список — `src/theme/fonts.ts`,
+ * только шрифты с полной кириллицей, правило брифа). По умолчанию IBM Plex Sans,
+ * который приезжает npm-пакетом `@fontsource/ibm-plex-sans` с кириллическим
+ * подмножеством, а не из Google Fonts.
+ *
+ * Решение владельца: IBM Plex Sans во всех темах, КРОМЕ «Бумаги» — у неё свой
+ * характер держится на паре «засечки в заголовке + гротеск в тексте», и подмена
+ * шрифта его стирает. Поэтому `--font-ui` подставляется всем, кроме `paper`.
+ */
+:root {
+  --font-ui: 'IBM Plex Sans', system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+[data-theme]:not([data-theme='paper']) {
+  --font-display: var(--font-ui);
+  --font-body: var(--font-ui);
+}
+
+/* ── плотность ───────────────────────────────────────────────────────────────
+ * Тумблер «плотно/просторно» из настроек: сжимается ритм и базовый кегль,
+ * ничего больше. Значения — из макета (`assets/base.css`).
+ */
+html[data-density='compact'] {
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --size-md: 14px;
+  --size-sm: 12px;
+  --size-lg: 16px;
+  --topbar-h: 44px;
+}
