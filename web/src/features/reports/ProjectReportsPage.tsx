@@ -55,6 +55,7 @@ import {
   useWorkspace,
 } from '@/features/projects/data'
 import { formatWhen, runTitle } from '@/features/projects/format'
+import { RunName } from '@/features/projects/RunName'
 import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
 
 import { ReportThumb } from './ReportThumb'
@@ -188,7 +189,6 @@ export function ProjectReportsPage({ projectId }: { projectId: string }) {
 
       <CreateReportDialog
         projectId={projectId}
-        first={(reports.data ?? []).length === 0}
         open={creating}
         onOpenChange={setCreating}
         onCreated={(id) => navigate(`/reports/${projectId}/${id}`)}
@@ -219,7 +219,19 @@ export function ProjectReportsPage({ projectId }: { projectId: string }) {
   )
 }
 
-/** Карточка отчёта: первая страница, имя, бланк, дата, «удалить». */
+/**
+ * Карточка отчёта: первая страница, имя, бланк, дата, «удалить».
+ *
+ * Имя правится прямо здесь (`RunName`): отчёт — это запись журнала запусков, а
+ * зовут её одним и тем же именем список отчётов, журнал на карточке работы и
+ * заголовок экрана отчёта. Переименовывать там, где увидел, — то же правило,
+ * что у схем; уводить ради этого на другую страницу значило бы просить человека
+ * найти в журнале строку, которую он в эту минуту держит перед глазами.
+ *
+ * Из-за этого картинка и подписи лежат в ссылке, а имя — рядом с ней: поле
+ * правки и карандаш внутри ссылки открывали бы её от каждого щелчка. Само имя
+ * при этом ссылкой остаётся — его рисует `RunName` по `href`.
+ */
 function ReportCard({
   report,
   projectId,
@@ -245,19 +257,27 @@ function ReportCard({
     <li className="relative flex h-full flex-col overflow-hidden rounded-md border border-line bg-surface shadow-1 transition-colors hover:border-line-strong">
       <Link
         to={`/reports/${projectId}/${report.id}`}
-        className="flex min-w-0 flex-1 flex-col focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent"
+        className="flex min-w-0 flex-col focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent"
       >
         <ReportThumb seed={report.id} src={превью} alt={имя} />
-        <div className="flex flex-col gap-1 p-s3">
-          <span className="truncate font-semibold text-ink-strong">{имя}</span>
-          <span className="truncate text-xs text-muted">
-            {report.template_name || t('reports.list.noTemplate')}
-            {' · '}
-            {t('reports.templates.tags', { n: report.tags })}
-          </span>
-          <span className="text-xs text-muted">{formatWhen(report.created_at)}</span>
-        </div>
       </Link>
+      <div className="flex min-w-0 flex-1 flex-col gap-1 p-s3">
+        <RunName
+          projectId={projectId}
+          runId={report.id}
+          name={report.name}
+          title={имя}
+          canEdit={canEdit}
+          href={`/reports/${projectId}/${report.id}`}
+          className="font-semibold text-ink-strong"
+        />
+        <span className="truncate text-xs text-muted">
+          {report.template_name || t('reports.list.noTemplate')}
+          {' · '}
+          {t('reports.templates.tags', { n: report.tags })}
+        </span>
+        <span className="text-xs text-muted">{formatWhen(report.created_at)}</span>
+      </div>
       {canEdit && (
         <Button
           variant="ghost"
@@ -283,18 +303,16 @@ function ReportCard({
  * новый файл — он попадает и в работу, и на полку, и сразу становится выбранным.
  *
  * Без бланка тоже можно: документ строится с нуля, как и работа без бланка, —
- * законное состояние, а не ошибка.
+ * законное состояние, а не ошибка. Первый отчёт работы при этом остаётся на её
+ * бланке и наследует всё, что в ней уже написано; кто первый, решает служба.
  */
 function CreateReportDialog({
   projectId,
-  first,
   open,
   onOpenChange,
   onCreated,
 }: {
   projectId: string
-  /** Первый отчёт работы забирает её собственный документ — см. `useCreateProjectReport`. */
-  first: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreated: (reportId: string) => void
@@ -332,7 +350,7 @@ function CreateReportDialog({
 
   const завести = () => {
     create.mutate(
-      { templateId: templateId || null, name: name.trim(), first },
+      { templateId: templateId || null, name: name.trim() },
       {
         onSuccess: (отчёт) => {
           закрыть(false)

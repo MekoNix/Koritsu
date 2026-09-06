@@ -45,7 +45,7 @@ import {
   useToast,
 } from '@/ui'
 
-import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
+import { WorkspaceCaption, WorkspaceTag } from '@/features/workspace/WorkspaceCaption'
 
 import { deleteDiagram, fetchArtifact, fetchDiagrams, fetchWorkspaceProjects } from './api'
 import { safeFilename, saveBlob } from './download'
@@ -179,6 +179,9 @@ export function DiagramsHome({ module }: { module: Module }) {
                         {t('diagrams.home.inProject')}: {project.name}
                         {diagram.created_at ? ` · ${formatWhen(diagram.created_at)}` : ''}
                       </span>
+                      {/* Работа названа — назовём и пространство, в котором она
+                          лежит: строку схемы читают в отрыве от шапки. */}
+                      <WorkspaceTag project={project} />
                     </div>
                     <div className="grow" />
                     {diagram.artifact && (

@@ -35,6 +35,24 @@ export type KadaiRunCard = {
 }
 
 /**
+ * `packages/api/modules/kadai/routes.py: общие_файлы()` — общий файл работы.
+ *
+ * Общий — тот, что приложен ко всей работе, а не к одному решению: методичку
+ * кафедры кладут один раз, а нужна она в каждой задаче. `selected` — уезжает ли
+ * он в промпт этого решения; по умолчанию уезжают все, включая те, что положат
+ * позже.
+ */
+export type KadaiCommonFile = {
+  id: string
+  name: string
+  kind?: string
+  selected: boolean
+}
+
+/** Тело `GET/PUT …/kadai/context`. */
+export type KadaiContextBody = { common: KadaiCommonFile[] }
+
+/**
  * `packages/api/modules/kadai/routes.py: ход()` — снимок работы с тома.
  *
  * `outputs` — **имена** готовых файлов («отчёт.docx»), а `made` —

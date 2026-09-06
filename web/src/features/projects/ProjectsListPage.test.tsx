@@ -10,7 +10,7 @@
  * клиент разбирает ответ, и то, какие адреса экран на самом деле зовёт.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -53,11 +53,17 @@ function json(body: unknown): Response {
   })
 }
 
-/** Ответы по адресу: тест задаёт, что лежит в активном списке и в корзине. */
-function служба(активные: unknown[], корзина: unknown[]) {
+/**
+ * Ответы по адресу: тест задаёт, что лежит в активном списке и в корзине.
+ *
+ * Пространство подменяется третьим доводом: в личном пространстве имя работы и
+ * имя пространства сливаются, и проверять по ним, что подпись стоит именно у
+ * строки, нечестно.
+ */
+function служба(активные: unknown[], корзина: unknown[], пространство = ПРОСТРАНСТВО) {
   return vi.fn((request: Request) => {
     const url = new URL(request.url)
-    if (url.pathname === '/api/workspaces/personal') return Promise.resolve(json(ПРОСТРАНСТВО))
+    if (url.pathname === '/api/workspaces/personal') return Promise.resolve(json(пространство))
     // Подпись «Пространство» над списком зовёт личное пространство ником хозяина.
     if (url.pathname === '/api/auth/me') {
       return Promise.resolve(json({ user: { id: 'u-1', nickname: 'курису' } }))
@@ -100,6 +106,19 @@ describe('список работ', () => {
 
     expect(await screen.findByText('Лабораторная 4 — сортировки')).toBeInTheDocument()
     expect(screen.getByText(/35,8 КБ/)).toBeInTheDocument()
+  })
+
+  it('в строке работы названо пространство, а не только над списком', async () => {
+    // Список работ открывают по ссылке и читают прокрученным: подпись в шапке
+    // к этому времени уже за краем экрана, а «где эта работа лежит» — вопрос,
+    // на который отвечает сама строка.
+    const кафедра = { ...ПРОСТРАНСТВО, name: 'Кафедра ИУ7', personal: false }
+    vi.stubGlobal('fetch', служба([проект({ workspace_name: 'Кафедра ИУ7' })], [], кафедра))
+    нарисовать()
+
+    const строка = (await screen.findByText('Лабораторная 4 — сортировки')).closest('li')
+    expect(строка).not.toBeNull()
+    expect(within(строка as HTMLElement).getByText('Кафедра ИУ7')).toBeInTheDocument()
   })
 
   it('пустой список — приглашение завести работу, а не белое поле', async () => {

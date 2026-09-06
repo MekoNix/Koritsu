@@ -22,7 +22,7 @@ import { useT } from '@/i18n'
 import { Button, EmptyState, ErrorState, Input, SkeletonLines } from '@/ui'
 import { useCurrentWorkspace } from '@/api/hooks'
 import { useProjects } from '@/features/projects/data'
-import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
+import { WorkspaceCaption, WorkspaceTag } from '@/features/workspace/WorkspaceCaption'
 
 import { ProjectReportsPage } from './ProjectReportsPage'
 import { ReportThumb } from './ReportThumb'
@@ -109,6 +109,9 @@ function ProjectPicker() {
                   <span className="text-xs text-muted">
                     {t('reports.home.updated', { at: when(p.updated_at) })}
                   </span>
+                  {/* Пространство названо и у карточки, а не только подписью
+                      над списком: карточку читают отдельно от шапки. */}
+                  <WorkspaceTag project={p} />
                 </div>
               </Link>
             </li>

@@ -36,7 +36,7 @@ import {
   useToast,
 } from '@/ui'
 
-import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
+import { WorkspaceCaption, WorkspaceTag } from '@/features/workspace/WorkspaceCaption'
 
 import { CreateProjectDialog } from './CreateProjectDialog'
 import { Panel } from './Panel'
@@ -69,9 +69,9 @@ export function ProjectsListPage() {
     <div className="flex flex-col gap-s4">
       <header className="flex flex-wrap items-end justify-between gap-s3">
         <div className="min-w-0">
-          {/* Подпись одна на список, а не строка у каждой работы: список всегда
-              про одно пространство, и повторять его имя в каждой строке значило
-              бы сказать одно и то же двадцать раз. */}
+          {/* Подпись над списком отвечает на «где эти работы лежат» один раз;
+              имя пространства стоит ещё и у каждой строки — строку читают в
+              отрыве от шапки (снимок экрана, узкое окно, прокрученный список). */}
           <WorkspaceCaption className="mb-1" />
           <h1 className="font-display text-xl font-bold tracking-tight text-ink-strong">
             {t('projects.list.title')}
@@ -143,13 +143,18 @@ export function ProjectsListPage() {
                       {project.name}
                     </span>
                   )}
-                  <span className="text-xs text-muted">
-                    {tab === 'trash' && project.purge_after
-                      ? t('projects.list.purgeAfter', { at: formatWhen(project.purge_after) })
-                      : t('projects.list.updated', { at: formatWhen(project.updated_at) })}
-                    {' · '}
-                    {formatBytes(t, project.bytes_used)}
-                  </span>
+                  {/* Подробности одной строкой, переносом при узком окне:
+                      имя пространства не должно вытеснять дату и размер. */}
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-muted">
+                    <span>
+                      {tab === 'trash' && project.purge_after
+                        ? t('projects.list.purgeAfter', { at: formatWhen(project.purge_after) })
+                        : t('projects.list.updated', { at: formatWhen(project.updated_at) })}
+                      {' · '}
+                      {formatBytes(t, project.bytes_used)}
+                    </span>
+                    <WorkspaceTag project={project} />
+                  </div>
                 </div>
 
                 {tab === 'active' ? (

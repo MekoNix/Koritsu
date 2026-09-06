@@ -355,6 +355,12 @@ class ToolBox:
         self.filled: list = []
         self.problems: list = []
         self.calls: int = 0
+        # Набор материалов решения считается один раз на прогон: `context_ids`
+        # обходит опись на томе, а спрашивают его у каждого чтения файла.
+        # Материалы кладут между прогонами, а не посреди хода модели, поэтому
+        # пересчитывать набор внутри прогона не от чего.
+        self._контекст: set | None = None
+        self._контекст_считан = False
         self._typed = fill_mod._typed_values(project, skip=None)
         self._handlers = {
             "list_materials": self._list_materials,
@@ -365,6 +371,18 @@ class ToolBox:
             "set_tag": self._set_tag,
             "preview": self._preview,
         }
+
+    def контекст(self) -> set | None:
+        """Материалы, которые видит модель этого прогона. `None` — все.
+
+        Обёртка над `Project.context_ids` с памятью на прогон: там на каждый
+        вызов идёт обход описи материалов, а зовут его и опись, и каждое чтение
+        файла.
+        """
+        if not self._контекст_считан:
+            self._контекст = self.project.context_ids()
+            self._контекст_считан = True
+        return self._контекст
 
     # ── диспетчер ───────────────────────────────────────────────────────────
     def __call__(self, call) -> llm.ToolResult:
@@ -433,10 +451,12 @@ class ToolBox:
 
         Опись — папки контекста этой работы, а не всего каталога: у решения
         файлы свои (`Project.context_ids`), и показать модели чужие значило бы
-        дать ей прочитать методичку соседней задачи первым же ходом.
+        дать ей прочитать методичку соседней задачи первым же ходом. Общие
+        файлы работы в опись входят — они принадлежат всем её задачам, — кроме
+        тех, с которых человек снял галочку у этого решения.
         """
         store = self.project.store()
-        свои = self.project.context_ids()
+        свои = self.контекст()
         return {"materials": [{"id": m.id, "name": m.name, "kind": m.kind,
                            "unit": m.unit, "count": m.count, "lang": m.lang,
                            "notes": list(m.notes)} for m in store.list()
@@ -651,7 +671,7 @@ class ToolBox:
                             f"{mid!r} — не идентификатор материала. Пути не "
                             "принимаются: идентификаторы даёт list_materials")
         store = self.project.store()
-        свои = self.project.context_ids()
+        свои = self.контекст()
         try:
             material = store.get(mid)
         except materials.MaterialsError:

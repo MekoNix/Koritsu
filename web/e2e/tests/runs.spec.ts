@@ -53,9 +53,11 @@ test('журнал запусков: пусто, отчёт и решение и
   // ── 1. новая работа: журнал пуст ──────────────────────────────────────────
   await expect(page.getByText(t('projects.runs.empty'))).toBeVisible()
 
-  // ── 2. отчёт из работы: запись и переход в модуль ─────────────────────────
+  // ── 2. отчёт из работы: запись и переход к ней ────────────────────────────
+  // Кнопка ведёт на сам заведённый отчёт, а не на экран модуля: отчётов в
+  // работе несколько, и общий адрес открыл бы документ самого первого.
   await page.getByRole('button', { name: t('projects.runs.create.reports') }).click()
-  await expect(page).toHaveURL(new RegExp(`/reports/${projectId}$`))
+  await expect(page).toHaveURL(new RegExp(`/reports/${projectId}/[0-9a-f-]{36}$`))
 
   await page.goto(`/projects/${projectId}`)
   const отчёт = имяЗапуска('reports', 1)
@@ -63,7 +65,7 @@ test('журнал запусков: пусто, отчёт и решение и
 
   // ── 2а. решение из работы: вторая запись, второй модуль ───────────────────
   await page.getByRole('button', { name: t('projects.runs.create.kadai') }).click()
-  await expect(page).toHaveURL(new RegExp(`/kadai/${projectId}$`))
+  await expect(page).toHaveURL(new RegExp(`/kadai/${projectId}/[0-9a-f-]{36}$`))
 
   await page.goto(`/projects/${projectId}`)
   const решение = имяЗапуска('kadai', 1)

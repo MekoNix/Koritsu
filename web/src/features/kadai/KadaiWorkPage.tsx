@@ -163,6 +163,9 @@ export function KadaiWorkPage() {
     const таймер = setInterval(() => {
       шагов.current += 1
       void qc.invalidateQueries({ queryKey: keys.kadai.context(projectId, runId) })
+      // Общие файлы работы гасятся тем же шагом: файл, приложенный ко всей
+      // работе, разбирается той же очередью и до её конца в списке не значится.
+      void qc.invalidateQueries({ queryKey: keys.kadai.common(projectId, runId) })
       void qc.invalidateQueries({ queryKey: keys.projects.materials(projectId) })
       void qc.invalidateQueries({ queryKey: keys.projects.pending(projectId) })
     }, 1500)
@@ -360,9 +363,10 @@ export function KadaiWorkPage() {
             onSave={(это) => saveWishes.mutate({ projectId, runId, wishes: это })}
           />
 
-          {/* Папка контекста этого решения: в промпт уезжают только её файлы
-              (плюс условие). Файл соседней задачи сбивает модель ровно так же,
-              как чужое условие, и платит за это человек. */}
+          {/* Папка контекста этого решения и общие файлы работы с галочками.
+              В промпт уезжают файлы папки, условие и те общие файлы, с которых
+              галочку не сняли: файл соседней задачи сбивает модель так же, как
+              чужое условие, а методичка работы нужна каждой её задаче. */}
           <ContextFiles
             projectId={projectId}
             runId={runId}

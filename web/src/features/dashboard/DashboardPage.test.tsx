@@ -52,7 +52,16 @@ function json(body: unknown): Response {
   })
 }
 
-function служба(модули: { id: string; title: string; routes: string }[]) {
+/**
+ * Пространство и работа подменяются вторым и третьим доводом: в личном
+ * пространстве имя работы и имя пространства сливаются, и проверять по ним, что
+ * подпись стоит именно у строки виджета, нечестно.
+ */
+function служба(
+  модули: { id: string; title: string; routes: string }[],
+  пространство = ПРОСТРАНСТВО,
+  проект: Record<string, unknown> = ПРОЕКТ,
+) {
   return vi.fn((request: Request) => {
     const url = new URL(request.url)
     switch (url.pathname) {
@@ -70,9 +79,9 @@ function служба(модули: { id: string; title: string; routes: string 
           }),
         )
       case '/api/workspaces/personal':
-        return Promise.resolve(json(ПРОСТРАНСТВО))
+        return Promise.resolve(json(пространство))
       case '/api/projects':
-        return Promise.resolve(json({ projects: [ПРОЕКТ] }))
+        return Promise.resolve(json({ projects: [проект] }))
       case '/api/modules':
         return Promise.resolve(json(модули))
       case '/api/usage':
@@ -134,6 +143,24 @@ describe('лента дашборда', () => {
     expect(within(статистика as HTMLElement).getByText('2,0 МБ')).toBeVisible()
 
     expect(await screen.findByText('Лабораторная 4 — сортировки')).toBeVisible()
+  })
+
+  it('в строке «Мои работы» видно, в каком пространстве лежит работа', async () => {
+    const кафедра = { ...ПРОСТРАНСТВО, name: 'Кафедра ИУ7', personal: false }
+    vi.stubGlobal(
+      'fetch',
+      служба(ВСЕ_МОДУЛИ, кафедра, { ...ПРОЕКТ, workspace_name: 'Кафедра ИУ7' }),
+    )
+    нарисовать()
+
+    const работы = (await screen.findByRole('heading', { name: 'Мои работы' })).closest('section')
+    expect(работы).not.toBeNull()
+    // Ждём именно строку работы: заголовок виджета стоит на экране сразу, а под
+    // ним до ответа службы висит заглушка, и без ожидания проверка читала бы её.
+    expect(
+      await within(работы as HTMLElement).findByText('Лабораторная 4 — сортировки'),
+    ).toBeVisible()
+    expect(within(работы as HTMLElement).getByText('Кафедра ИУ7')).toBeVisible()
   })
 
   it('здоровается ником, а почту показывает частично', async () => {

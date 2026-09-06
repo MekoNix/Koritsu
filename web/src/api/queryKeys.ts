@@ -137,6 +137,9 @@ export const keys = {
     /** Папка контекста решения: опись его файлов, а не всей работы. */
     context: (projectId: string, runId: string) =>
       ['projects', 'one', projectId, 'kadai-context', runId] as const,
+    /** Общие файлы работы с галочками решения: галочки у решений разные. */
+    common: (projectId: string, runId: string) =>
+      ['projects', 'one', projectId, 'kadai-common', runId] as const,
   },
   // Настройки аккаунта.
   modelKeys: ['model-keys'] as const,

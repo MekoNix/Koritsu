@@ -81,8 +81,9 @@ test('отчёт: прокрутка тегов, пять версий, обща
   const projectId = (page.url().match(/projects\/([0-9a-f-]{36})/) as RegExpMatchArray)[1] as string
 
   // ── отчёт заводится из работы и привязывается к ней ───────────────────────
+  // Кнопка уводит на сам заведённый отчёт: отчётов в работе несколько.
   await page.getByRole('button', { name: t('projects.runs.create.reports') }).click()
-  await expect(page).toHaveURL(new RegExp(`/reports/${projectId}$`))
+  await expect(page).toHaveURL(new RegExp(`/reports/${projectId}/[0-9a-f-]{36}$`))
 
   await page.goto(`/projects/${projectId}`)
   await expect(

@@ -52,60 +52,37 @@ export function useProjectReports(projectId: string | undefined): UseQueryResult
 }
 
 /**
- * Завести отчёт: запись журнала и свой документ на томе.
+ * Завести отчёт: запись журнала и документ под ней.
  *
- * `templateId` — один из приложенных к работе бланков; без него отчёт
- * начинается с пустого документа, как и работа без бланка. Имя не передаётся,
- * когда его не дали: имя по умолчанию рисует сайт из модуля и номера (`n`),
- * который считает служба.
+ * `templateId` — один из приложенных к работе бланков. Имя не передаётся, когда
+ * его не дали: имя по умолчанию рисует сайт из модуля и номера (`n`), который
+ * считает служба.
  *
- * **Первый отчёт работы заводится иначе — записью журнала.** У работы есть свой
- * документ и до всяких отчётов: она заводилась с бланком, и в ней уже могли
- * писать значения. Самая старая запись журнала владеет этим документом
- * (`packages/api/projects/reports.py`), поэтому первый отчёт делается записью и
- * наследует написанное, а бланк ему назначается тем же действием «собирать по
- * нему», которое сохраняет значения. Заводить первому отчёту отдельный
- * документ значило бы спрятать от человека всё, что он уже написал в работе.
+ * Первый отчёт работы забирает её собственный документ — тот, в котором писали
+ * значения до появления отчётов, — и остаётся на её бланке, если другого не
+ * назвали; все следующие получают свой документ, а без бланка начинают с
+ * пустого. Правило это знает служба (`packages/api/projects/reports.py`), и
+ * здесь оно не повторяется: сайт заводит любой отчёт одним и тем же запросом, а
+ * «который он по счёту» считается в базе. Считать это на сайте значило бы
+ * решать вопрос «первый ли» по списку, который в эту минуту мог быть ещё не
+ * загружен, — и заводить второй отчёт как первый.
  */
 export function useCreateProjectReport(projectId: string | undefined) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({
+    mutationFn: ({
       templateId,
       name,
-      first,
     }: {
       templateId?: string | null
       name?: string
-      /** Это первый отчёт работы? Тогда он забирает её собственный документ. */
-      first?: boolean
-    }): Promise<{ id: string }> => {
-      if (!first) {
-        return unwrap<ProjectReport>(
-          api.POST('/api/projects/{project_id}/reports', {
-            params: { path: { project_id: projectId as string } },
-            body: { template_id: templateId || null, name: name ?? '' },
-          }),
-        )
-      }
-      const запись = await unwrap<{ id: string }>(
-        api.POST('/api/projects/{project_id}/runs', {
+    }): Promise<ProjectReport> =>
+      unwrap<ProjectReport>(
+        api.POST('/api/projects/{project_id}/reports', {
           params: { path: { project_id: projectId as string } },
-          body: { module: 'reports', name: name ?? '', artifact_id: null },
+          body: { template_id: templateId || null, name: name ?? '' },
         }),
-      )
-      if (templateId) {
-        await unwrap<ReportTemplate>(
-          api.POST('/api/projects/{project_id}/templates/{template_id}/use', {
-            params: {
-              path: { project_id: projectId as string, template_id: templateId },
-              query: { report: запись.id },
-            },
-          }),
-        )
-      }
-      return запись
-    },
+      ),
     // Гасится вся работа: отчёт есть и в списке отчётов, и в журнале запусков
     // на её карточке, а два разных ключа на одно событие расходятся на первой
     // же правке.

@@ -102,7 +102,9 @@ export function ConditionStep({
 
   async function новый_условием(materialId: string, попыток = 12) {
     try {
-      await setCondition.mutateAsync({ projectId, materialId, runId })
+      // `useFileName: false` — имя решению отсюда не берётся: файл с правкой
+      // назвали мы сами, и «условие-правка» именем задачи не является.
+      await setCondition.mutateAsync({ projectId, materialId, runId, useFileName: false })
       setПравим(false)
       setЧерновик('')
       onConfirm()

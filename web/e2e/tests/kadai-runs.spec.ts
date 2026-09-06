@@ -18,8 +18,14 @@
  *    несопоставленное отбрасывается замечанием, и семь стадий доходят до конца.
  *    Поддельная модель сочиняет `required_kinds` из схемы, то есть именами, с
  *    разделами не совпадающими, — ровно тот случай.
- * 4. **Удаление одного решения не трогает второе.** Ни его ход стадий, ни его
- *    условие, ни его файлы.
+ * 4. **Общие файлы работы решение показывает модели, и галочку можно снять.**
+ *    Методичку кладут один раз на работу, а нужна она в каждой задаче; снятая
+ *    галочка живёт на томе, а не во вкладке, и потому переживает перезагрузку.
+ * 5. **Безымянное решение зовётся по файлу условия.** «Решение 3» в списке из
+ *    нескольких задач ничем не отличается от «Решения 4».
+ * 6. **Удаление одного решения не трогает второе** и спрашивает подтверждение:
+ *    вместе с решением уходят его условие, пожелания, ход стадий и список
+ *    блоков со всей историей.
  */
 import { expect, test } from '@playwright/test'
 
@@ -83,6 +89,75 @@ test('решения: два в одной работе, свои файлы, у
   })
   await expect(page.getByTestId('kadai-context-list')).not.toContainText('первая-методичка.txt')
 
+  // ── общий файл работы: виден каждому решению, галочку можно снять ─────────
+  // Файл кладётся на карточке работы, то есть ко всей работе, а не в папку
+  // решения: так лежат методичка кафедры и требования к оформлению.
+  await page.goto(`/projects/${projectId}`)
+  await page
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles({
+      name: 'устав-работы.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Оформление: поля 2 см, шрифт 14 пт.', 'utf8'),
+    })
+  await expect(
+    page
+      .getByRole('listitem')
+      .filter({ hasText: 'устав-работы.txt' })
+      .getByRole('button', { name: t('projects.materials.preview') }),
+  ).toBeVisible({ timeout: 60_000 })
+
+  await page.goto(`/kadai/${projectId}/${второе}`)
+  const общий = page.getByTestId('kadai-common-list').getByRole('checkbox')
+  await expect(общий).toBeChecked({ timeout: 60_000 })
+  // Кликом, а не `uncheck()`: галочка живёт на томе, и снимается она ответом
+  // службы, а не разметкой браузера.
+  await общий.click()
+  await expect(общий).not.toBeChecked()
+  await page.reload()
+  await expect(page.getByTestId('kadai-common-list').getByRole('checkbox')).not.toBeChecked({
+    timeout: 60_000,
+  })
+
+  // Снятое хранится у того, кто снимал: у соседнего решения галочка на месте.
+  await page.goto(`/kadai/${projectId}/${первое}`)
+  await expect(page.getByTestId('kadai-common-list').getByRole('checkbox')).toBeChecked({
+    timeout: 60_000,
+  })
+
+  // ── решение без имени зовётся по файлу условия ────────────────────────────
+  await page.goto(`/kadai/${projectId}`)
+  await page
+    .getByRole('button', { name: t('kadai.home.create') })
+    .first()
+    .click()
+  await expect(page).toHaveURL(new RegExp(`/kadai/${projectId}/new$`))
+  await page.getByLabel(t('kadai.new.fileLabel')).setInputFiles({
+    name: 'лаба-по-массивам.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('Задача 3. Найти минимум массива.', 'utf8'),
+  })
+  await page.getByRole('button', { name: t('kadai.new.submit'), exact: true }).click()
+  await expect(page).toHaveURL(/\/kadai\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/)
+  const третье = решениеИзАдреса(page)
+
+  // Условие называется после разбора, а разбор уехал в очередь: форма отпускает
+  // человека сразу и досылает «назвать условием» фоном. Поэтому дальше — как
+  // ходит человек: сначала дожидаемся распознанного условия на экране решения,
+  // потом уходим в список ссылкой сайдбара. Перезагрузка страницы оборвала бы
+  // досылку вместе со вкладкой, и имя пришло бы только с первым прогоном.
+  await expect(page.getByText(t('kadai.condition.title'))).toBeVisible({ timeout: 60_000 })
+
+  await page.getByRole('link', { name: t('kadai.work.toList') }).click()
+  await expect(
+    page.getByTestId('kadai-runs').getByRole('listitem').filter({ hasText: 'лаба-по-массивам' }),
+  ).toHaveCount(1, { timeout: 30_000 })
+  // Оно тут же и сносится: дальше проверяется удаление двух других, и лишняя
+  // карточка сделала бы счёт непонятным.
+  await снести(page, 'лаба-по-массивам')
+  expect(третье).not.toBe(первое)
+
   // ── прогон первого решения доходит до конца ───────────────────────────────
   // Поддельная модель объявляет обязательными виды разделов, имена которых с её
   // же разделами не совпадают. Раньше строгая сверка роняла на этом прогон;
@@ -105,10 +180,7 @@ test('решения: два в одной работе, свои файлы, у
   await page.goto(`/kadai/${projectId}`)
   const карточки = page.getByTestId('kadai-runs').getByRole('listitem')
   await expect(карточки).toHaveCount(2)
-  await карточки
-    .filter({ hasText: 'Вторая задача' })
-    .getByRole('button', { name: t('common.action.delete') })
-    .click()
+  await снести(page, 'Вторая задача')
   await expect(карточки).toHaveCount(1)
   await expect(карточки.first()).toContainText('Первая задача')
 
@@ -144,6 +216,26 @@ async function завести(
   await expect(page.getByText(файл)).toBeVisible()
   await page.getByRole('button', { name: t('kadai.new.submit'), exact: true }).click()
   await expect(page).toHaveURL(/\/kadai\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/)
+}
+
+/**
+ * Снести решение из списка — через окно подтверждения, как это делает человек.
+ *
+ * Окно спрашивает не для вежливости: вместе с решением уходят его условие,
+ * пожелания, ход стадий и список блоков со всей историей версий, а карточки в
+ * списке похожи одна на другую.
+ */
+async function снести(page: import('@playwright/test').Page, имя: string): Promise<void> {
+  await page
+    .getByTestId('kadai-runs')
+    .getByRole('listitem')
+    .filter({ hasText: имя })
+    .getByRole('button', { name: t('common.action.delete') })
+    .click()
+  const окно = page.getByRole('dialog')
+  await expect(окно).toContainText(имя)
+  await окно.getByRole('button', { name: t('kadai.home.delete'), exact: true }).click()
+  await expect(окно).toHaveCount(0)
 }
 
 /** Идентификатор решения из адреса экрана решения. */

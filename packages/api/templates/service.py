@@ -333,22 +333,28 @@ def приложенный(s: Session, project_id: str, template_id: str, *,
     return по_ид(s, template_id, where=where)
 
 
-def выбрать(s: Session, settings: Settings, проект,
+def выбрать(s: Session, settings: Settings, project_id: str, каталог: str,
             template_id: str, *, report: str = "") -> ReportTemplate:
-    """Собирать работу по этому приложенному бланку. → сам шаблон.
+    """Собирать этот документ работы по этому приложенному бланку. → сам шаблон.
 
     Решения человека о тегах переносит `Project.update_template` — он строит
     новый манифест поверх старого. Беда оттуда наружу идёт как `bad_template`
     без подробностей: в её тексте бывает путь на томе.
+
+    Работа названа парой «идентификатор и каталог», а не строкой проекта: зовут
+    отсюда двое — маршрут «собирать по нему» и заведение первого отчёта работы,
+    который забирает её корневой документ, — и у второго на руках строки с
+    полем `dir` нет вовсе. Общая проверка при этом остаётся одна: второй такой
+    же `update_template` рядом разошёлся бы с первым на первом же уточнении.
     """
-    шаблон = приложенный(s, проект.id, template_id)
+    шаблон = приложенный(s, project_id, template_id)
     данные = байты(settings, шаблон)
     try:
-        orchestrator.Project(проект.dir, report=report).update_template(данные)
+        orchestrator.Project(каталог, report=report).update_template(данные)
     except ApiError:
         raise
     except Exception:                                        # noqa: BLE001
-        беды.exception("работа %s: бланк %s не встал", проект.id, шаблон.id)
+        беды.exception("работа %s: бланк %s не встал", project_id, шаблон.id)
         raise ApiError(BAD_TEMPLATE, "Template cannot be used for this work",
                        400, where="path.template_id") from None
     return шаблон

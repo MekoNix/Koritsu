@@ -17,6 +17,7 @@ import { Button, EmptyState, ErrorState, Icon, Skeleton } from '@/ui'
 import { useCurrentWorkspace } from '@/api/hooks'
 import { useProjects } from '@/features/projects/data'
 import { formatWhen } from '@/features/projects/format'
+import { WorkspaceTag } from '@/features/workspace/WorkspaceCaption'
 
 import { Widget } from './Widget'
 
@@ -77,8 +78,14 @@ export function MyWorksWidget() {
                 className="flex min-w-0 items-center gap-s3 px-s4 py-s3 hover:bg-surface-2"
               >
                 <Icon name="folder" className="shrink-0 text-muted" />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink-strong">
-                  {project.name}
+                {/* Пространство подписью под именем: виджет показывает работы
+                    текущего пространства, и на дашборде, где рядом лежат плитки
+                    про весь аккаунт, это стоит сказать у самой работы. */}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-medium text-ink-strong">
+                    {project.name}
+                  </span>
+                  <WorkspaceTag project={project} />
                 </span>
                 <span className="shrink-0 text-xs text-muted">
                   {formatWhen(project.updated_at)}

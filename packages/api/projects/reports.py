@@ -18,12 +18,20 @@ reports — отчёты работы: `/api/projects/{id}/reports`.
 появления второго документа, и читают их из корня работы, чтобы не потерять
 написанное.
 
-**Список чинит старые записи.** Каталог документа заводится и здесь, при чтении
-списка: журнал мог получить вторую запись об отчёте раньше, чем появились
-каталоги, и тогда два отчёта смотрели бы в один и тот же набор значений. Правило
-простое и не зависит от порядка вызовов: корневой документ принадлежит самой
-старой записи, каждая следующая получает свой каталог. Первый отчёт при этом
-никуда не переезжает — его значения остаются там, где были записаны.
+**Корневой документ принадлежит самой старой записи об отчёте.** Работа
+существует до всяких отчётов: её заводят с бланком, в ней пишут значения и
+собирают PDF. Поэтому первый отчёт работы забирает этот документ, а не заводит
+пустой каталог рядом, — иначе написанное разом пропало бы с экрана, оставшись
+целым на томе. Названный при этом бланк назначается корню тем же действием, что
+и «собирать по этому бланку», то есть с сохранением значений тегов. Все
+следующие отчёты получают свой каталог.
+
+**Список чинит старые записи** по тому же правилу. Каталог документа заводится и
+здесь, при чтении списка: журнал мог получить вторую запись об отчёте раньше,
+чем появились каталоги, и тогда два отчёта смотрели бы в один и тот же набор
+значений. Порядка вызовов правило не требует: корневой документ принадлежит
+самой старой записи, каждая следующая получает свой каталог. Первый отчёт при
+этом никуда не переезжает — его значения остаются там, где были записаны.
 
 **Удаление сносит документ, а не бланк.** Уходят значения, их версии и каталог
 сборки этого отчёта; приложенный к работе бланк остаётся на полке, а артефакты —
@@ -72,7 +80,9 @@ class ReportIn(BaseModel):
         default=None,
         description=("One of the templates attached to this project "
                      "(GET /api/projects/{id}/templates). Without it the "
-                     "report is started from a blank document."))
+                     "first report of a project keeps the template the work "
+                     "already has and any later report is started from a "
+                     "blank document."))
     name: str = Field(
         default="", max_length=NAME_MAX,
         description=("What to call this report. Empty is fine: the interface "
@@ -219,20 +229,46 @@ def список(project_id: str, request: Request, s: SessionDep,
              response_model=ReportOut,
              summary="Start a new report in this project",
              description=(
-                 "Starts a report: a journal entry and its own document on the "
-                 "volume, with its own manifest and its own tag values. "
-                 "`template_id` names one of the templates attached to the "
-                 "project; without it the report starts from a blank document. "
-                 "Editor role. 400 bad_template, 400 invalid_id, "
-                 "403 forbidden, 404 not_found, 409 in_trash."))
+                 "Starts a report: a journal entry and a document with its own "
+                 "manifest and its own tag values. The very first report of a "
+                 "project takes over the document the work already has, so "
+                 "everything written in it before reports existed stays "
+                 "visible; every report after that gets its own document on "
+                 "the volume. `template_id` names one of the templates "
+                 "attached to the project: for the first report it becomes the "
+                 "template of the work, the same way "
+                 "POST /api/projects/{id}/templates/{tid}/use does, and tag "
+                 "values are kept; without it the first report keeps whatever "
+                 "template the work already had and a later report starts from "
+                 "a blank document. Editor role. 400 bad_template, "
+                 "400 invalid_id, 403 forbidden, 404 not_found, 409 in_trash."))
 def завести_отчёт(project_id: str, тело: ReportIn, request: Request,
                   s: SessionDep, user: CurrentUser) -> dict:
-    """Новый отчёт: запись журнала и каталог документа под её идентификатором.
+    """Новый отчёт: запись журнала и документ под ней.
 
-    Каталог заводится **всегда**, даже когда бланк не назван: документ без
-    каталога — это документ в корне работы, то есть общий с первым отчётом, и
-    молча разделить два отчёта на один набор значений хуже, чем завести пустой
-    документ.
+    **Первый отчёт работы забирает её корневой документ, а не заводит пустой.**
+    Работа существует до всяких отчётов: её заводили с бланком, в ней уже писали
+    значения, собирали PDF. Отдельный пустой каталог первому же отчёту означал
+    бы, что всё написанное разом пропало с экрана — при том, что лежит оно на
+    томе целым. Правило то же самое, по которому список чинит старые работы
+    (`развести`): корневой документ принадлежит самой старой записи об отчёте.
+    Отсюда и условие — записей об отчётах ещё нет, значит корень свободен.
+
+    Бланк при этом назначается корню тем же действием, что и «собирать по этому
+    бланку» (`templates.service.выбрать` → `Project.update_template`): новый
+    манифест строится поверх старого, и значения тегов остаются на месте. Завести
+    корню документ заново значило бы стереть их ради смены бланка.
+
+    Все следующие отчёты получают свой каталог **всегда**, даже когда бланк не
+    назван: документ без каталога — это документ в корне работы, то есть общий с
+    первым отчётом, и молча свести два отчёта в один набор значений хуже, чем
+    завести пустой документ.
+
+    Удаление первого отчёта корневой документ не сносит (`drop_report` не
+    находит каталога и ничего не делает), поэтому следующий заведённый отчёт
+    снова забирает его вместе с написанным. Это то же правило, а не исключение
+    из него: у работы один собственный документ, и принадлежит он самой старой
+    записи об отчёте — какой бы она ни была.
     """
     from ..templates import service as шаблоны                # noqa: PLC0415
 
@@ -240,21 +276,36 @@ def завести_отчёт(project_id: str, тело: ReportIn, request: Requ
     p = доступный(s, user, project_id, EDITOR)
     проект = открыть(p, settings)
 
+    бланк_ид = (тело.template_id or "").strip()
+    корень_свободен = not записи(s, p.id)
+
     данные: bytes | None = None
-    if (тело.template_id or "").strip():
+    if бланк_ид:
         # Только из приложенных: список приложенных и есть то, из чего
-        # выбирают, — тот же довод, что у «собирать по этому бланку».
-        шаблон = шаблоны.приложенный(s, p.id, тело.template_id.strip())
-        данные = шаблоны.байты(settings, шаблон)
+        # выбирают, — тот же довод, что у «собирать по этому бланку». Проверка
+        # стоит до записи журнала: чужой бланк не должен оставлять за собой
+        # строку о несостоявшемся отчёте.
+        шаблон = шаблоны.приложенный(s, p.id, бланк_ид)
+        if not корень_свободен:
+            данные = шаблоны.байты(settings, шаблон)
 
     запись = завести(s, p, user, module=МОДУЛЬ, name=тело.name)
-    try:
-        проект.create_report(запись.id, template=данные)
-    except orchestrator.OrchestratorError:
-        # В тексте беды оркестратора бывает путь на томе — наружу он не уезжает.
-        беды.exception("работа %s: отчёт по бланку не завёлся", p.id)
-        raise ApiError(BAD_TEMPLATE, "Template cannot be used for this work",
-                       400, where="body.template_id") from None
+    if корень_свободен:
+        # Каталога не заводим вовсе: документ этого отчёта — корень работы.
+        # Бланк, если он назван, встаёт корню сменой бланка, а не новым
+        # документом; не назван — корень остаётся при своём.
+        if бланк_ид:
+            шаблоны.выбрать(s, settings, p.id, проект.path, бланк_ид)
+    else:
+        try:
+            проект.create_report(запись.id, template=данные)
+        except orchestrator.OrchestratorError:
+            # В тексте беды оркестратора бывает путь на томе — наружу он не
+            # уезжает.
+            беды.exception("работа %s: отчёт по бланку не завёлся", p.id)
+            raise ApiError(BAD_TEMPLATE,
+                           "Template cannot be used for this work", 400,
+                           where="body.template_id") from None
     бланк, тегов = бланк_отчёта(s, проект, p.id, запись.id)
     return карточка(запись, бланк=бланк, тегов=тегов)
 

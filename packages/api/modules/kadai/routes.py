@@ -7,6 +7,8 @@ routes — решения: `/api/kadai` и `/api/projects/{id}/kadai`.
     DELETE /api/projects/{id}/kadai/runs/{run_id} 204 снести решение    (editor)
     GET    /api/projects/{id}/kadai?run=         200  ход решения: стадии, файлы
     PUT    /api/projects/{id}/kadai/condition    200  назвать материал условием (editor)
+    GET    /api/projects/{id}/kadai/context      200  общие файлы работы у решения
+    PUT    /api/projects/{id}/kadai/context      200  какие общие файлы снять (editor)
     GET    /api/projects/{id}/kadai/wishes       200  пожелания к решению
     PUT    /api/projects/{id}/kadai/wishes       200  записать пожелания (editor)
     POST   /api/projects/{id}/kadai/restart      200  начать стадию заново (editor)
@@ -59,6 +61,23 @@ routes — решения: `/api/kadai` и `/api/projects/{id}/kadai`.
 задания может не быть вовсе. Читается это без модели и без стадий
 (`orchestrator.kadai.status`), поэтому опрашивать снимок дёшево.
 
+**Имя решения по умолчанию — имя файла условия.** Раньше безымянное решение
+рисовалось как «Решение N», и в списке из шести задач одну от другой было не
+отличить. Файл условия человек выбирает сам, и «лаба3.docx» говорит ровно то,
+что он и искал бы глазами; расширение отбрасывается. Ставится имя там же, где
+называют условие, и только если человек имени не давал: названное руками не
+перезаписывается никогда. Условие, набранное в форме текстом, и правка
+распознанного имени не дают — файла с таким именем человек не приносил
+(`use_file_name` в теле).
+
+**Общие файлы работы решение по умолчанию показывает модели.** Методичка
+кафедры и требования к оформлению кладутся один раз на работу, а нужны в каждой
+задаче, и заставлять прикладывать их к каждому решению значило бы хранить один
+файл столько раз, сколько в работе задач. Снять их можно поштучно
+(`PUT …/kadai/context`), и хранится при этом **снятое**, а не выбранное: файл,
+который положат в работу завтра, доедет до модели сам, без подтверждения
+выбора после каждой загрузки.
+
 **Условие — отдельный маршрут, а не флаг загрузки.** Человек подтверждает
 распознанное **после** приёма файла: до подтверждения условие — обычный
 материал. Поэтому «назвать условием» это
@@ -71,6 +90,8 @@ routes — решения: `/api/kadai` и `/api/projects/{id}/kadai`.
 """
 from __future__ import annotations
 
+import os.path
+
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -80,10 +101,10 @@ import orchestrator
 from orchestrator import kadai as сценарий
 
 from ...db import SessionDep
-from ...errors import ApiError, NOT_FOUND
+from ...errors import ApiError, INVALID_ID, NOT_FOUND
 from ...ids import check_id
 from ...materials.deps import CurrentUser, РедакторПроекта, ЧитательПроекта
-from ...materials.routes import проверить_ид
+from ...materials.routes import MATERIAL_ID_RE, проверить_ид
 from ...materials.service import открыть
 from ...projects.models import NAME_MAX, ProjectRun
 from ...projects.routes import РЕШЕНИЕ
@@ -107,6 +128,40 @@ class ConditionIn(BaseModel):
 
     material_id: str = Field(
         description="Id of an already parsed material of this project")
+    use_file_name: bool = Field(
+        default=True,
+        description=("Name the solution after this file when the person has "
+                     "not named it. False when the file was not brought by the "
+                     "person: an assignment typed into the form, or a "
+                     "correction of what was read from a scan."))
+
+
+class ContextFileOut(BaseModel):
+    """Общий файл работы и то, показывают ли его этому решению."""
+
+    id: str
+    name: str
+    kind: str = Field(default="", description="What the parser made of it")
+    selected: bool = Field(
+        description="Whether this file reaches the model of this solution")
+
+
+class ContextOut(BaseModel):
+    """Общие файлы работы глазами одного решения."""
+
+    common: list[ContextFileOut] = Field(
+        default_factory=list,
+        description="Files attached to the project as a whole, in upload order")
+
+
+class ContextIn(BaseModel):
+    """Какие общие файлы работы с этого решения сняты. Список целиком."""
+
+    excluded: list[str] = Field(
+        default_factory=list,
+        description=("Ids of the project-wide files this solution must not "
+                     "show the model. Everything else, including files "
+                     "uploaded later, reaches it."))
 
 
 class WishesIn(BaseModel):
@@ -238,6 +293,43 @@ def _имя_условия(вид) -> str:
         return ""
 
 
+def назвать_по_условию(s, project_id: str, run_id: str, вид) -> None:
+    """Дать решению имя файла условия, если человек имени не давал.
+
+    Имя по умолчанию у решения было «Решение N» — номер, по которому в списке
+    из шести задач не отличить одну от другой. Файл условия человек выбрал сам,
+    и его имя («лаба3.docx») говорит ровно то, что он и искал бы глазами.
+
+    Расширение отбрасывается: `.docx` в имени задачи не значит ничего, а
+    занимает место в строке, которую и так обрезают.
+
+    Названное руками не перезаписывается никогда: непустое `name` — это выбор
+    человека, а условие бывает названо и переназвано после него.
+    """
+    запись = найти_решение(s, project_id, run_id)
+    if запись.name:
+        return
+    основа = os.path.splitext(_имя_условия(вид))[0].strip()
+    if основа:
+        запись.name = основа[:NAME_MAX]
+        s.flush()
+
+
+def общие_файлы(вид) -> dict:
+    """Общие файлы работы и галочки этого решения — тело `…/kadai/context`.
+
+    Общий — это файл, не приписанный ни одному решению: методичка кафедры и
+    требования к оформлению кладутся один раз на всю работу. Порядок — тот же,
+    что у описи материалов (порядок загрузки), чтобы список на экране не
+    прыгал между двумя ответами.
+    """
+    снятые = set(вид.excluded_common())
+    общие = set(вид.common_materials())
+    return {"common": [{"id": m.id, "name": m.name, "kind": m.kind,
+                        "selected": m.id not in снятые}
+                       for m in вид.store().list() if m.id in общие]}
+
+
 def решение(проект, s, run: str, *, where: str = "query.run"):
     """Проект глазами названного решения. Пусто — работа целиком.
 
@@ -367,8 +459,10 @@ def ход(проект: ЧитательПроекта, s: SessionDep, run: str
                 "condition of the task. Until one is named, a `kadai_run` job "
                 "refuses: there is nothing to solve. Naming the same material "
                 "twice is the same state, which is why this is a PUT. Every "
-                "solution has an assignment of its own: `run` says which. "
-                "Editor role. 400 invalid_id, 403 forbidden, 404 not_found."))
+                "solution has an assignment of its own: `run` says which. A "
+                "solution the person has not named takes the name of this "
+                "file, without its extension. Editor role. 400 invalid_id, "
+                "403 forbidden, 404 not_found."))
 def назначить_условие(тело: ConditionIn, проект: РедакторПроекта,
                       s: SessionDep, run: str = РЕШЕНИЕ) -> dict:
     """Назвать материал условием задачи. Материал обязан быть разобран."""
@@ -382,7 +476,58 @@ def назначить_условие(тело: ConditionIn, проект: Ре�
         # значило бы рассказывать, что кто-то грузит файл прямо сейчас.
         raise ApiError(NOT_FOUND, "Material not found", 404,
                        where="body.material_id") from None
+    если = str(run or "").strip()
+    if если and тело.use_file_name:
+        назвать_по_условию(s, проект.id, если, проект_на_томе)
     return {"condition": проект_на_томе.condition()}
+
+
+@router.get("/projects/{project_id}/kadai/context",
+            operation_id="kadai_context", response_model=ContextOut,
+            summary="Project-wide files this solution shows the model",
+            description=(
+                "The files attached to the project as a whole (the ones that "
+                "belong to no single solution) and whether this solution "
+                "shows them to the model. All of them are shown by default, "
+                "including files uploaded later: a course handbook is attached "
+                "to the project once and is wanted in every task. Files of the "
+                "solution's own context folder are not listed here; they are "
+                "in `GET ./materials?run=`. `run` is required: the project as a "
+                "whole sees all of its files. Viewer role. 400 invalid_id, "
+                "404 not_found."))
+def контекст(проект: ЧитательПроекта, s: SessionDep,
+             run: str = РЕШЕНИЕ) -> dict:
+    """Общие файлы работы с галочками этого решения."""
+    найти_решение(s, проект.id, run, where="query.run")
+    return общие_файлы(открыть(проект, solution=run.strip()))
+
+
+@router.put("/projects/{project_id}/kadai/context",
+            operation_id="kadai_set_context", response_model=ContextOut,
+            summary="Choose which project-wide files this solution uses",
+            description=(
+                "Replaces the list of project-wide files this solution hides "
+                "from the model. What is stored is the excluded list, not the "
+                "chosen one, on purpose: a file uploaded to the project "
+                "tomorrow reaches the solution by itself, and the choice does "
+                "not have to be confirmed after every upload. `run` is "
+                "required. Editor role. 400 invalid_id, 403 forbidden, "
+                "404 not_found."))
+def выбрать_контекст(тело: ContextIn, проект: РедакторПроекта, s: SessionDep,
+                     run: str = РЕШЕНИЕ) -> dict:
+    """Записать, какие общие файлы работы с решения сняты."""
+    найти_решение(s, проект.id, run, where="query.run")
+    for mid in тело.excluded:
+        # Форма проверяется до тома: из идентификатора складывается путь внутри
+        # хранилища, и мусор обязан умереть отказом клиенту, а не пятисоткой из
+        # недр. Своей проверкой, а не `проверить_ид`: та говорит про путь
+        # запроса, а идентификаторы здесь приехали телом.
+        if not MATERIAL_ID_RE.match(str(mid or "")):
+            raise ApiError(INVALID_ID, "Material id must be 16 hex characters",
+                           400, where="body.excluded")
+    вид = открыть(проект, solution=run.strip())
+    вид.set_excluded_common(тело.excluded)
+    return общие_файлы(вид)
 
 
 @router.get("/projects/{project_id}/kadai/wishes",
@@ -445,5 +590,7 @@ def начать_заново(тело: RestartIn, проект: Редакто�
 
 
 __all__ = ["router", "ConditionIn", "WishesIn", "RestartIn", "SolutionIn",
-           "SolutionOut", "KADAI_FAILED", "МОДУЛЬ", "записи_решений",
-           "найти_решение", "развести_решения", "решение", "карточка_решения"]
+           "SolutionOut", "ContextIn", "ContextOut", "ContextFileOut",
+           "KADAI_FAILED", "МОДУЛЬ", "записи_решений", "найти_решение",
+           "развести_решения", "решение", "карточка_решения",
+           "назвать_по_условию", "общие_файлы"]

@@ -19,6 +19,19 @@ from .conftest import markdown_value
 ВТОРОЕ = "22222222-2222-4222-8222-222222222222"
 
 
+def файлы_работы(project) -> set:
+    """Общие файлы работы на этот момент — их видит модель любого её решения.
+
+    Фикстура кладёт в работу материал ещё до всяких решений, и он такой же
+    общий файл, как методичка кафедры: ни одному решению он не приписан, значит
+    доезжает до каждого. Ожидания ниже складываются с этим набором, а не
+    перечисляют содержимое фикстуры: иначе проверка ломалась бы от лишнего
+    файла в ней, ничего не говоря про само правило.
+    """
+    return set(project.common_materials())
+
+
+
 def test_у_решения_свой_ход_стадий(project):
     """Та самая беда: вторая задача в работе затирала первую."""
     первое = project.create_solution(ПЕРВОЕ)
@@ -68,6 +81,7 @@ def test_папка_контекста_решения(project):
     `context_ids` — то, что уезжает в промпт: чужая методичка сбивает модель
     ровно так же, как чужое условие, и платит за это человек.
     """
+    общие = файлы_работы(project)
     свой = project.store().add(b"metodichka odin\n", name="m1.txt", do_ocr=False)
     чужой = project.store().add(b"metodichka dva\n", name="m2.txt", do_ocr=False)
     первое = project.create_solution(ПЕРВОЕ)
@@ -78,7 +92,8 @@ def test_папка_контекста_решения(project):
 
     assert первое.solution_materials() == [свой.id]
     assert второе.solution_materials() == [чужой.id]
-    assert первое.context_ids() == {свой.id}
+    assert первое.context_ids() == {свой.id} | общие
+    assert чужой.id not in первое.context_ids()
     # Работа целиком по-прежнему видит всё: отчёты и схемы читают опись, как
     # раньше, и `None` здесь означает «отбора нет».
     assert project.context_ids() is None
@@ -86,10 +101,11 @@ def test_папка_контекста_решения(project):
 
 def test_условие_всегда_в_папке_контекста(project):
     """Без условия решать нечего, а приложено оно бывает и общим файлом работы."""
+    общие = файлы_работы(project)
     условие = project.store().add(b"Zadacha.\n", name="z.txt", do_ocr=False)
     решение = project.create_solution(ПЕРВОЕ)
     решение.set_condition(условие.id)
-    assert решение.context_ids() == {условие.id}
+    assert решение.context_ids() == {условие.id} | общие
 
 
 def test_общие_файлы_работы_не_приписаны_никому(project):
@@ -99,6 +115,61 @@ def test_общие_файлы_работы_не_приписаны_никому
     решение.bind_material(
         project.store().add(b"svoj\n", name="s.txt", do_ocr=False).id)
     assert общий.id in project.common_materials()
+
+
+def test_общие_файлы_работы_едут_в_промпт_каждого_решения(project):
+    """Методичку кафедры кладут один раз на работу, а нужна она в каждой задаче.
+
+    Приложить её к каждому решению отдельно значило бы хранить один файл
+    столько раз, сколько в работе задач, и платить за это местом в квоте.
+    """
+    общие = файлы_работы(project)
+    общий = project.store().add(b"ustav kafedry\n", name="u.txt", do_ocr=False)
+    свой = project.store().add(b"metodichka\n", name="m1.txt", do_ocr=False)
+    первое = project.create_solution(ПЕРВОЕ)
+    второе = project.create_solution(ВТОРОЕ)
+    первое.bind_material(свой.id)
+
+    assert первое.context_ids() == {свой.id, общий.id} | общие
+    assert второе.context_ids() == {общий.id} | общие
+
+
+def test_снятый_общий_файл_не_едет_только_у_своего_решения(project):
+    """Снятое хранится у решения: у соседнего тот же файл остаётся на месте."""
+    общие = файлы_работы(project)
+    общий = project.store().add(b"chuzhaya tema\n", name="t.txt", do_ocr=False)
+    первое = project.create_solution(ПЕРВОЕ)
+    второе = project.create_solution(ВТОРОЕ)
+
+    assert первое.set_excluded_common([общий.id]) == [общий.id]
+    assert первое.context_ids() == общие
+    assert второе.context_ids() == {общий.id} | общие
+    # Список заменяется целиком: вернуть галочку человек должен тем же полем,
+    # которым он её снял.
+    assert первое.set_excluded_common([]) == []
+    assert первое.context_ids() == {общий.id} | общие
+
+
+def test_общий_файл_положенный_позже_едет_сам(project):
+    """Хранится снятое, а не выбранное: завтрашний файл доезжает без спроса.
+
+    Иначе выбор «показывать общие файлы» пришлось бы подтверждать после каждой
+    загрузки, а файл, про который забыли, молча не попал бы в промпт.
+    """
+    общие = файлы_работы(project)
+    старый = project.store().add(b"staryj\n", name="s.txt", do_ocr=False)
+    решение = project.create_solution(ПЕРВОЕ)
+    решение.set_excluded_common([старый.id])
+
+    новый = project.store().add(b"novyj\n", name="n.txt", do_ocr=False)
+    assert решение.context_ids() == {новый.id} | общие
+    assert решение.excluded_common() == [старый.id]
+
+
+def test_общие_файлы_снимаются_у_решения_а_не_у_работы(project):
+    """У работы целиком снимать нечего: общие файлы — это её собственные файлы."""
+    with pytest.raises(OrchestratorError):
+        project.set_excluded_common([])
 
 
 def test_снос_решения_не_трогает_материалы(project):

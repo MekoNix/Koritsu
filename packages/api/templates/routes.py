@@ -342,7 +342,7 @@ def выбрать_шаблон(template_id: str, проект: Редактор
     собрать работу по бланку, которого в ней никто не видел.
     """
     settings = request.app.state.settings
-    шаблон = service.выбрать(s, settings, проект, template_id,
+    шаблон = service.выбрать(s, settings, проект.id, проект.dir, template_id,
                              report=отчёт(report))
     return service.карточка(шаблон, активный=True)
 

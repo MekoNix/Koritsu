@@ -14,6 +14,11 @@
  * **Прогон отсюда не запускается.** «Создать решение» ведёт на страницу нового
  * запуска (условие, пожелания, файлы контекста), а платный прогон начинается на
  * экране решения — после того, как человек подтвердит распознанное условие.
+ *
+ * **Удаление спрашивает подтверждение и называет решение по имени.** Вместе с
+ * решением уходят его условие, пожелания, ход стадий и список блоков со всей
+ * историей версий, а карточки решений в списке похожи одна на другую: цена
+ * промаха мимо соседней карточки — прогон, за который уже заплачено.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -21,10 +26,20 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { errorText } from '@/api'
 import { useCurrentWorkspace } from '@/api/hooks'
 import { useT } from '@/i18n'
-import { Button, EmptyState, ErrorState, Field, Icon, Input, Select, SkeletonLines } from '@/ui'
+import {
+  Button,
+  Dialog,
+  EmptyState,
+  ErrorState,
+  Field,
+  Icon,
+  Input,
+  Select,
+  SkeletonLines,
+} from '@/ui'
 import { useCreateProject, useProjects } from '@/features/projects/data'
 
-import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
+import { WorkspaceCaption, useProjectWorkspaceName } from '@/features/workspace/WorkspaceCaption'
 
 import { useDeleteKadaiRun, useKadaiRuns } from './data'
 import type { KadaiRunCard } from './types'
@@ -44,6 +59,9 @@ export function KadaiHomePage() {
   // послушаться перехода. Пусто в обоих — первая работа пространства: список из
   // одной работы иначе требовал бы выбрать её вручную ни за чем.
   const работы = useMemo(() => projects.data ?? [], [projects.data])
+  // Пространство названо у каждой строки выбора, а не только подписью над ним:
+  // строка `option` компонента не примет, поэтому имя приписывается к тексту.
+  const пространство = useProjectWorkspaceName()
   const текущая = изАдреса || выбран || работы[0]?.id || ''
   useEffect(() => {
     if (изАдреса) setВыбран(изАдреса)
@@ -118,7 +136,7 @@ export function KadaiHomePage() {
           >
             {работы.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name}
+                {[p.name, пространство(p)].filter(Boolean).join(' · ')}
               </option>
             ))}
           </Select>
@@ -140,6 +158,12 @@ function SolutionList({ projectId }: { projectId: string }) {
   const t = useT()
   const runs = useKadaiRuns(projectId)
   const удалить = useDeleteKadaiRun()
+  const [сносим, setСносим] = useState<KadaiRunCard | null>(null)
+
+  function снести() {
+    if (!сносим) return
+    удалить.mutate({ projectId, runId: сносим.id }, { onSuccess: () => setСносим(null) })
+  }
 
   if (runs.isPending) return <SkeletonLines count={4} />
   if (runs.isError) return <ErrorState error={runs.error} onRetry={() => runs.refetch()} />
@@ -184,8 +208,8 @@ function SolutionList({ projectId }: { projectId: string }) {
                   variant="ghost"
                   size="sm"
                   className="ml-auto"
-                  disabled={удалить.isPending}
-                  onClick={() => удалить.mutate({ projectId, runId: решение.id })}
+                  aria-label={t('kadai.home.deleteAction', { name: имя(решение, t) })}
+                  onClick={() => setСносим(решение)}
                 >
                   {t('common.action.delete')}
                 </Button>
@@ -195,6 +219,26 @@ function SolutionList({ projectId }: { projectId: string }) {
         ))}
       </ul>
       {удалить.isError && <p className="text-sm text-err">{errorText(удалить.error)}</p>}
+
+      {/* Подтверждение своим окном, а не `confirm()` браузера: окно называет
+          решение по имени и перечисляет, что именно уходит вместе с ним. */}
+      <Dialog
+        open={!!сносим}
+        onOpenChange={(open) => !open && setСносим(null)}
+        title={t('kadai.home.deleteTitle', { name: сносим ? имя(сносим, t) : '' })}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setСносим(null)}>
+              {t('common.action.cancel')}
+            </Button>
+            <Button variant="danger" loading={удалить.isPending} onClick={снести}>
+              {t('kadai.home.delete')}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted">{t('kadai.home.deleteHint')}</p>
+      </Dialog>
     </>
   )
 }
@@ -261,7 +305,12 @@ function NewWork({
   )
 }
 
-/** Имя решения: своё, если дали, иначе «Решение N» — номер считает служба. */
+/**
+ * Имя решения: своё, если дали или взяли у файла условия, иначе «Решение N».
+ *
+ * «Решение N» остаётся для решения, которому ещё не назвали условия: номер
+ * считает служба, и это единственное, чем такое решение отличается от соседа.
+ */
 function имя(
   решение: KadaiRunCard,
   t: (key: string, vars?: Record<string, string | number>) => string,

@@ -1,7 +1,7 @@
 /**
  * Отчётов в работе несколько: свой бланк, свои значения, своя первая страница.
  *
- * Пять обещаний, и каждое ломается молча.
+ * Семь обещаний, и каждое ломается молча.
  *
  * 1. **Два отчёта в одной работе не мешают друг другу.** У каждого свой бланк,
  *    значит свои теги, и своё значение под общим ключом. До этого набор
@@ -13,6 +13,11 @@
  *    — под раскрытием: конструкций бывает десяток, а колонка тегов одна.
  * 5. **Тег назван описанием, а не ключом.** Сверху то, что после двоеточия в
  *    `{{ключ:описание}}`, снизу ключ без фигурных скобок.
+ * 6. **Первый отчёт наследует написанное в работе.** Работа живёт до всяких
+ *    отчётов: в ней уже заполняли теги. Кнопка «Создать отчёт» обязана открыть
+ *    тот же документ, а не пустой, — иначе написанное пропадает с экрана.
+ * 7. **Отчёт переименовывается прямо на карточке**, и новое имя видно и в
+ *    заголовке его экрана, и в журнале работы: имя одно на все три места.
  *
  * Модель здесь не зовётся вовсе: проверяется раскладка документов по отчётам, а
  * не ответ модели. Сборка зовётся один раз и на маленьком бланке — она нужна
@@ -39,6 +44,10 @@ const ТЕГ_ДВА = 'аннотация'
 
 const ЗНАЧЕНИЕ_ОДИН = 'Значение первого отчёта.'
 const ЗНАЧЕНИЕ_ДВА = 'Значение второго отчёта.'
+
+/** Имена первого отчёта: данное при создании и данное переименованием. */
+const ИМЯ_ОДИН = 'Глава 1'
+const ИМЯ_ОДИН_НОВОЕ = 'Введение'
 
 /**
  * Бланк DOCX из готовых абзацев — тем же способом, что и остальные проверки:
@@ -86,6 +95,21 @@ test('отчёты работы: два бланка, превью, удален
   await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/)
   const projectId = (page.url().match(/projects\/([0-9a-f-]{36})/) as RegExpMatchArray)[1] as string
 
+  // ── в работе пишут ДО того, как в ней завели первый отчёт ─────────────────
+  // Так работа и живёт: бланк выбран при создании, теги заполняются сразу, а
+  // до второго документа дело доходит позже. Собственный документ работы
+  // открывается адресом без отчёта.
+  await page.goto(`/reports/${projectId}`)
+  const поле_один = page.getByRole('textbox', {
+    name: t('reports.editor.field', { tag: ТЕГ_ОДИН }),
+  })
+  await expect(поле_один).toBeVisible({ timeout: 30_000 })
+  await поле_один.fill(ЗНАЧЕНИЕ_ОДИН)
+  await page.getByRole('button', { name: t('common.action.save'), exact: true }).click()
+  await expect(page.getByText(t('reports.editor.byHand', { n: 1 }))).toBeVisible({
+    timeout: 30_000,
+  })
+
   // ── список отчётов работы: пока пусто ─────────────────────────────────────
   await page.goto(`/reports?project=${projectId}`)
   await expect(page.getByText(t('reports.list.emptyTitle'))).toBeVisible({ timeout: 30_000 })
@@ -96,11 +120,14 @@ test('отчёты работы: два бланка, превью, удален
     .first()
     .click()
   let окно = page.getByRole('dialog')
-  await окно.getByLabel(t('reports.list.nameLabel')).fill('Глава 1')
+  await окно.getByLabel(t('reports.list.nameLabel')).fill(ИМЯ_ОДИН)
   await окно.getByRole('button', { name: t('reports.list.createAction') }).click()
   await expect(page).toHaveURL(new RegExp(`/reports/${projectId}/[0-9a-f-]{36}`), {
     timeout: 30_000,
   })
+
+  // 6. Первый отчёт открыл документ работы: бланк её, и написанное на месте.
+  await expect(поле_один).toHaveValue(ЗНАЧЕНИЕ_ОДИН, { timeout: 30_000 })
 
   // 5. Тег назван описанием, ключ стоит под ним и без фигурных скобок.
   const строка_тега = page.getByRole('button', { name: ОПИСАНИЕ_ОДИН })
@@ -116,16 +143,6 @@ test('отчёты работы: два бланка, превью, удален
   await expect(конструкции.getByText(КОНСТРУКЦИЯ)).toBeHidden()
   await конструкции.locator('summary').click()
   await expect(конструкции.getByText(КОНСТРУКЦИЯ)).toBeVisible()
-
-  // Значение первого отчёта.
-  const поле_один = page.getByRole('textbox', {
-    name: t('reports.editor.field', { tag: ТЕГ_ОДИН }),
-  })
-  await поле_один.fill(ЗНАЧЕНИЕ_ОДИН)
-  await page.getByRole('button', { name: t('common.action.save'), exact: true }).click()
-  await expect(page.getByText(t('reports.editor.byHand', { n: 1 }))).toBeVisible({
-    timeout: 30_000,
-  })
 
   // ── второй отчёт: другой бланк, приложенный прямо в окне ──────────────────
   await page.goto(`/reports?project=${projectId}`)
@@ -190,9 +207,34 @@ test('отчёты работы: два бланка, превью, удален
     .click()
   await expect(карточка_два).toHaveCount(0, { timeout: 30_000 })
 
-  const карточка_один = карточки.getByRole('listitem').filter({ hasText: 'Глава 1' })
+  const карточка_один = карточки.getByRole('listitem').filter({ hasText: ИМЯ_ОДИН })
   await expect(карточка_один).toHaveCount(1)
-  await карточка_один.getByRole('link').first().click()
+
+  // ── 7. переименование прямо на карточке списка ────────────────────────────
+  // Карандаш стоит у имени; поле правки встаёт на место имени, поэтому дальше
+  // отбирать карточку по прежнему тексту нельзя — поле ищется по всей странице.
+  await карточка_один
+    .getByRole('button', { name: t('projects.runs.rename', { name: ИМЯ_ОДИН }) })
+    .click()
+  const поле_имени = page.getByRole('textbox', {
+    name: t('projects.runs.rename', { name: ИМЯ_ОДИН }),
+  })
+  await поле_имени.fill(ИМЯ_ОДИН_НОВОЕ)
+  await поле_имени.press('Enter')
+  const карточка_новая = карточки.getByRole('listitem').filter({ hasText: ИМЯ_ОДИН_НОВОЕ })
+  await expect(карточка_новая).toHaveCount(1, { timeout: 30_000 })
+
+  // Имя одно на все места: журнал работы знает его тем же запросом.
+  await page.goto(`/projects/${projectId}`)
+  await expect(page.getByRole('link', { name: ИМЯ_ОДИН_НОВОЕ })).toBeVisible({ timeout: 30_000 })
+
+  // ...и заголовок экрана отчёта, куда ведёт карточка. Значение, написанное в
+  // работе до отчётов, всё это время лежит там же.
+  await page.goto(`/reports?project=${projectId}`)
+  await карточка_новая.getByRole('link').first().click()
+  await expect(page.getByRole('heading', { name: ИМЯ_ОДИН_НОВОЕ })).toBeVisible({
+    timeout: 30_000,
+  })
   await expect(
     page.getByRole('textbox', { name: t('reports.editor.field', { tag: ТЕГ_ОДИН }) }),
   ).toHaveValue(ЗНАЧЕНИЕ_ОДИН, { timeout: 30_000 })

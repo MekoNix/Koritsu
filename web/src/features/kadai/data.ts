@@ -29,6 +29,8 @@ import type {
   BlockVersionHead,
   BlockVersionsBody,
   BlocksBody,
+  KadaiCommonFile,
+  KadaiContextBody,
   KadaiRunCard,
   KadaiStatus,
   StageNamesBody,
@@ -78,6 +80,12 @@ export function useKadaiStatus(
  *
  * Без этого прогон отказывает «условие задачи не приложено»: до подтверждения
  * условие — обычный материал.
+ *
+ * `useFileName` — брать ли имя решения из имени этого файла. Так называется
+ * решение, которому человек имени не дал: «Решение 4» в списке из шести задач
+ * ничем не отличается от «Решения 5». Ложь передаётся там, где файл придумали
+ * мы: условие, набранное в форме текстом, и правка распознанного заворачиваются
+ * в `.txt` интерфейсом, и его имя человек не выбирал.
  */
 export function useSetCondition() {
   const qc = useQueryClient()
@@ -86,15 +94,17 @@ export function useSetCondition() {
       projectId,
       materialId,
       runId = '',
+      useFileName = true,
     }: {
       projectId: string
       materialId: string
       runId?: string
+      useFileName?: boolean
     }) =>
       unwrap<{ condition: string | null }>(
         api.PUT('/api/projects/{project_id}/kadai/condition', {
           params: { path: { project_id: projectId }, query: { run: runId } },
-          body: { material_id: materialId },
+          body: { material_id: materialId, use_file_name: useFileName },
         }),
       ),
     onSuccess: (_answer, { projectId, runId = '' }) => {
@@ -339,6 +349,66 @@ export function useDeleteKadaiRun() {
     onSuccess: (_ответ, { projectId }) => {
       void qc.invalidateQueries({ queryKey: keys.kadai.runs(projectId) })
       void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
+    },
+  })
+}
+
+/**
+ * Общие файлы работы и галочки этого решения.
+ *
+ * Общий файл — приложенный ко всей работе, а не к решению: методичку кафедры
+ * кладут один раз, а нужна она в каждой задаче. Все они уезжают в промпт по
+ * умолчанию, включая положенные позже: служба хранит снятое, а не выбранное.
+ */
+export function useKadaiCommonFiles(
+  projectId: string | undefined,
+  runId: string,
+): UseQueryResult<KadaiCommonFile[]> {
+  return useQuery({
+    queryKey: keys.kadai.common(projectId ?? '', runId),
+    enabled: !!projectId && !!runId,
+    queryFn: async () =>
+      (
+        await unwrap<KadaiContextBody>(
+          api.GET('/api/projects/{project_id}/kadai/context', {
+            params: { path: { project_id: projectId as string }, query: { run: runId } },
+          }),
+        )
+      ).common,
+    // Список меняется загрузкой файла в работу — её ключи гасят и этот.
+    staleTime: СВЕЖЕСТЬ_ПОД_ПОТОКОМ,
+  })
+}
+
+/**
+ * Снять с решения общие файлы работы. Список снятых заменяется целиком.
+ *
+ * Присылается снятое, а не выбранное: файл, положенный в работу между чтением
+ * списка и нажатием галочки, иначе оказался бы снятым за компанию — молча и в
+ * промпте, за который платит человек.
+ */
+export function useSetKadaiCommonFiles() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      runId,
+      excluded,
+    }: {
+      projectId: string
+      runId: string
+      excluded: string[]
+    }) =>
+      unwrap<KadaiContextBody>(
+        api.PUT('/api/projects/{project_id}/kadai/context', {
+          params: { path: { project_id: projectId }, query: { run: runId } },
+          body: { excluded },
+        }),
+      ),
+    onSuccess: (ответ, { projectId, runId }) => {
+      // Ответ — то же тело, что у чтения: кладём его в кэш, чтобы галочка не
+      // прыгала обратно на время лишнего запроса.
+      qc.setQueryData(keys.kadai.common(projectId, runId), ответ.common)
     },
   })
 }

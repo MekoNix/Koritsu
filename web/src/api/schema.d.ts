@@ -607,7 +607,7 @@ export interface paths {
         put?: never;
         /**
          * Start a new report in this project
-         * @description Starts a report: a journal entry and its own document on the volume, with its own manifest and its own tag values. `template_id` names one of the templates attached to the project; without it the report starts from a blank document. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found, 409 in_trash.
+         * @description Starts a report: a journal entry and a document with its own manifest and its own tag values. The very first report of a project takes over the document the work already has, so everything written in it before reports existed stays visible; every report after that gets its own document on the volume. `template_id` names one of the templates attached to the project: for the first report it becomes the template of the work, the same way POST /api/projects/{id}/templates/{tid}/use does, and tag values are kept; without it the first report keeps whatever template the work already had and a later report starts from a blank document. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found, 409 in_trash.
          */
         post: operations["create_project_report"];
         delete?: never;
@@ -1702,9 +1702,33 @@ export interface paths {
         get?: never;
         /**
          * Name the material that holds the assignment
-         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of this file, without its extension. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_condition"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/kadai/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Project-wide files this solution shows the model
+         * @description The files attached to the project as a whole (the ones that belong to no single solution) and whether this solution shows them to the model. All of them are shown by default, including files uploaded later: a course handbook is attached to the project once and is wanted in every task. Files of the solution's own context folder are not listed here; they are in `GET ./materials?run=`. `run` is required: the project as a whole sees all of its files. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["kadai_context"];
+        /**
+         * Choose which project-wide files this solution uses
+         * @description Replaces the list of project-wide files this solution hides from the model. What is stored is the excluded list, not the chosen one, on purpose: a file uploaded to the project tomorrow reaches the solution by itself, and the choice does not have to be confirmed after every upload. `run` is required. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        put: operations["kadai_set_context"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2614,9 +2638,33 @@ export interface paths {
         get?: never;
         /**
          * Name the material that holds the assignment
-         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of this file, without its extension. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_condition_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/kadai/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Project-wide files this solution shows the model
+         * @description The files attached to the project as a whole (the ones that belong to no single solution) and whether this solution shows them to the model. All of them are shown by default, including files uploaded later: a course handbook is attached to the project once and is wanted in every task. Files of the solution's own context folder are not listed here; they are in `GET ./materials?run=`. `run` is required: the project as a whole sees all of its files. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["kadai_context_v1"];
+        /**
+         * Choose which project-wide files this solution uses
+         * @description Replaces the list of project-wide files this solution hides from the model. What is stored is the excluded list, not the chosen one, on purpose: a file uploaded to the project tomorrow reaches the solution by itself, and the choice does not have to be confirmed after every upload. `run` is required. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        put: operations["kadai_set_context_v1"];
         post?: never;
         delete?: never;
         options?: never;
@@ -3075,11 +3123,60 @@ export interface components {
              * @description Id of an already parsed material of this project
              */
             material_id: string;
+            /**
+             * Use File Name
+             * @description Name the solution after this file when the person has not named it. False when the file was not brought by the person: an assignment typed into the form, or a correction of what was read from a scan.
+             * @default true
+             */
+            use_file_name: boolean;
         };
         /** ConfirmIn */
         ConfirmIn: {
             /** Token */
             token: string;
+        };
+        /**
+         * ContextFileOut
+         * @description Общий файл работы и то, показывают ли его этому решению.
+         */
+        ContextFileOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @description What the parser made of it
+             * @default
+             */
+            kind: string;
+            /**
+             * Selected
+             * @description Whether this file reaches the model of this solution
+             */
+            selected: boolean;
+        };
+        /**
+         * ContextIn
+         * @description Какие общие файлы работы с этого решения сняты. Список целиком.
+         */
+        ContextIn: {
+            /**
+             * Excluded
+             * @description Ids of the project-wide files this solution must not show the model. Everything else, including files uploaded later, reaches it.
+             */
+            excluded?: string[];
+        };
+        /**
+         * ContextOut
+         * @description Общие файлы работы глазами одного решения.
+         */
+        ContextOut: {
+            /**
+             * Common
+             * @description Files attached to the project as a whole, in upload order
+             */
+            common?: components["schemas"]["ContextFileOut"][];
         };
         /**
          * DiagramBuiltOut
@@ -3649,7 +3746,7 @@ export interface components {
         ReportIn: {
             /**
              * Template Id
-             * @description One of the templates attached to this project (GET /api/projects/{id}/templates). Without it the report is started from a blank document.
+             * @description One of the templates attached to this project (GET /api/projects/{id}/templates). Without it the first report of a project keeps the template the work already has and any later report is started from a blank document.
              */
             template_id?: string | null;
             /**
@@ -7545,6 +7642,78 @@ export interface operations {
             };
         };
     };
+    kadai_context: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_set_context: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     kadai_wishes: {
         parameters: {
             query?: {
@@ -9470,6 +9639,78 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_context_v1: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_set_context_v1: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
