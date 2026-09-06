@@ -164,42 +164,28 @@
   }
 
   /*
-   * Фон страниц входа: сетка узлов, которая медленно дышит
+   * Фон страниц входа: изолинии, которые медленно текут
    * (`features/auth/AuthBackdrop.tsx`). Правила живут здесь, а не в компоненте,
    * потому что `@keyframes` — это CSS, и место ему рядом с остальным CSS.
    *
-   * Всё движение выбрано так, чтобы остановленный рисунок выглядел
-   * законченным: сетка уже собрана, анимация её только качает. Это и есть
-   * ответ на `prefers-reduced-motion` ниже — там анимации гасятся, и гасить их
-   * безопасно.
+   * Каждый контур поворачивается на пару градусов вокруг центра своего холма
+   * и чуть плывёт; период, фаза и направление у каждого свои (ставятся
+   * компонентом через `style`), поэтому соседние линии движутся вразнобой и
+   * рисунок читается как течение, а не как поворот картинки целиком.
+   * Остановленный рисунок закончен — это и есть ответ на
+   * `prefers-reduced-motion` ниже: там анимации гасятся, и гасить их безопасно.
    */
-  .auth-drift {
-    animation: auth-drift 34s ease-in-out infinite alternate;
-    transform-origin: center;
+  .auth-contour {
+    animation: auth-contour 40s ease-in-out infinite alternate;
+    transform-box: view-box;
   }
 
-  .auth-drift-slow {
-    animation-duration: 52s;
-    animation-direction: alternate-reverse;
-  }
-
-  .auth-trace {
-    stroke-dasharray: 4 3;
-    animation: auth-trace 24s linear infinite;
-  }
-
-  @keyframes auth-drift {
+  @keyframes auth-contour {
     from {
-      transform: translate3d(-1.5%, 1%, 0) scale(1);
+      transform: rotate(-2.2deg) translate(-0.6px, 0.4px) scale(1);
     }
     to {
-      transform: translate3d(1.5%, -1%, 0) scale(1.04);
-    }
-  }
-
-  @keyframes auth-trace {
-    to {
-      stroke-dashoffset: -70;
+      transform: rotate(2.2deg) translate(0.6px, -0.4px) scale(1.03);
     }
   }
 }

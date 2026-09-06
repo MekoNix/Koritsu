@@ -47,7 +47,7 @@ from .admin import service as admin_service          # журнал безопа
 from .db import Db, migrate
 from .settings import Settings, предупредить_о_подмене
 
-ВЕРСИЯ = "2.0.0a5.4"
+ВЕРСИЯ = "2.0.0b1.0"
 
 TITLE = "Koritsu API"
 
