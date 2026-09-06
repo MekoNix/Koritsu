@@ -22,7 +22,6 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
-import { errorText } from '@/api'
 import { useT } from '@/i18n'
 import {
   Avatar,
@@ -103,7 +102,7 @@ export function UserDialog({ user, onClose }: { user: AdminUser | null; onClose:
       setConfirming(false)
       onClose()
     } catch (e) {
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 
@@ -117,7 +116,7 @@ export function UserDialog({ user, onClose }: { user: AdminUser | null; onClose:
       await patch.mutateAsync({ userId: user.id, patch: body })
       onClose()
     } catch (e) {
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 

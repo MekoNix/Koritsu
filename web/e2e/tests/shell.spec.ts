@@ -16,8 +16,8 @@
  *    разделов и «API Koritsu» вместо «ключей для скриптов»; старый адрес
  *    `/settings/keys` продолжает открываться — на разделы настроек дают ссылки.
  * 4. **Переставленная клетка переживает перезагрузку.** Порядок ленты живёт в
- *    браузере, и проверить это можно только браузером: переставили, обновили
- *    страницу, порядок тот же.
+ *    браузере, и проверить это можно только браузером: включили режим правки,
+ *    переставили, обновили страницу, порядок тот же.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
@@ -102,6 +102,9 @@ test.describe('оболочка', () => {
     await signUpAndLogin(page, 'dashboard-order')
     await page.goto('/')
 
+    // Ручки живут в режиме правки: вне его лента показывает только клетки, и
+    // случайное перетаскивание её не переставляет.
+    await page.getByRole('button', { name: t('dashboard.edit.start') }).click()
     const ручки = page.locator('[data-cell]')
     await expect(ручки.first()).toBeVisible()
     const было = await порядок(ручки)
@@ -117,6 +120,7 @@ test.describe('оболочка', () => {
     expect(стало[1]).toBe(было[0])
 
     await page.reload()
+    await page.getByRole('button', { name: t('dashboard.edit.start') }).click()
     await expect(ручки.first()).toBeVisible()
     expect(await порядок(ручки)).toEqual(стало)
   })

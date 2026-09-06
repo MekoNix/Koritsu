@@ -39,7 +39,28 @@ export function projectFromPath(pathname: string): string | null {
   return идентификатор
 }
 
-/** Ссылка на тег, который изменил прогон: экран отчёта с выбранным тегом. */
-export function tagHref(projectId: string, key: string): string {
-  return `/reports/${projectId}?tag=${encodeURIComponent(key)}`
+/**
+ * Идентификатор отчёта из адреса `/reports/<работа>/<отчёт>`; иначе пусто.
+ *
+ * Отчётов в работе несколько, у каждого свои значения тегов, и агент обязан
+ * писать в тот, который человек сейчас видит. Взять его больше неоткуда:
+ * панель открывается поверх экрана и своего адреса не имеет — тот же довод,
+ * что и у `projectFromPath`. Пусто — панель стоит не над отчётом, и тогда
+ * прогон идёт по документу работы, как было, пока отчёт в ней был один.
+ */
+export function reportFromPath(pathname: string): string {
+  const [раздел, , отчёт] = pathname.split('/').filter(Boolean)
+  return раздел === 'reports' && отчёт ? отчёт : ''
+}
+
+/**
+ * Ссылка на тег, который изменил прогон: экран отчёта с выбранным тегом.
+ *
+ * Без отчёта ссылка ведёт к списку отчётов работы: назвать тег, не назвав
+ * документ, в котором он лежит, нельзя — в соседнем отчёте тег с тем же ключом
+ * означает другой текст.
+ */
+export function tagHref(projectId: string, key: string, report = ''): string {
+  const экран = report ? `/reports/${projectId}/${report}` : `/reports/${projectId}`
+  return `${экран}?tag=${encodeURIComponent(key)}`
 }

@@ -15,9 +15,14 @@ import re as _re
 
 from .model import ObjectGraph, ObjectInstance, ObjectLink
 
-from .._routing import Rect, abs_point, assign_ports, plan_route, points_xml
+from .._bbox import (Box, label_box, label_dirs, label_size, place_label, spread_row,
+                     stack_rows)
+from .._routing import CorridorGrid, Rect, abs_point, assign_ports, plan_route, points_xml, side_of
 from ..styles import get_layout, get_theme
 from .._text import text_width
+
+
+_LABEL_FONT = 10                    # px, подпись у ребра (имя поля)
 
 
 # ── Sizing ─────────────────────────────────────────────────────────────────────
@@ -73,7 +78,14 @@ def _levels(instances: list[ObjectInstance], links: list[ObjectLink]) -> dict[st
 
 def _layout(instances: list[ObjectInstance], links: list[ObjectLink],
             widths: dict[str, int], heights: dict[str, int], cfg: dict):
-    """Ряды по уровню владения, внутри ряда — порядок по барицентру источников."""
+    """
+    Ряды по уровню владения, внутри ряда — порядок по барицентру источников.
+
+    Расстановка идёт по рамкам (`_bbox`): ширина блока — по самой длинной строке
+    слота, высота — по их числу, а ряды разводятся так, чтобы рамки не
+    пересекались с зазором. Иначе длинные значения слотов («путь к файлу»,
+    длинное имя узла) делают блок шире шага сетки, и соседи наезжают друг на друга.
+    """
     level = _levels(instances, links)
     names = [i.name for i in instances]
     index = {n: i for i, n in enumerate(names)}
@@ -100,19 +112,16 @@ def _layout(instances: list[ObjectInstance], links: list[ObjectLink],
             prev_x[n] = x + widths[n] / 2
             x += widths[n] + h_gap
 
-    rects: dict[str, Rect] = {}
-    row_corridors: list[int] = []
-    col_corridors: list[int] = []
-    y = cfg["start_y"]
+    xs: dict[str, int] = {}
     for row in rows:
-        row_h = max(heights[n] for n in row)
-        x = cfg["start_x"]
+        xs.update(spread_row(row, widths, cfg["start_x"], h_gap))
+    rects, _tops, _bottoms, row_corridors = stack_rows(
+        rows, xs, widths, heights, cfg["start_y"], [v_gap] * len(rows))
+    col_corridors: list[int] = []
+    for row in rows:
         for n in row:
-            rects[n] = (x, y, widths[n], heights[n])
-            col_corridors.append(x + widths[n] + h_gap // 2)
-            x += widths[n] + h_gap
-        row_corridors.append(y + row_h + v_gap // 2)
-        y += row_h + v_gap
+            col_corridors.append(xs[n] + widths[n] + h_gap // 2)
+            col_corridors.append(xs[n] - h_gap // 2)
     return rects, row_corridors, col_corridors
 
 
@@ -290,7 +299,10 @@ def build_xml(graph: ObjectGraph, theme: str = "dark",
     keys = [((l.source, l.target, l.label), l.source, l.target) for l in links]
     ports = assign_ports(keys, rects)
     m = cfg["route_margin"]
-    label_rank: dict[tuple[str, float, float], int] = {}    # (источник, сторона) → сколько подписей уже
+    # сетка коридоров на всю диаграмму: по ней ищется обход, когда прямого и
+    # L/U-образного маршрута нет, — без неё линия шла бы сквозь блоки
+    grid = CorridorGrid(list(rects.values()), row_corridors, col_corridors, m)
+    taken: list[Box] = list(rects.values())     # рамки, занятые блоками и подписями
     for ei, l in enumerate(links):
         key = (l.source, l.target, l.label)
         ex_f, ey_f, nx_f, ny_f = ports.get(key, (0.5, 1.0, 0.5, 0.0))
@@ -299,7 +311,8 @@ def build_xml(graph: ObjectGraph, theme: str = "dark",
         obstacles = [r for n, r in rects.items() if n not in (l.source, l.target)]
         vertical = ey_f in (0.0, 1.0) and ny_f in (0.0, 1.0)
         wps = plan_route(ex, ey, nx, ny, obstacles, row_corridors, col_corridors, m,
-                         prefer_corridor=vertical)
+                         prefer_corridor=vertical, grid=grid,
+                         exit_side=side_of(ex_f, ey_f), entry_side=side_of(nx_f, ny_f))
         color = pal["containment"] if l.kind == "containment" else pal["edge"]
         cells.append(
             f'<mxCell id="e{ei}" value="" '
@@ -307,22 +320,17 @@ def build_xml(graph: ObjectGraph, theme: str = "dark",
             f'edge="1" source="{ids[l.source]}" target="{ids[l.target]}" parent="1">'
             f'{points_xml(wps)}</mxCell>'
         )
-        # Подпись у начала ребра, сбоку от первого сегмента: у рёбер, идущих
-        # по общему коридору, середины совпадают, а начала — разные.
-        side = (l.source, float(ey_f >= 1.0), float(ey_f <= 0.0))
-        k = label_rank.get(side, 0)
-        label_rank[side] = k + 1
-        step = 13 * (k % 3)                     # соседние порты — подписи лесенкой
-        if ey_f >= 1.0:
-            off = (6, 14 + step)
-        elif ey_f <= 0.0:
-            off = (6, -14 - step)
-        else:
-            off = (14 if ex_f >= 1.0 else -14, -10 - step)
+        # Подпись у начала ребра (имя поля), сбоку от первого сегмента: у рёбер,
+        # идущих по общему коридору, середины совпадают, а начала — разные.
+        # Место ищется по рамкам: имя поля бывает длиннее прежнего постоянного
+        # отступа в 14 px, и подпись ложилась прямо на блок.
+        size = label_size(l.label, _LABEL_FONT)
+        off = place_label((ex, ey), size, label_dirs(ex_f, ey_f), taken)
+        taken.append(label_box((ex, ey), off, size))
         cells.append(
             f'<mxCell id="e{ei}_l" value="{_esc(l.label)}" '
-            f'style="edgeLabel;html=1;align=left;verticalAlign=middle;resizable=0;'
-            f'fontSize=10;fontColor={pal["slot_font"]};" vertex="1" connectable="0" parent="e{ei}">'
+            f'style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;'
+            f'fontSize={_LABEL_FONT};fontColor={pal["slot_font"]};" vertex="1" connectable="0" parent="e{ei}">'
             f'<mxGeometry x="-1" relative="1" as="geometry">'
             f'<mxPoint x="{off[0]}" y="{off[1]}" as="offset"/></mxGeometry></mxCell>'
         )

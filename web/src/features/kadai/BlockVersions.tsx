@@ -23,17 +23,20 @@ import type { BlockRecordBody } from './types'
 
 export function BlockVersions({
   projectId,
+  runId,
   blocks,
   canEdit,
 }: {
   projectId: string
+  /** Решение, чей список версионируется: у каждого он свой. */
+  runId: string
   /** Текущий список: правая сторона сравнения, когда отмечена одна версия. */
   blocks: BlockRecordBody[] | undefined
   canEdit: boolean
 }) {
   const t = useT()
-  const versions = useBlockVersions(projectId)
-  const rollback = useRollbackBlocks(projectId)
+  const versions = useBlockVersions(projectId, runId)
+  const rollback = useRollbackBlocks(projectId, runId)
 
   /**
    * «Дай текст версии N» для сравнения. Хук пропсом, а не адрес маршрута:
@@ -41,7 +44,7 @@ export function BlockVersions({
    * значило бы завести там ветвление по области.
    */
   function useVersionText(n: number | null): VersionText {
-    const версия = useBlockVersion(projectId, n)
+    const версия = useBlockVersion(projectId, n, runId)
     return {
       text: n === null ? undefined : версия.data ? blocksText(версия.data.blocks) : undefined,
       loading: n !== null && версия.isPending,

@@ -11,6 +11,30 @@ import type { StageState } from './stages'
 export type StageNamesBody = { stages: string[] }
 
 /**
+ * `packages/api/modules/kadai/routes.py: карточка_решения()` — решение работы.
+ *
+ * Решений в работе несколько: у каждого своё условие, свои пожелания, свой ход
+ * стадий, свой список блоков с историей и своя папка файлов контекста. `id` —
+ * то, что остальные маршруты берут параметром `run`.
+ *
+ * `state` и `stage` приходят из хода стадий на томе и бывают пустыми: только
+ * что заведённое решение ещё ни разу не запускали, и это законное состояние, а
+ * не пробел в ответе. `condition_name` — имя файла с условием, пока его не
+ * назвали, пусто.
+ */
+export type KadaiRunCard = {
+  id: string
+  project_id: string
+  name: string
+  n: number
+  user_id?: string | null
+  created_at?: string | null
+  state?: string | null
+  stage?: string | null
+  condition_name: string
+}
+
+/**
  * `packages/api/modules/kadai/routes.py: ход()` — снимок работы с тома.
  *
  * `outputs` — **имена** готовых файлов («отчёт.docx»), а `made` —

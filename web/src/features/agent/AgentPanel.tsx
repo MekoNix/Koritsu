@@ -39,7 +39,7 @@ import { ModelPicker } from '@/features/reports/runControls'
 import { AgentHistory } from './AgentHistory'
 import { AgentRunView } from './AgentRunView'
 import { closeAgentPanel, openAgentPanel, toggleAgentPanel, useAgentPanelOpen } from './panelStore'
-import { projectFromPath } from './context'
+import { projectFromPath, reportFromPath } from './context'
 import { TASK_MAX } from './types'
 import { useAgentRun, type AgentRunState } from './useAgentRun'
 
@@ -56,6 +56,10 @@ export function AgentPanel() {
   const изАдреса = projectFromPath(location.pathname)
   const [выбранный, setВыбранный] = useState<string | null>(null)
   const projectId = изАдреса ?? выбранный
+  // Отчёт берётся из адреса и только оттуда: панель стоит поверх экрана
+  // отчёта, и писать агент обязан в тот документ, который человек видит. Вне
+  // экрана отчёта пусто — прогон идёт по документу работы.
+  const report = reportFromPath(location.pathname)
 
   const [endpoint, setEndpoint] = useState<string | null>(null)
   const [task, setTask] = useState('')
@@ -68,7 +72,7 @@ export function AgentPanel() {
   const переписывать = overwrite ?? me.data?.agent_overwrite ?? false
 
   // Прогон — на верхнем уровне: он обязан пережить закрытие панели.
-  const run = useAgentRun(projectId, endpoint, переписывать)
+  const run = useAgentRun(projectId, endpoint, переписывать, report)
 
   return (
     <RadixDialog.Root
@@ -102,6 +106,7 @@ export function AgentPanel() {
 
           <PanelBody
             projectId={projectId}
+            report={report}
             fromPath={!!изАдреса}
             onPickProject={setВыбранный}
             endpoint={endpoint}
@@ -120,6 +125,8 @@ export function AgentPanel() {
 
 type BodyProps = {
   projectId: string | null
+  /** Отчёт работы, если панель стоит над его экраном. */
+  report: string
   /** Работа взята из адреса — значит выбирать её в панели незачем. */
   fromPath: boolean
   onPickProject: (id: string) => void
@@ -139,6 +146,7 @@ type BodyProps = {
  */
 function PanelBody({
   projectId,
+  report,
   fromPath,
   onPickProject,
   endpoint,
@@ -192,7 +200,7 @@ function PanelBody({
           <p className="text-xs text-muted">{t('agent.project.chosen')}</p>
         )}
 
-        <AgentRunView run={run} projectId={projectId ?? ''} />
+        <AgentRunView run={run} projectId={projectId ?? ''} report={report} />
 
         {projectId && <AgentHistory projectId={projectId} onRepeat={onTask} />}
       </div>

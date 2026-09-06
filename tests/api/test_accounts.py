@@ -112,7 +112,7 @@ def test_наружу_не_уезжает_ни_хеш_ни_секрет_втор
     тело = войти(client).json()["user"]
     assert set(тело) == {"id", "email", "nickname", "plan", "email_confirmed",
                          "totp_enabled", "is_admin", "default_endpoint",
-                         "agent_overwrite", "created_at"}
+                         "agent_overwrite", "avatar_version", "created_at"}
 
 
 def test_профиль_отдаёт_признак_админа_как_он_есть_в_базе(client, caplog, app):

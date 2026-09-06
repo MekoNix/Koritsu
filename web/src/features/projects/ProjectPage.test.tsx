@@ -20,6 +20,7 @@ import { ProjectPage } from './ProjectPage'
 const ПРОЕКТ = {
   id: 'p-1',
   workspace_id: 'ws-1',
+  workspace_name: 'Личное',
   owner_id: 'u-1',
   name: 'Курсовая — ИС библиотеки',
   created_at: '2026-09-02T10:00:00+00:00',
@@ -96,8 +97,13 @@ function служба(проект: unknown | 'in_trash') {
       }
       return Promise.resolve(json(проект))
     }
-    if (path === '/api/workspaces/ws-1') {
+    if (path === '/api/workspaces/ws-1' || path === '/api/workspaces/personal') {
       return Promise.resolve(json({ id: 'ws-1', name: 'Личное', personal: true, role: 'owner' }))
+    }
+    // Подпись «Пространство» и полоска «работа из другого пространства» знают
+    // текущее пространство и ник хозяина — отсюда эти два ответа.
+    if (path === '/api/auth/me') {
+      return Promise.resolve(json({ user: { id: 'u-1', nickname: 'курису' } }))
     }
     if (path === '/api/modules') return Promise.resolve(json(МОДУЛИ))
     if (path === '/api/projects/p-1/runs') return Promise.resolve(json(ЗАПУСКИ))

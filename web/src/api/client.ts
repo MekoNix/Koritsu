@@ -33,6 +33,9 @@ import type { paths } from './schema'
 const CSRF_COOKIE = 'koritsu_csrf'
 const CSRF_HEADER = 'X-CSRF-Token'
 
+/** Заголовок с номером запроса. То же имя, что `log.ЗАГОЛОВОК` в службе. */
+const REQUEST_ID = 'X-Request-Id'
+
 /** Методы с последствиями. Тот же список, что `csrf.ИЗМЕНЯЮЩИЕ`. */
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -132,6 +135,12 @@ export async function unwrap<T = unknown>(promise: Promise<FetchResult>): Promis
     throw ApiError.network(cause)
   }
   const { data, error, response } = result
-  if (error !== undefined || !response.ok) throw ApiError.from(error, response.status)
+  if (error !== undefined || !response.ok) {
+    // Номер запроса ставит журнал службы (`log.py`) на каждый ответ, и он же
+    // стоит в её записи о беде. Без него жалоба «у меня всё сломалось» не
+    // связывается с трассировкой, поэтому он едет в `ApiError` и виден мелкой
+    // строкой там, где сказать человеку больше нечего.
+    throw ApiError.from(error, response.status, response.headers.get(REQUEST_ID) ?? undefined)
+  }
   return data as T
 }

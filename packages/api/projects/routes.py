@@ -51,7 +51,7 @@ from __future__ import annotations
 import os
 import shutil
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -63,6 +63,7 @@ from ..ids import check_id
 from ..log import беды
 from ..settings import Settings
 from ..workspaces.deps import CurrentUser
+from ..workspaces.models import Workspace
 from ..workspaces.service import EDITOR, VIEWER, iso, require_role
 from .models import MODULE_LEN, NAME_MAX, Project
 from .service import dir_for, dir_size, get_row, restore
@@ -155,15 +156,33 @@ def теги_шаблона(проект: orchestrator.Project) -> list[tuple]:
     return [(ключ, спец) for ключ, спец in m.tags.items() if not спец.missing]
 
 
-def карточка(p: Project, settings: Settings, *, теги: bool = False) -> dict:
+def имя_пространства(s, p: Project) -> str:
+    """Как зовётся пространство работы. Строки нет — пустая строка, не отказ.
+
+    Одним запросом по первичному ключу: карточка работы обязана называть
+    пространство словом, а не идентификатором, иначе человек, у которого их
+    три, читает адрес вместо имени. Списку это стоит одного запроса на весь
+    список (пространство у всех строк одно), карточке — одного на карточку.
+    """
+    ws = s.get(Workspace, p.workspace_id)
+    return "" if ws is None else ws.name
+
+
+def карточка(p: Project, settings: Settings, *, теги: bool = False,
+             workspace_name: str = "") -> dict:
     """Проект наружу. Пути в ответе нет — только идентификаторы и число байт.
 
     Теги читаются с диска, поэтому в списке их нет: список из сотни проектов
     означал бы сотню обходов каталогов ради колонки, которую в списке не
     показывают.
+
+    `workspace_name` приходит снаружи, а не читается здесь: у списка имя одно
+    на все строки, и спрашивать его заново на каждую значило бы сделать сотню
+    одинаковых запросов ради одной строки ответа.
     """
     каталог = dir_for(settings, p.owner_id, p.id)
-    тело = {"id": p.id, "workspace_id": p.workspace_id, "owner_id": p.owner_id,
+    тело = {"id": p.id, "workspace_id": p.workspace_id,
+            "workspace_name": workspace_name, "owner_id": p.owner_id,
             "name": p.name, "module": p.module, "created_at": iso(p.created_at),
             "updated_at": iso(p.updated_at), "deleted_at": iso(p.deleted_at),
             "purge_after": iso(p.purge_after), "bytes_used": dir_size(каталог)}
@@ -172,21 +191,79 @@ def карточка(p: Project, settings: Settings, *, теги: bool = False) 
     return тело
 
 
-def открыть(p: Project, settings: Settings) -> orchestrator.Project:
+def открыть(p: Project, settings: Settings, report: str = "",
+            solution: str = "") -> orchestrator.Project:
     """Каталог проекта как `orchestrator.Project`.
 
     Отдельной функцией, потому что зовут её пять обработчиков, а беда у всех
     одна: каталога нет. Наружу она уходит как 404 — для клиента «проекта нет»
     и «каталог пропал» одно и то же событие, а разбираться в разнице по журналу
     нам, а не ему.
+
+    `report` — какой документ работы открыт (идентификатор записи журнала об
+    отчёте). Пусто — единственный документ в корне работы: так работу читают
+    материалы, схемы и всё, чему документов не нужно вовсе. Названный документ,
+    у которого каталога ещё нет, тоже читается из корня — см.
+    `orchestrator.Project.__init__`: отчёты заводились раньше, чем каталоги
+    документов, и терять их значения нельзя.
+
+    `solution` — то же самое для решения (`module: "kadai"`): в работе их тоже
+    несколько, и у каждого свой ход стадий, своё условие и свой список блоков.
     """
     каталог = dir_for(settings, p.owner_id, p.id)
+    # Разбор идентификаторов стоит ДО `try`, а не внутри: беда каталога на томе
+    # и мусор в запросе — разные события, и общий `except` отвечал бы «работы
+    # нет» на кривой `?report=`, то есть прятал бы ошибку клиента за 404.
+    документ, ход = отчёт(report), решение(solution)
     try:
-        return orchestrator.Project(каталог)
+        return orchestrator.Project(каталог, report=документ, solution=ход)
     except Exception:                                   # noqa: BLE001
         беды.exception("проект %s: каталога нет на томе", p.id)
         raise ApiError("not_found", "Project not found", 404,
                        where="path.project_id") from None
+
+
+def отчёт(report: str | None) -> str:
+    """Идентификатор отчёта из запроса — или `400 invalid_id`. Пусто законно.
+
+    Проверяется здесь и один раз: из значения складывается имя каталога на
+    томе, и мусор в нём обязан умереть на входе, а не внутри оркестратора.
+    Пустая строка — «документ работы один», и это законное состояние всякой
+    работы, заведённой без отчётов.
+    """
+    значение = (report or "").strip()
+    return check_id(значение, where="query.report") if значение else ""
+
+
+def решение(run: str | None) -> str:
+    """Идентификатор решения из запроса — или `400 invalid_id`. Пусто законно.
+
+    Тот же довод, что у `отчёт`: из значения складывается имя каталога на томе.
+    Пустая строка — «работа целиком», и так её читает всё, чему до отдельного
+    решения дела нет.
+    """
+    значение = (run or "").strip()
+    return check_id(значение, where="query.run") if значение else ""
+
+
+# Как отчёт называют в запросе. Отдельным объектом, потому что параметр стоит у
+# шести маршрутов, и второе описание рядом с первым разошлось бы с ним на первом
+# же уточнении текста, который уезжает в OpenAPI и в клиент сайта.
+ОТЧЁТ = Query(
+    default="",
+    description=("Which report of this project to work with, by its run id "
+                 "(GET /api/projects/{id}/reports). A project carries several "
+                 "reports, each with its own template and its own tag values. "
+                 "Empty means the single document of the work."))
+
+# Как решение называют в запросе. Пара к `ОТЧЁТ` и по той же причине: параметр
+# стоит у нескольких маршрутов, а текст уезжает в OpenAPI и в клиент сайта.
+РЕШЕНИЕ = Query(
+    default="",
+    description=("Which solution of this project to work with, by its run id "
+                 "(GET /api/projects/{id}/kadai/runs). A project carries "
+                 "several solutions, each with its own assignment and its own "
+                 "block list. Empty means the work as a whole."))
 
 
 @router.post("", status_code=201, operation_id="create_project",
@@ -273,19 +350,27 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
         shutil.rmtree(каталог, ignore_errors=True)
         raise ApiError(BAD_TEMPLATE, "Template is not a readable DOCX file", 400,
                        where="body.template") from None
-    return карточка(p, settings, теги=True)
+    return карточка(p, settings, теги=True, workspace_name=ws.name)
 
 
 @router.get("", operation_id="list_projects",
             summary="List projects of a workspace",
             description=(
-                "Lists the projects of one workspace; `trash=true` lists the "
-                "ones in the trash instead, `module` narrows the list down to "
-                "the works done with one module. 400 invalid_id, "
-                "400 unknown_module, 404 not_found."))
+                "Lists the projects of one workspace; `workspace_id` is "
+                "required, so a list of everything the caller can reach is not "
+                "a request this route answers. `trash=true` lists the ones in "
+                "the trash instead, `module` narrows the list down to the "
+                "works done with one module. 400 invalid_id, "
+                "400 unknown_module, 404 not_found, 422 validation_failed."))
 def список(request: Request, workspace_id: str, s: SessionDep, user: CurrentUser,
            trash: bool = False, module: str = "") -> dict:
     """Проекты пространства. `trash=true` — те, что лежат в корзине.
+
+    **`workspace_id` обязателен, и это правило, а не умолчание.** Список без
+    пространства пришлось бы понимать как «все работы человека», а такой список
+    на экране означает, что в одном пространстве видно работы другого: человек
+    переключил пространство, а список остался прежним. Пропущенный параметр
+    поэтому — `422 validation_failed`, а не «отдам всё».
 
     `module` — отбор для главной страницы модуля: она показывает свои работы, а
     не все подряд. Отбором, а не своим маршрутом у каждого модуля: список
@@ -302,21 +387,24 @@ def список(request: Request, workspace_id: str, s: SessionDep, user: Curre
     запрос = запрос.where(Project.deleted_at.is_not(None) if trash
                           else Project.deleted_at.is_(None))
     строки = s.scalars(запрос.order_by(Project.created_at)).all()
-    return {"projects": [карточка(p, settings) for p in строки]}
+    return {"projects": [карточка(p, settings, workspace_name=ws.name)
+                         for p in строки]}
 
 
 @router.get("/{project_id}", operation_id="get_project",
             summary="One project",
             description=(
-                "One project: name, workspace, the tag keys of its manifest and "
-                "the size of its directory. Paths are never returned. "
-                "400 invalid_id, 404 not_found, 409 in_trash."))
+                "One project: name, workspace (`workspace_id` and "
+                "`workspace_name`), the tag keys of its manifest and the size "
+                "of its directory. Paths are never returned. 400 invalid_id, "
+                "404 not_found, 409 in_trash."))
 def карточка_одного(project_id: str, request: Request, s: SessionDep,
                     user: CurrentUser) -> dict:
     """Карточка: имя, пространство, теги из манифеста, размер каталога."""
     settings = настройки(request)
     p = доступный(s, user, project_id, VIEWER)
-    return карточка(p, settings, теги=True)
+    return карточка(p, settings, теги=True,
+                    workspace_name=имя_пространства(s, p))
 
 
 @router.patch("/{project_id}", operation_id="rename_project",
@@ -341,7 +429,8 @@ def переименовать(project_id: str, тело: ProjectPatchIn, reques
         p.module = проверить_модуль(тело.module, where="body.module")
     if тело.name is None:
         s.flush()
-        return карточка(p, settings)
+        return карточка(p, settings,
+                        workspace_name=имя_пространства(s, p))
     p.name = тело.name.strip()
     s.flush()
     # Имя лежит и в `project.json`: его читает `build_report`, а не мы. Один
@@ -351,7 +440,7 @@ def переименовать(project_id: str, тело: ProjectPatchIn, reques
     настройки_проекта = проект.settings()
     настройки_проекта["name"] = p.name
     проект.save_settings(настройки_проекта)
-    return карточка(p, settings)
+    return карточка(p, settings, workspace_name=имя_пространства(s, p))
 
 
 @router.delete("/{project_id}", operation_id="trash_project",
@@ -366,7 +455,7 @@ def удалить(project_id: str, request: Request, s: SessionDep,
     settings = настройки(request)
     p = доступный(s, user, project_id, EDITOR)
     в_корзину(s, p, settings)
-    return карточка(p, settings)
+    return карточка(p, settings, workspace_name=имя_пространства(s, p))
 
 
 @router.post("/{project_id}/restore", operation_id="restore_project",
@@ -379,7 +468,7 @@ def восстановить(project_id: str, request: Request, s: SessionDep,
     settings = настройки(request)
     p = доступный(s, user, project_id, EDITOR, allow_deleted=True)
     restore(s, p)
-    return карточка(p, settings)
+    return карточка(p, settings, workspace_name=имя_пространства(s, p))
 
 
 # ── теги и их значения (тонко, поверх orchestrator) ──────────────────────────
@@ -397,7 +486,7 @@ def восстановить(project_id: str, request: Request, s: SessionDep,
                 "they stay in the document as text and do not break the build. "
                 "400 invalid_id, 404 not_found, 409 in_trash."))
 def теги_проекта(project_id: str, request: Request, s: SessionDep,
-                 user: CurrentUser) -> dict:
+                 user: CurrentUser, report: str = ОТЧЁТ) -> dict:
     """Теги шаблона со состоянием заполнения — то, из чего сделана колонка тегов.
 
     **Зачем отдельный маршрут, а не поля в карточке проекта.** Карточка
@@ -417,7 +506,7 @@ def теги_проекта(project_id: str, request: Request, s: SessionDep,
     """
     settings = настройки(request)
     p = доступный(s, user, project_id, VIEWER)
-    проект = открыть(p, settings)
+    проект = открыть(p, settings, report)
     m = манифест(проект)
     теги = []
     for ключ, спец in теги_шаблона(проект):
@@ -442,7 +531,7 @@ def теги_проекта(project_id: str, request: Request, s: SessionDep,
                   "clears it. Editor role. 400 invalid_id, 403 forbidden, "
                   "404 not_found, 404 unknown_tag, 409 in_trash."))
 def задание_тега(project_id: str, key: str, тело: TagPromptIn, request: Request,
-                 s: SessionDep, user: CurrentUser) -> dict:
+                 s: SessionDep, user: CurrentUser, report: str = ОТЧЁТ) -> dict:
     """Задание модели на один тег — поле рядом с заполнением.
 
     Правкой манифеста, а не отдельной таблицей: задание принадлежит бланку
@@ -456,7 +545,7 @@ def задание_тега(project_id: str, key: str, тело: TagPromptIn, re
     """
     settings = настройки(request)
     p = доступный(s, user, project_id, EDITOR)
-    проект = открыть(p, settings)
+    проект = открыть(p, settings, report)
     try:
         текст = проект.set_tag_prompt(key, тело.prompt)
     except orchestrator.OrchestratorError:
@@ -472,11 +561,11 @@ def задание_тега(project_id: str, key: str, тело: TagPromptIn, re
                 "the report builder reads. 400 invalid_id, 404 not_found, "
                 "409 in_trash."))
 def значения(project_id: str, request: Request, s: SessionDep,
-             user: CurrentUser) -> dict:
+             user: CurrentUser, report: str = ОТЧЁТ) -> dict:
     """Текущие значения всех тегов. Форма — та же, что читает сборщик отчёта."""
     settings = настройки(request)
     p = доступный(s, user, project_id, VIEWER)
-    return {"values": открыть(p, settings).values()}
+    return {"values": открыть(p, settings, report).values()}
 
 
 @router.put("/{project_id}/values/{key}", operation_id="set_project_value",
@@ -492,7 +581,7 @@ def значения(project_id: str, request: Request, s: SessionDep,
                 "400 invalid_value, 403 forbidden, 404 not_found, "
                 "409 in_trash."))
 def поставить(project_id: str, key: str, value: dict, request: Request,
-              s: SessionDep, user: CurrentUser) -> dict:
+              s: SessionDep, user: CurrentUser, report: str = ОТЧЁТ) -> dict:
     """Значение тега рукой человека: `source="manual"`.
 
     `source` ставим здесь, а не берём из тела: значение, пришедшее по этому
@@ -507,7 +596,7 @@ def поставить(project_id: str, key: str, value: dict, request: Request,
     """
     settings = настройки(request)
     p = доступный(s, user, project_id, EDITOR)
-    проект = открыть(p, settings)
+    проект = открыть(p, settings, report)
     проверить_форму(проект, value)
     try:
         версия = проект.set_value(key, value, source="manual")
@@ -598,4 +687,4 @@ def доступный(s, user, project_id: str, min_role: str, *,
     return p
 
 
-__all__ = ["router"]
+__all__ = ["router", "открыть", "отчёт", "решение", "ОТЧЁТ", "РЕШЕНИЕ"]

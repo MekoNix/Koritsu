@@ -49,7 +49,6 @@ import {
   Skeleton,
   useToast,
 } from '@/ui'
-import { errorText } from '@/api'
 
 import { useCreateWorkspace, useWorkspaces } from './data'
 import { workspaceLabel } from './types'
@@ -174,7 +173,7 @@ function CreateDialog({
         setName('')
         onOpenChange(false)
       },
-      onError: (беда) => toast.error(errorText(беда)),
+      onError: (беда) => toast.fail(беда),
     })
   }
 

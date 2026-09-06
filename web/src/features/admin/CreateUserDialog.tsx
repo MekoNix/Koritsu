@@ -20,7 +20,6 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
-import { errorText } from '@/api'
 import { useT } from '@/i18n'
 import { Button, CopyButton, Dialog, Input, Row, Select, useToast } from '@/ui'
 
@@ -66,7 +65,7 @@ export function CreateUserDialog({ open, onClose }: { open: boolean; onClose: ()
       setIssued(итог)
       onClose()
     } catch (e) {
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 

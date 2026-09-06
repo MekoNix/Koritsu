@@ -21,13 +21,13 @@
  * картинку из готового документа (`packages/api/projects/runs.py`).
  */
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
-import { errorText } from '@/api'
 import { useT } from '@/i18n'
 import { Button, EmptyState, ErrorState, Icon, Select, Skeleton, useToast } from '@/ui'
 
 import { Panel } from './Panel'
+import { RunName } from './RunName'
 import { useCreateProjectRun, useDeleteProjectRun, useProjectRuns } from './data'
 import { formatWhen, runTitle } from './format'
 import { projectModuleLink } from './moduleRoutes'
@@ -65,7 +65,7 @@ export function RunsPanel({
           const link = projectModuleLink(module)
           if (link) navigate(link.href(projectId))
         },
-        onError: (e) => toast.error(errorText(e)),
+        onError: (e) => toast.fail(e),
       },
     )
   }
@@ -127,10 +127,7 @@ export function RunsPanel({
                 title={runTitle(t, run, projectName)}
                 canEdit={canEdit}
                 onRemove={() =>
-                  remove.mutate(
-                    { projectId, runId: run.id },
-                    { onError: (e) => toast.error(errorText(e)) },
-                  )
+                  remove.mutate({ projectId, runId: run.id }, { onError: (e) => toast.fail(e) })
                 }
               />
             ))}
@@ -156,11 +153,14 @@ function RunRow({
 }) {
   const t = useT()
   const link = projectModuleLink(run.module)
-  // Строка ведёт в модуль, если он на сайте есть. Модуля без экрана работы в
-  // журнале быть не должно, но список приходит из базы, а не из таблицы
-  // адресов, — и ссылка в никуда хуже строки без ссылки.
-  const внутренности = (
-    <>
+
+  return (
+    <li className="flex items-center gap-s3 rounded-sm border border-line bg-surface-2 px-s3 py-s2">
+      {/* Ссылкой стало само имя, а не вся строка: рядом с ним теперь поле
+          правки, а поле внутри ссылки открывало бы её от каждого щелчка.
+          Модуля без экрана работы в журнале быть не должно, но список приходит
+          из базы, а не из таблицы адресов, — и ссылка в никуда хуже имени без
+          ссылки. */}
       {link && (
         <Icon
           name={link.icon}
@@ -170,28 +170,22 @@ function RunRow({
         />
       )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-ink-strong">{title}</span>
+        <RunName
+          projectId={projectId}
+          runId={run.id}
+          name={run.name}
+          title={title}
+          canEdit={canEdit}
+          href={link ? (link.runHref?.(projectId, run.id) ?? link.href(projectId)) : undefined}
+          className="text-sm font-medium text-ink-strong"
+          iconSize={14}
+        />
         <span className="block truncate text-xs text-muted">
           {t(`shell.nav.${run.module}`)}
           {' · '}
           {formatWhen(run.created_at)}
         </span>
       </span>
-    </>
-  )
-
-  return (
-    <li className="flex items-center gap-s3 rounded-sm border border-line bg-surface-2 px-s3 py-s2">
-      {link ? (
-        <Link
-          to={link.href(projectId)}
-          className="flex min-w-0 flex-1 items-center gap-s3 transition-colors hover:text-accent"
-        >
-          {внутренности}
-        </Link>
-      ) : (
-        <span className="flex min-w-0 flex-1 items-center gap-s3">{внутренности}</span>
-      )}
       {canEdit && (
         <Button
           variant="ghost"

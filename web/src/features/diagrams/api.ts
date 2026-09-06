@@ -26,7 +26,6 @@ import type {
   ProjectCard,
   SavedDiagram,
   UmlKind,
-  WorkspaceCard,
 } from './types'
 
 export type { NamedSource }
@@ -159,24 +158,19 @@ export function deleteDiagram(projectId: string, runId: string): Promise<void> {
 // ── проекты и их значения ────────────────────────────────────────────────────
 
 /**
- * Все проекты человека: пространства → проекты каждого.
+ * Работы одного пространства — того, в котором человек сейчас работает.
  *
- * Список проектов служба отдаёт по одному пространству за раз (`workspace_id`
- * обязателен), а главная страница модуля показывает схемы отовсюду. Склейка
- * поэтому здесь, а не в экране: экрану нужен один список, и собирать его в
- * `useMemo` из семи запросов означало бы разбирать в разметке то, что и есть
- * запрос.
+ * Раньше главная модуля собирала работы всех пространств человека разом: она
+ * спрашивала список пространств и обходила их запросами. Пространство заводят
+ * ради разделения, и такая склейка это разделение отменяла — в пространстве
+ * кафедры на главной схем висели личные работы. Поэтому здесь один запрос и
+ * одно пространство, а какое именно — решает переключатель в оболочке.
  */
-export async function fetchAllProjects(): Promise<ProjectCard[]> {
-  const { workspaces } = await unwrap<{ workspaces: WorkspaceCard[] }>(api.GET('/api/workspaces'))
-  const пачки = await Promise.all(
-    workspaces.map((ws) =>
-      unwrap<{ projects: ProjectCard[] }>(
-        api.GET('/api/projects', { params: { query: { workspace_id: ws.id } } }),
-      ).then((тело) => тело.projects),
-    ),
+export async function fetchWorkspaceProjects(workspaceId: string): Promise<ProjectCard[]> {
+  const тело = await unwrap<{ projects: ProjectCard[] }>(
+    api.GET('/api/projects', { params: { query: { workspace_id: workspaceId } } }),
   )
-  return пачки.flat()
+  return тело.projects
 }
 
 export function fetchProject(projectId: string): Promise<ProjectCard> {

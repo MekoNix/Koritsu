@@ -2,7 +2,7 @@
 agent — прогон уровня 3: модель работает инструментами и ставит значения сама.
 
     payload   {"endpoint": "deepseek", "task": "…", "keys": [...],
-               "max_steps": 12, "overwrite": false}
+               "max_steps": 12, "overwrite": false, "report": "<id отчёта>"}
     result    {"filled": [...], "outcome": "done", "steps": 7, "calls": 11,
                "problems": N, "task_chars": 240, "key_source": "own"}
 

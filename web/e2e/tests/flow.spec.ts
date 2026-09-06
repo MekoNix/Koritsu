@@ -76,12 +76,25 @@ test('путь человека: от регистрации до выхода',
     .click()
   await expect(page.getByRole('heading', { name: t('reports.home.title') })).toBeVisible()
   await page.getByRole('link', { name: ПРОЕКТ }).click()
-  await expect(page).toHaveURL(new RegExp(`/reports/${projectId}$`))
+  // Главная отчётов в два шага: сначала работа, потом её отчёты. Отчётов в
+  // работе бывает несколько, и первый из них заводится здесь же — он забирает
+  // собственный документ работы вместе с её бланком и тегами.
+  await expect(page).toHaveURL(new RegExp(`/reports\\?project=${projectId}$`))
+  await page
+    .getByRole('button', { name: t('reports.list.create') })
+    .first()
+    .click()
+  const окно_отчёта = page.getByRole('dialog')
+  await окно_отчёта.getByLabel(t('reports.list.nameLabel')).fill('Отчёт по работе')
+  await окно_отчёта.getByRole('button', { name: t('reports.list.createAction') }).click()
+  await expect(page).toHaveURL(new RegExp(`/reports/${projectId}/[0-9a-f-]{36}`), {
+    timeout: 30_000,
+  })
 
   // Теги пришли из шаблона: оба, и оба пустые.
-  await expect(
-    page.getByRole('button', { name: new RegExp(`\\{\\{${TAG_ONE}\\}\\}`) }),
-  ).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: new RegExp(TAG_ONE) })).toBeVisible({
+    timeout: 30_000,
+  })
   await expect(page.getByText(t('reports.tags.counter', { filled: 0, total: 2 }))).toBeVisible()
 
   const поле = page.getByRole('textbox', { name: t('reports.editor.field', { tag: TAG_ONE }) })
@@ -135,7 +148,7 @@ test('путь человека: от регистрации до выхода',
   await expect(page.getByRole('link', { name: t('reports.pdf.downloadDocx') })).toBeVisible()
 
   // ── 7. версии тега и откат ────────────────────────────────────────────────
-  await page.getByRole('button', { name: new RegExp(`\\{\\{${TAG_ONE}\\}\\}`) }).click()
+  await page.getByRole('button', { name: new RegExp(TAG_ONE) }).click()
   const своё = 'Написано рукой на сквозной проверке.'
   await поле.fill(своё)
   await page.getByRole('button', { name: t('common.action.save'), exact: true }).click()
@@ -193,9 +206,8 @@ test('путь человека: от регистрации до выхода',
     n: 1,
     project: ПРОЕКТ,
   })
-  await expect(page.getByText(t('diagrams.work.savedAs', { name: имяСхемы }))).toBeVisible({
-    timeout: 60_000,
-  })
+  await expect(page.getByText(t('diagrams.work.savedAs'))).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText(имяСхемы)).toBeVisible()
 
   // ── 9. настройки: ключ модели, ключ для скриптов, тема ────────────────────
   // Ключи поставщиков живут в «Конфигурации агентов»: пресет и ключ, которым за

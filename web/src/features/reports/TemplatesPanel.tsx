@@ -22,7 +22,6 @@
  */
 import { useState } from 'react'
 
-import { errorText } from '@/api'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import {
@@ -50,15 +49,27 @@ import { useUseProjectTemplate } from './data'
 /** Что принимает окно выбора файла. То же, что у диалога «Новая работа». */
 const DOCX = '.docx,.dotx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
-export function TemplatesPanel({ projectId, canEdit }: { projectId: string; canEdit: boolean }) {
+export function TemplatesPanel({
+  projectId,
+  report,
+  canEdit,
+}: {
+  projectId: string
+  /**
+   * Отчёт работы, чей бланк выбирают. Список приложенных один на работу, а
+   * пометка «по нему собирается» — у каждого отчёта своя.
+   */
+  report: string
+  canEdit: boolean
+}) {
   const t = useT()
   const toast = useToast()
 
-  const list = useProjectTemplates(projectId)
+  const list = useProjectTemplates(projectId, report)
   const shelf = useTemplates()
   const attach = useAttachProjectTemplate()
   const detach = useDetachProjectTemplate()
-  const use = useUseProjectTemplate(projectId)
+  const use = useUseProjectTemplate(projectId, report)
 
   const [file, setFile] = useState<File | null>(null)
   const [fromShelf, setFromShelf] = useState('')
@@ -75,7 +86,7 @@ export function TemplatesPanel({ projectId, canEdit }: { projectId: string; canE
       setFile(null)
       setFromShelf('')
     } catch (e) {
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 
@@ -85,7 +96,7 @@ export function TemplatesPanel({ projectId, canEdit }: { projectId: string; canE
       await use.mutateAsync({ templateId: toUse.id })
       setToUse(null)
     } catch (e) {
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 
@@ -141,7 +152,7 @@ export function TemplatesPanel({ projectId, canEdit }: { projectId: string; canE
                   onClick={() =>
                     detach.mutate(
                       { projectId, templateId: ш.id },
-                      { onError: (e) => toast.error(errorText(e)) },
+                      { onError: (e) => toast.fail(e) },
                     )
                   }
                 >

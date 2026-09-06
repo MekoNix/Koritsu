@@ -12,6 +12,9 @@
     POST /auth/logout-all        200  {"status": "ok"}
     GET  /auth/me                200  {"user": {...}, "admin_domain": "..."}
     PATCH /auth/me               200  {"user": {...}}
+    POST /auth/me/avatar         200  {"user": {...}}  multipart, поле `file`
+    DELETE /auth/me/avatar       200  {"user": {...}}
+    GET  /users/{id}/avatar      200  image/png
     POST /auth/password/forgot   200  {"status": "reset_sent"}
     POST /auth/password/reset    200  {"status": "password_changed"}
 
@@ -44,15 +47,19 @@
     token_expired        400  токен был годен, но протух
     invalid_nickname     422  ник не той длины или не из тех знаков
     nickname_taken       409  такой ник уже занят (без учёта регистра)
+    unsupported_type     400  аватар не PNG, не JPEG и не WebP
+    file_too_large       413  аватар больше мегабайта
+    not_found            404  своей картинки у этого человека нет
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
 from ..db import SessionDep, now
 from ..errors import ApiError
-from . import mail
+from ..ids import check_id
+from . import avatar, mail
 from .models import CONFIRM, ENDPOINT_LEN, RESET, User
 from .service import (EMAIL_NOT_CONFIRMED, INVALID_CREDENTIALS, NICK_LEN,
                       PASSWORD_MAX, PASSWORD_MIN, RATE_LIMITED, CurrentUser,
@@ -67,6 +74,13 @@ from .service import (EMAIL_NOT_CONFIRMED, INVALID_CREDENTIALS, NICK_LEN,
                       текущая_сессия, требовать_свободный_ник)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Второй роутер того же пакета: картинка человека адресуется его
+# идентификатором (`/api/users/<uuid>/avatar`), а не «мной». Под `/auth` она
+# лежать не может — там всё про того, кто пришёл, а аватар спрашивают и про
+# соседа по пространству. Тег общий: для читателя документа это по-прежнему
+# аккаунты.
+users_router = APIRouter(prefix="/users", tags=["auth"])
 
 # Один и тот же ответ на «завёл нового» и «такая почта уже есть». Константой, а
 # не двумя литералами: два литерала разойдутся на первой же правке текста, и
@@ -216,6 +230,12 @@ def профиль(user: User) -> dict:
         # и пропадал бы на втором устройстве.
         "default_endpoint": user.default_endpoint,
         "agent_overwrite": bool(user.agent_overwrite),
+        # Своя картинка: **число замен**, а не адрес. Ноль — картинки нет, и
+        # аватар рисует сайт из идентификатора. Адрес сайт складывает сам
+        # (`/api/users/<id>/avatar?v=<число>`), потому что он же знает, под
+        # каким префиксом пути живёт; отдавать его отсюда значило бы вписывать
+        # настройку выката в карточку человека.
+        "avatar_version": int(user.avatar_version or 0),
         "created_at": (в_utc(user.created_at) or now()).isoformat(),
     }
 
@@ -474,6 +494,139 @@ def правка_профиля(тело: ProfileIn, me: CurrentUser, request: R
     return {"user": профиль(me)}
 
 
+# ── своя картинка ────────────────────────────────────────────────────────────
+
+# Описание тела для OpenAPI: обработчик берёт `Request`, а не `UploadFile` (иначе
+# файл принимается целиком до первой нашей строки, и предел в мегабайт
+# опаздывает), поэтому форму запроса FastAPI из подписи не выведет. Без этих
+# строк сгенерированный клиент сайта не знал бы, что у загрузки есть тело.
+ТЕЛО_КАРТИНКИ = {
+    "requestBody": {
+        "required": True,
+        "content": {"multipart/form-data": {"schema": {
+            "type": "object",
+            "properties": {"file": {"type": "string", "format": "binary"}},
+            "required": ["file"]}}},
+    }
+}
+
+
+@router.post("/me/avatar", operation_id="set_avatar",
+             summary="Upload the signed-in user's avatar",
+             description=(
+                 "Takes a multipart form with a single 'file' field: a PNG, "
+                 "JPEG or WebP image of at most 1 MB. The format is decided by "
+                 "the leading bytes, never by the file name, and the picture is "
+                 "re-encoded into a 256x256 PNG cropped to its centre, so only "
+                 "pixels survive the upload. The name sent by the client is not "
+                 "used at all. Returns the whole profile, with avatar_version "
+                 "raised by one. 400 unsupported_type, 400 no_file, "
+                 "401 unauthenticated, 413 file_too_large."),
+             openapi_extra=ТЕЛО_КАРТИНКИ)
+async def поставить_аватар(request: Request, me: CurrentUser,
+                           s: SessionDep) -> dict:
+    """Своя картинка вместо генеративного аватара.
+
+    Приём — тем же способом, что у материалов и шаблонов
+    (`materials.upload.принять_файл`): счётчик стоит на потоке, и первый
+    килобайт сверх предела рвёт приём. Файл, принятый целиком и только потом
+    измеренный, — это не заслон, а отчёт о том, что заслон опоздал.
+
+    Имя файла, которое вернёт разборщик, здесь **не используется вовсе**: путь
+    складывается из идентификатора аккаунта, а тип решают первые байты.
+    Санитайзер содержимого — пересохранение картинки нашими руками
+    (`avatar.перерисовать`), после которого от чужого файла остаются только
+    пиксели.
+
+    Файл ложится на диск раньше, чем растёт счётчик замен. Порядок наоборот
+    оставлял бы после сбоя записи профиль, который обещает картинку, и 404 на
+    её месте.
+
+    В квоту аватар не входит: четверть мегабайта на аккаунт — это не место,
+    которым распоряжается человек, а часть его карточки. Считать её значило бы
+    объяснять человеку, почему картинка съела его материалы.
+
+    Импорт соседа внутри функции: `accounts` — нижний подпакет службы и на
+    уровне модуля про соседей не знает (см. шапку пакета).
+    """
+    from ..materials import upload                             # noqa: PLC0415
+
+    settings = request.app.state.settings
+    _, данные = await upload.принять_файл(request, avatar.ПРЕДЕЛ)
+    картинка = avatar.перерисовать(данные)
+    avatar.записать(settings, me.id, картинка)
+    me.avatar_version = int(me.avatar_version or 0) + 1
+    событие(request, "avatar_set", user=me.id)
+    return {"user": профиль(me)}
+
+
+@router.delete("/me/avatar", operation_id="delete_avatar",
+               summary="Remove the signed-in user's avatar",
+               description=(
+                   "Deletes the uploaded picture and goes back to the avatar "
+                   "generated from the account id. Answers the same whether or "
+                   "not a picture was there. Returns the whole profile, with "
+                   "avatar_version back to zero. 401 unauthenticated."))
+def снять_аватар(request: Request, me: CurrentUser, s: SessionDep) -> dict:
+    """Убрать свою картинку. Умолчание — генеративный аватар, и он вернётся.
+
+    Отсутствие файла не отказ: человек просил, чтобы своей картинки не было, и
+    после вызова её нет. Отказывать здесь значило бы объяснять человеку разницу
+    между «убрал» и «уже было убрано», которой для него не существует.
+    """
+    avatar.снять(request.app.state.settings, me.id)
+    me.avatar_version = 0
+    событие(request, "avatar_removed", user=me.id)
+    return {"user": профиль(me)}
+
+
+@users_router.get("/{user_id}/avatar", operation_id="get_user_avatar",
+                  summary="The avatar picture of a user",
+                  description=(
+                      "The PNG uploaded by that user, 256x256. Any signed-in "
+                      "caller may ask: avatars are shown next to nicknames in "
+                      "shared workspaces. A user without an uploaded picture "
+                      "answers 404 - the interface draws the generated avatar "
+                      "itself. Pass the avatar_version from the profile as v to "
+                      "get a long-lived cached answer. 400 invalid_id, "
+                      "401 unauthenticated, 404 not_found."),
+                  response_class=Response)
+def аватар_человека(user_id: str, me: CurrentUser, request: Request,
+                    v: str | None = Query(
+                        None, max_length=32,
+                        description="avatar_version from the profile")
+                    ) -> Response:
+    """Картинка человека — любому вошедшему.
+
+    Открыто всякому вошедшему намеренно: аватар стоит рядом с ником в списке
+    участников пространства и в карточке работы, то есть ровно там, где ник и
+    так виден. Секрета в картинке нет, а проверка «а состоите ли вы в одном
+    пространстве» стоила бы запроса в базу на каждую картинку в списке.
+
+    Своей картинки нет — `404`, и его же получает несуществующий человек:
+    два разных ответа рассказывали бы любому вошедшему, какие идентификаторы
+    заведены.
+
+    Кэш зависит от того, назвали ли версию. С `?v=` адрес меняется при всякой
+    замене, поэтому ответ можно держать год; без версии браузер обязан
+    переспрашивать — иначе замена картинки не была бы видна самому человеку.
+    """
+    check_id(user_id, where="path.user_id")
+    данные = avatar.прочитать(request.app.state.settings, user_id)
+    if данные is None:
+        raise ApiError("not_found", "This user has no uploaded avatar", 404,
+                       where="path.user_id")
+    return Response(
+        content=данные, media_type="image/png",
+        headers={
+            "Cache-Control": ("private, max-age=31536000, immutable" if v
+                              else "private, max-age=60"),
+            # Тип мы знаем точно — мы сами его и записали, — но угадывать
+            # браузеру всё равно запрещено: правило одно на все байты службы.
+            "X-Content-Type-Options": "nosniff",
+        })
+
+
 # ── пароль ───────────────────────────────────────────────────────────────────
 
 @router.post("/password/forgot", operation_id="forgot_password",
@@ -533,4 +686,5 @@ def reset(тело: ResetIn, request: Request, response: Response,
     return {"status": "password_changed"}
 
 
-__all__ = ["router", "профиль", "РЕГИСТРАЦИЯ_ПРИНЯТА", "СБРОС_ОТПРАВЛЕН"]
+__all__ = ["router", "users_router", "профиль", "РЕГИСТРАЦИЯ_ПРИНЯТА",
+           "СБРОС_ОТПРАВЛЕН"]

@@ -23,10 +23,12 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 
-import { errorText, keys } from '@/api'
+import { keys } from '@/api'
+import { useCurrentWorkspace } from '@/api/hooks'
 // Имя запуска и короткая дата — те же, что в журнале работы (`runTitle`,
 // `formatWhen`): одна и та же схема не может называться на двух экранах
 // по-разному.
+import { RunName } from '@/features/projects/RunName'
 import { formatWhen, runTitle } from '@/features/projects/format'
 import { useT } from '@/i18n'
 import {
@@ -43,7 +45,9 @@ import {
   useToast,
 } from '@/ui'
 
-import { deleteDiagram, fetchAllProjects, fetchArtifact, fetchDiagrams } from './api'
+import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
+
+import { deleteDiagram, fetchArtifact, fetchDiagrams, fetchWorkspaceProjects } from './api'
 import { safeFilename, saveBlob } from './download'
 import type { DiagramInProject, Module } from './types'
 
@@ -54,9 +58,15 @@ export function DiagramsHome({ module }: { module: Module }) {
   const qc = useQueryClient()
   const корень = module === 'uml' ? '/uml' : '/flowcharts'
 
+  // Работы текущего пространства, а не все сразу: в пространстве кафедры на
+  // главной схем личным работам делать нечего. Пространство входит в ключ кэша
+  // — иначе переключение показывало бы прежний список до его устаревания.
+  const workspace = useCurrentWorkspace()
+  const workspaceId = workspace.data?.id ?? ''
   const projects = useQuery({
-    queryKey: keys.diagrams.projects,
-    queryFn: fetchAllProjects,
+    queryKey: keys.diagrams.projects(workspaceId),
+    enabled: !!workspaceId,
+    queryFn: () => fetchWorkspaceProjects(workspaceId),
   })
 
   // По запросу на работу: списка «схемы всех работ» у службы нет, а склеивать
@@ -82,7 +92,7 @@ export function DiagramsHome({ module }: { module: Module }) {
       // обязан обновиться тем же действием.
       void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
     },
-    onError: (беда: unknown) => toast.error(t('diagrams.home.removeFailed'), errorText(беда)),
+    onError: (беда: unknown) => toast.fail(беда, t('diagrams.home.removeFailed')),
   })
 
   const заголовок = t(
@@ -94,6 +104,9 @@ export function DiagramsHome({ module }: { module: Module }) {
     <section className="flex flex-col gap-s4">
       <header className="flex flex-wrap items-start justify-between gap-s3">
         <div className="flex min-w-0 flex-col gap-s2">
+          {/* Схемы показываются по работам текущего пространства — подпись
+              говорит, по какому именно. */}
+          <WorkspaceCaption ws={workspace.data} />
           <h1 className="font-display text-xl font-bold tracking-tight text-ink-strong">
             {заголовок}
           </h1>
@@ -151,7 +164,17 @@ export function DiagramsHome({ module }: { module: Module }) {
                       className="text-muted"
                     />
                     <div className="flex min-w-0 flex-col">
-                      <span className="truncate text-sm font-semibold text-ink-strong">{имя}</span>
+                      {/* Схема переименовывается там, где человек её нашёл:
+                          карандаш рядом с именем или двойной щелчок по нему.
+                          Имя схемы — это имя записи журнала, поэтому правит его
+                          общий `RunName`, а не второе поле рядом. */}
+                      <RunName
+                        projectId={project.id}
+                        runId={diagram.run_id}
+                        name={diagram.name}
+                        title={имя}
+                        className="text-sm font-semibold text-ink-strong"
+                      />
                       <span className="truncate text-xs text-muted">
                         {t('diagrams.home.inProject')}: {project.name}
                         {diagram.created_at ? ` · ${formatWhen(diagram.created_at)}` : ''}
@@ -166,7 +189,7 @@ export function DiagramsHome({ module }: { module: Module }) {
                           void fetchArtifact(project.id, diagram.artifact)
                             .then((blob) => saveBlob(blob, safeFilename(имя, 'drawio.xml')))
                             .catch((беда: unknown) =>
-                              toast.error(t('diagrams.work.downloadXml'), errorText(беда)),
+                              toast.fail(беда, t('diagrams.work.downloadXml')),
                             )
                         }
                       >

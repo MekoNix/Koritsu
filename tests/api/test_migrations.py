@@ -54,6 +54,8 @@ from api.db import Db, alembic_config, current_revision
     "c8f1a2b46d73",              # projects.module, project_runs, project_templates
     "e7a4c19b3d02",              # workspace_members.status (приглашения)
     "f3d6a08b5c14",              # project_diagrams (код и параметры схем)
+    "a7c2e51f8b03",              # users.avatar_version (своя картинка)
+    "b6d3f0a17c92",              # project_runs.preview_artifact_id (первая страница)
 )
 
 ГОЛОВА = ЦЕПОЧКА[-1]
@@ -181,8 +183,14 @@ def test_каждая_ступень_по_одной(том, cfg):
         {"b2d7c1a54e39"},
         {"c8f1a2b46d73"},
         {"e7a4c19b3d02"},
+        {"f3d6a08b5c14"},
+        {"a7c2e51f8b03"},
         {ГОЛОВА},
     ]
+    # Ступеней ровно столько же, сколько ревизий: `zip` молча обрезал бы список
+    # по короткому, и забытая строка здесь означала бы непроверенную ступень,
+    # выглядящую как проверенная.
+    assert len(ожидаемые) == len(ЦЕПОЧКА)
     for ревизия, головы in zip(ЦЕПОЧКА, ожидаемые):
         command.upgrade(cfg, ревизия)
         assert головы_базы(том) == головы, ревизия

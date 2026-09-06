@@ -115,8 +115,10 @@ class ErrorOut(BaseModel):
 
 
 # Что дописывается к каждому маршруту обоих входов (`app.create_app`).
-# `default`, а не перечень кодов: перечень пришлось бы держать в согласии с
-# докстроками пяти модулей, а разошёлся бы он молча — первым же новым отказом.
+# `default`, а не перечень кодов у каждого маршрута: такой перечень пришлось бы
+# держать в согласии с докстроками пяти модулей, а разошёлся бы он молча —
+# первым же новым отказом. Общий список кодов службы всё же есть (`КОДЫ`), но
+# он один на всю службу и его держит в согласии проверка, а не внимательность.
 ОТВЕТЫ_БЕД: dict = {
     "default": {"model": ErrorOut,
                 "description": "Any refusal: one shape, machine-readable code"},
@@ -129,12 +131,85 @@ METHOD_NOT_ALLOWED = "method_not_allowed"
 VALIDATION_FAILED = "validation_failed"
 INVALID_ID = "invalid_id"
 INTERNAL = "internal_error"
+HTTP_ERROR = "http_error"
 
 # Постоянный текст пятисотки. Никогда не подменяется текстом исключения.
 INTERNAL_MESSAGE = "Internal server error"
 
+
+# ── перечень кодов ───────────────────────────────────────────────────────────
+#
+# Код — договор, и у каждого договора есть вторая сторона: интерфейс, который
+# показывает человеку, что случилось и что делать. Пока перечня не было, эта
+# сторона держалась на внимательности — новый код доезжал до экрана английским
+# текстом службы посреди русской страницы, и замечал это человек, а не проверка.
+#
+# Отсюда список ниже. Он не подменяет докстроки модулей («какой маршрут чем
+# отказывает» по-прежнему написано у маршрута) — он отвечает на другой вопрос:
+# какие коды у службы есть вообще. Держат его в согласии с кодом две проверки:
+#
+# * `tests/api/test_error_codes.py` — каждый код, брошенный где-нибудь в
+#   `packages/api`, записан здесь;
+# * проверка сайта — у каждого записанного кода есть перевод.
+#
+# Наружу перечень уезжает полем `x-error-codes` документа OpenAPI (`install`):
+# так сайту не приходится читать питон, чтобы узнать список.
+
+# Отказы: сюда попадает всё, что служба бросает `ApiError`.
+КОДЫ_ОТКАЗОВ: tuple[str, ...] = (
+    "account_blocked", "agent_refused", "already_finished", "already_member",
+    "bad_outputs", "bad_template", "build_failed", "csrf_failed",
+    "diagram_failed", "email_not_confirmed", "email_taken",
+    "endpoint_required", "export_too_large", "file_too_large", "forbidden",
+    "http_error", "in_trash", "insufficient_scope", "internal_error",
+    "invalid_credentials", "invalid_id", "invalid_key", "invalid_name",
+    "invalid_nickname", "invalid_source", "invalid_token", "invalid_value",
+    "kadai_failed", "key_required", "last_owner", "limit_exhausted",
+    "method_not_allowed", "nickname_taken", "no_file", "no_invite", "no_key",
+    "no_such_user", "not_found", "not_implemented", "not_in_trash",
+    "not_ready", "note_required", "parse_failed", "personal_workspace",
+    "project_exists", "project_required", "quota_exceeded", "rate_limited",
+    "run_failed", "source_too_large", "tag_refused", "task_too_long",
+    "token_expired", "token_not_allowed", "token_required", "token_revoked",
+    "unauthenticated", "unauthorized", "unknown_job_kind",
+    "unknown_job_status", "unknown_lang", "unknown_mode", "unknown_module",
+    "unknown_plan", "unknown_provider", "unknown_role", "unknown_scope",
+    "unknown_stage", "unknown_tag", "unknown_theme", "unsupported_type",
+    "validation_failed",
+)
+
+# Беды заданий. Ответом HTTP они не приходят — приходят полем `error` карточки
+# задания и событием потока, — но человеку показываются тем же словарём, что и
+# отказы, и потому перечислены рядом (`jobs/worker.py`, `jobs/child.py`,
+# `runs/handlers/common.py`).
+КОДЫ_ЗАДАНИЙ: tuple[str, ...] = (
+    "bad_result", "cancelled", "cancelled_before", "handler_crashed",
+    "handler_failed", "no_handler", "timeout", "worker_lost",
+)
+
+КОДЫ: tuple[str, ...] = tuple(sorted(set(КОДЫ_ОТКАЗОВ) | set(КОДЫ_ЗАДАНИЙ)))
+
 # Что стоит в коде, когда обработчик отдал голый `HTTPException`.
 _BY_STATUS = {404: NOT_FOUND, 405: METHOD_NOT_ALLOWED}
+
+
+def дописать_коды(app: FastAPI) -> None:
+    """Положить перечень кодов в документ OpenAPI полем `x-error-codes`.
+
+    Полем документа, а не перечислением в `enum` у `ErrorBody.code`: `enum`
+    превратил бы код в закрытый тип в сгенерированном клиенте, и служба,
+    отдавшая новый код старому сайту, ломала бы у него разбор ответа. Здесь же
+    это справка — список того, что бывает, — и читает её проверка переводов, а
+    не рабочий код.
+    """
+    исходный = app.openapi
+
+    def openapi() -> dict:
+        документ = исходный()
+        документ.setdefault("x-error-codes", list(КОДЫ))
+        return документ
+
+    app.openapi = openapi                                    # type: ignore[method-assign]
 
 
 def _where_of(loc) -> str | None:
@@ -155,6 +230,8 @@ def install(app: FastAPI) -> None:
     `X-Request-Id`, что и запись в журнале, — иначе жалобу «у меня всё
     сломалось» не связать с трассировкой.
     """
+
+    дописать_коды(app)
 
     @app.exception_handler(ApiError)
     async def _api_error(request: Request, exc: ApiError) -> JSONResponse:
@@ -177,7 +254,8 @@ def install(app: FastAPI) -> None:
         return ApiError(code, str(exc.detail), exc.status_code).response()
 
 
-__all__ = ["ApiError", "ConfigError", "ApiError", "install",
+__all__ = ["ApiError", "ConfigError", "ApiError", "install", "дописать_коды",
            "ErrorOut", "ErrorBody", "ОТВЕТЫ_БЕД",
+           "КОДЫ", "КОДЫ_ОТКАЗОВ", "КОДЫ_ЗАДАНИЙ",
            "NOT_FOUND", "METHOD_NOT_ALLOWED", "VALIDATION_FAILED",
-           "INVALID_ID", "INTERNAL", "INTERNAL_MESSAGE"]
+           "INVALID_ID", "INTERNAL", "HTTP_ERROR", "INTERNAL_MESSAGE"]

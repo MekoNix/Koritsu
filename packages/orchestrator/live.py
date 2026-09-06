@@ -380,7 +380,8 @@ def solve(project, task: str, *, endpoint: str, tools=None, chunks=(), data=(),
 
     run = project.start_run(level=3, endpoint=endpoint)
     parts = [prompt_mod.live_rules_part()]
-    parts.extend(prompt_mod.file_parts(project.store(), chunks=chunks))
+    parts.extend(prompt_mod.file_parts(project.store(), chunks=chunks,
+                                   only=project.context_ids()))
     parts.extend(prompt_mod.data_parts(data))
     outline = prompt_mod.blocks_part(project)
     if outline is not None:
@@ -488,7 +489,8 @@ def write_texts(project, *, endpoint: str, chunks=(), data=(), max_tokens=None,
 
     run = project.start_run(level=2, endpoint=endpoint)
     parts = [prompt_mod.ask_rules_part()]
-    parts.extend(prompt_mod.file_parts(project.store(), chunks=chunks))
+    parts.extend(prompt_mod.file_parts(project.store(), chunks=chunks,
+                                   only=project.context_ids()))
     parts.extend(prompt_mod.data_parts(data))
     список = prompt_mod.blocks_part(project, texts=True, blocks=records)
     if список is not None:

@@ -37,15 +37,19 @@ function StatusChip({ status }: { status: string }) {
  * Почему прогон упал — строкой для человека.
  *
  * Тем же путём, что у тоста оболочки (`useUserEvents.failedReason`): код из
- * задания, русский текст ему даёт общий словарь отказов. Незнакомый код второй
- * строки не даёт вовсе — английское `handler_failed` в панели хуже, чем его
- * отсутствие.
+ * задания, обе строки ему даёт общий словарь отказов — что случилось и что
+ * делать. Незнакомый код второй строки не даёт вовсе — английское
+ * `handler_failed` в панели хуже, чем его отсутствие.
  */
 function failedReason(error: unknown): string | undefined {
   const code = (error as { code?: unknown } | null)?.code
   if (typeof code !== 'string' || !code) return undefined
-  const текст = translate(`errors.${code}`)
-  return текст === `errors.${code}` ? undefined : текст
+  const ключ = `errors.${code}.what`
+  const что = translate(ключ)
+  if (что === ключ) return undefined
+  const ключ_дальше = `errors.${code}.next`
+  const дальше = translate(ключ_дальше)
+  return дальше === ключ_дальше ? что : `${что} ${дальше}`
 }
 
 /** Чем именно кончился прогон, если для этого исхода есть русское слово. */
@@ -70,7 +74,16 @@ function недошёл(run: AgentRunState): boolean {
   return code === 'run_failed' || run.result?.ok === false
 }
 
-export function AgentRunView({ run, projectId }: { run: AgentRunState; projectId: string }) {
+export function AgentRunView({
+  run,
+  projectId,
+  report = '',
+}: {
+  run: AgentRunState
+  projectId: string
+  /** Отчёт, в котором шёл прогон: ссылки на теги ведут в него, а не в соседний. */
+  report?: string
+}) {
   const t = useT()
   const status = run.job?.status ?? ''
   const доля = run.total > 0 ? run.step / run.total : 0
@@ -102,7 +115,7 @@ export function AgentRunView({ run, projectId }: { run: AgentRunState; projectId
             <li key={ход.seq} className="flex items-center gap-s2 text-sm text-ink">
               <Icon name="check" size={14} className="shrink-0 text-ok" />
               <Link
-                to={tagHref(projectId, ход.key)}
+                to={tagHref(projectId, ход.key, report)}
                 className="truncate font-mono text-xs underline"
               >
                 {ход.key}
@@ -169,7 +182,7 @@ export function AgentRunView({ run, projectId }: { run: AgentRunState; projectId
               {run.changed.map((ключ) => (
                 <li key={ключ}>
                   <Link
-                    to={tagHref(projectId, ключ)}
+                    to={tagHref(projectId, ключ, report)}
                     className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-0.5 font-mono text-xs text-ink hover:border-agent"
                   >
                     <Icon name="file" size={12} aria-hidden="true" />

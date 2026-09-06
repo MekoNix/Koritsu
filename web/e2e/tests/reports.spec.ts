@@ -100,7 +100,9 @@ test('отчёт: прокрутка тегов, пять версий, обща
   await expect(поле).toBeVisible({ timeout: 30_000 })
 
   // ── 1. список тегов мотается до последнего ────────────────────────────────
-  const последний = page.getByRole('button', { name: `{{${ПОСЛЕДНИЙ}}}` })
+  // Тег в списке назван ключом без фигурных скобок: скобки нужны в бланке, где
+  // подстановку надо отличить от текста, а в списке одних подстановок — нет.
+  const последний = page.getByRole('button', { name: ПОСЛЕДНИЙ })
   await последний.scrollIntoViewIfNeeded()
   await expect(последний).toBeInViewport()
 
@@ -132,8 +134,8 @@ test('отчёт: прокрутка тегов, пять версий, обща
   await page.keyboard.press('Escape')
 
   // Теги теперь те, что в выбранном бланке: сорока тегов длинного больше нет.
-  await expect(page.getByRole('button', { name: `{{выводы}}` })).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByRole('button', { name: `{{${ПОСЛЕДНИЙ}}}` })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'выводы' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: ПОСЛЕДНИЙ })).toHaveCount(0)
   // Значение пережило смену бланка: тег «цель» есть в обоих бланках.
   await expect(page.getByText(t('reports.editor.byHand', { n: 6 }))).toBeVisible()
 

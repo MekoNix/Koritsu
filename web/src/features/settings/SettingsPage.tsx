@@ -42,7 +42,6 @@ export function SettingsPage() {
         <h1 className="font-display text-xl font-bold tracking-tight text-ink-strong">
           {t('settings.title')}
         </h1>
-        <p className="mt-1 text-sm text-muted">{t('settings.subtitle')}</p>
       </header>
 
       <div className="grid items-start gap-s5 lg:grid-cols-[240px_minmax(0,1fr)]">

@@ -1,11 +1,20 @@
 /**
  * data — что палитра ищет.
  *
- * Ищет служба: `GET /api/search?q=` ходит по проектам всех пространств
- * человека и по материалам внутри них (`packages/api/search`). Раньше поиска не
- * было вовсе, и палитра отбирала по загруженному: проекты всех пространств она
- * дозагружала сама, а материалы видела только у открытой работы — то есть файл
- * в соседней работе не находился никогда.
+ * Ищет служба: `GET /api/search` ходит по работам одного пространства и по
+ * материалам внутри них (`packages/api/search`). Раньше поиска не было вовсе, и
+ * палитра отбирала по загруженному: работы она дозагружала сама, а материалы
+ * видела только у открытой — то есть файл в соседней работе не находился
+ * никогда.
+ *
+ *     Почему пространство обязательно
+ *     -------------------------------
+ *
+ * Пространство разделяет работу с кафедрой и свою, и три буквы, набранные в
+ * чужом пространстве, показывали имена личных работ там, где их быть не
+ * должно. Поэтому поиск спрашивает то пространство, в котором человек сейчас
+ * работает, и параметр этот у службы обязателен: пропущенный `workspace_id` —
+ * отказ, а не «поищу везде».
  *
  *     Почему запрос откладывается на 200 мс
  *     -------------------------------------
@@ -25,6 +34,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 
 import { api, keys, unwrap } from '@/api'
+import { useCurrentWorkspace } from '@/api/hooks'
 import { projectModuleLink } from '@/features/projects/moduleRoutes'
 
 import type { Hit, SearchBody } from './types'
@@ -62,12 +72,20 @@ export function useSearch(
   error: unknown
 } {
   const отложенный = useDebounced(query.trim(), ЗАДЕРЖКА_МС)
+  const workspace = useCurrentWorkspace()
+  const workspaceId = workspace.data?.id ?? ''
 
   const выдача = useQuery({
-    queryKey: keys.search.query(отложенный),
-    enabled: open && !!отложенный,
+    queryKey: keys.search.query(workspaceId, отложенный),
+    // Пространство ещё не приехало — спрашивать нечего: запрос без него
+    // служба отвергнет, и палитра показала бы отказ вместо подсказки.
+    enabled: open && !!отложенный && !!workspaceId,
     queryFn: () =>
-      unwrap<SearchBody>(api.GET('/api/search', { params: { query: { q: отложенный } } })),
+      unwrap<SearchBody>(
+        api.GET('/api/search', {
+          params: { query: { workspace_id: workspaceId, q: отложенный } },
+        }),
+      ),
     // Прежняя выдача остаётся на экране, пока едет новая: иначе список мигает
     // пустотой между двумя буквами, и человек читает это как «ничего не нашлось».
     placeholderData: keepPreviousData,

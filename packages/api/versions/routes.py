@@ -4,7 +4,7 @@ routes — история значений и возврат к прошлой �
     GET  …/values/{key}/versions        200  все версии тега, старые сверху
     GET  …/values/{key}/versions/{n}    200  шапка версии и само значение
     POST …/values/{key}/rollback        200  вернуть версию {n} (роль editor)
-    GET  …/blocks                       200  текущий список блоков живого режима
+    GET  …/blocks?run=                  200  текущий список блоков решения
     GET  …/blocks/versions              200  все версии списка
     GET  …/blocks/versions/{n}          200  шапка версии и сами блоки
     POST …/blocks/rollback              200  вернуть версию {n} (роль editor)
@@ -19,6 +19,11 @@ routes — история значений и возврат к прошлой �
 **Возврат — это новая версия, а не откат номера** (`Project.rollback`). Отсюда
 и `POST`, а не `DELETE`: возврат ничего не удаляет, он дописывает. Клиенту это
 видно по ответу — номер в нём **больше** того, к которому вернулись.
+
+**История принадлежит документу, а не работе.** В работе несколько отчётов, у
+каждого свои значения и своя история, и какой из них открыт, говорит `?report=`
+(идентификатор записи журнала об отчёте). Без него читается единственный
+документ работы.
 
 **Чтение — `viewer`, возврат — `editor`.** Разрез тот же, что у значений
 (`projects/routes.py`): смотреть историю может всякий, кто видит проект, а
@@ -37,7 +42,7 @@ import orchestrator
 
 from ..db import SessionDep
 from ..errors import ApiError, NOT_FOUND
-from ..projects.routes import доступный, настройки, открыть
+from ..projects.routes import ОТЧЁТ, РЕШЕНИЕ, доступный, настройки, открыть
 from ..workspaces.deps import CurrentUser
 from ..workspaces.service import EDITOR, VIEWER
 
@@ -65,9 +70,9 @@ class RollbackIn(BaseModel):
                 "themselves are not here; ask for one version. 400 invalid_id, "
                 "404 not_found, 409 in_trash."))
 def версии(project_id: str, key: str, request: Request, s: SessionDep,
-           user: CurrentUser) -> dict:
+           user: CurrentUser, report: str = ОТЧЁТ) -> dict:
     """Все версии тега. Без значений: список истории читают, чтобы выбрать."""
-    проект = _проект(s, user, project_id, request, VIEWER)
+    проект = _проект(s, user, project_id, request, VIEWER, report)
     список = проект.versions(key)
     if not список:
         raise ApiError(NOT_FOUND, "Tag has no versions", 404, where="path.key")
@@ -81,9 +86,9 @@ def версии(project_id: str, key: str, request: Request, s: SessionDep,
                 "the report builder reads. 400 invalid_id, 404 not_found, "
                 "409 in_trash."))
 def версия(project_id: str, key: str, n: int, request: Request, s: SessionDep,
-           user: CurrentUser) -> dict:
+           user: CurrentUser, report: str = ОТЧЁТ) -> dict:
     """Шапка версии и само значение — то, что показывают рядом с «Вернуть»."""
-    проект = _проект(s, user, project_id, request, VIEWER)
+    проект = _проект(s, user, project_id, request, VIEWER, report)
     try:
         шапка, значение = проект.version(key, n)
     except orchestrator.OrchestratorError as беда:
@@ -99,9 +104,9 @@ def версия(project_id: str, key: str, n: int, request: Request, s: Session
                  "for. Editor role. 400 invalid_id, 403 forbidden, "
                  "404 not_found, 409 in_trash."))
 def вернуть(project_id: str, key: str, тело: RollbackIn, request: Request,
-            s: SessionDep, user: CurrentUser) -> dict:
+            s: SessionDep, user: CurrentUser, report: str = ОТЧЁТ) -> dict:
     """Вернуть значение версии `n` — новой версией (см. докстроку модуля)."""
-    проект = _проект(s, user, project_id, request, EDITOR)
+    проект = _проект(s, user, project_id, request, EDITOR, report)
     try:
         шапка = проект.rollback(key, тело.n)
     except orchestrator.OrchestratorError as беда:
@@ -118,9 +123,9 @@ def вернуть(project_id: str, key: str, тело: RollbackIn, request: Req
                 "made of. Empty when the project has never had one. "
                 "400 invalid_id, 404 not_found, 409 in_trash."))
 def блоки(project_id: str, request: Request, s: SessionDep,
-          user: CurrentUser) -> dict:
-    """Текущий список блоков. Пусто — списка ещё не заводили."""
-    проект = _проект(s, user, project_id, request, VIEWER)
+          user: CurrentUser, run: str = РЕШЕНИЕ) -> dict:
+    """Текущий список блоков решения. Пусто — списка ещё не заводили."""
+    проект = _проект(s, user, project_id, request, VIEWER, solution=run)
     return {"blocks": проект.blocks()}
 
 
@@ -132,9 +137,9 @@ def блоки(project_id: str, request: Request, s: SessionDep,
                 "per-block version answers nothing about that. 400 invalid_id, "
                 "404 not_found, 409 in_trash."))
 def версии_блоков(project_id: str, request: Request, s: SessionDep,
-                  user: CurrentUser) -> dict:
+                  user: CurrentUser, run: str = РЕШЕНИЕ) -> dict:
     """Все версии списка блоков. Без самих блоков — по той же причине, что у тегов."""
-    проект = _проект(s, user, project_id, request, VIEWER)
+    проект = _проект(s, user, project_id, request, VIEWER, solution=run)
     return {"versions": [_шапка_блоков(v) for v in проект.block_versions()]}
 
 
@@ -144,8 +149,8 @@ def версии_блоков(project_id: str, request: Request, s: SessionDep,
                 "The header of one version and the blocks it held. "
                 "400 invalid_id, 404 not_found, 409 in_trash."))
 def версия_блоков(project_id: str, n: int, request: Request, s: SessionDep,
-                  user: CurrentUser) -> dict:
-    проект = _проект(s, user, project_id, request, VIEWER)
+                  user: CurrentUser, run: str = РЕШЕНИЕ) -> dict:
+    проект = _проект(s, user, project_id, request, VIEWER, solution=run)
     try:
         шапка, блоки_версии = проект.block_version(n)
     except orchestrator.OrchestratorError as беда:
@@ -160,8 +165,8 @@ def версия_блоков(project_id: str, n: int, request: Request, s: Sess
                  "one. Editor role. 400 invalid_id, 403 forbidden, "
                  "404 not_found, 409 in_trash."))
 def вернуть_блоки(project_id: str, тело: RollbackIn, request: Request,
-                  s: SessionDep, user: CurrentUser) -> dict:
-    проект = _проект(s, user, project_id, request, EDITOR)
+                  s: SessionDep, user: CurrentUser, run: str = РЕШЕНИЕ) -> dict:
+    проект = _проект(s, user, project_id, request, EDITOR, solution=run)
     try:
         шапка = проект.rollback_blocks(тело.n)
     except orchestrator.OrchestratorError as беда:
@@ -171,15 +176,21 @@ def вернуть_блоки(project_id: str, тело: RollbackIn, request: Re
 
 # ── общее ────────────────────────────────────────────────────────────────────
 
-def _проект(s, user, project_id: str, request: Request, роль: str):
+def _проект(s, user, project_id: str, request: Request, роль: str,
+            report: str = "", solution: str = ""):
     """Каталог проекта как `orchestrator.Project`, если роли хватает.
 
     Обе двери — чужие и взяты как есть: `доступный` (строка, роль, корзина) и
     `открыть` (каталог на томе) живут в `projects/routes.py`, и повторять их
     здесь значило бы завести второе мнение о том, кому проект виден.
+
+    `report` — какой документ работы открыт: история значения принадлежит
+    отчёту, а не работе, и один список версий на все отчёты сразу показывал бы
+    правки соседнего документа. `solution` — то же для решения: список блоков
+    принадлежит ему, и в работе с двумя задачами он у каждой свой.
     """
     p = доступный(s, user, project_id, роль)
-    return открыть(p, настройки(request))
+    return открыть(p, настройки(request), report, solution)
 
 
 def _шапка(v) -> dict:

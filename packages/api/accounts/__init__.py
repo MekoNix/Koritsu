@@ -10,7 +10,8 @@ accounts — аккаунты и сессии: кто пришёл и вправ
     models.py    users, email_tokens, sessions, registration_attempts
     service.py   пароли, токены, сессии, лимиты, зависимость `current_user`
     mail.py      протокол `Mailer` и консольная реализация (писем не шлём)
-    routes.py    `/api/auth/…`
+    avatar.py    своя картинка: сигнатура, пересохранение, место на томе
+    routes.py    `/api/auth/…` и `/api/users/{id}/avatar`
 
 **Что берут соседи.** Три имени, и других отсюда брать не надо:
 

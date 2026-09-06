@@ -34,6 +34,7 @@ function проект(patch: Record<string, unknown> = {}) {
   return {
     id: 'p-1',
     workspace_id: 'ws-1',
+    workspace_name: 'Личное',
     owner_id: 'u-1',
     name: 'Лабораторная 4 — сортировки',
     created_at: '2026-09-02T10:00:00+00:00',
@@ -57,6 +58,10 @@ function служба(активные: unknown[], корзина: unknown[]) {
   return vi.fn((request: Request) => {
     const url = new URL(request.url)
     if (url.pathname === '/api/workspaces/personal') return Promise.resolve(json(ПРОСТРАНСТВО))
+    // Подпись «Пространство» над списком зовёт личное пространство ником хозяина.
+    if (url.pathname === '/api/auth/me') {
+      return Promise.resolve(json({ user: { id: 'u-1', nickname: 'курису' } }))
+    }
     if (url.pathname === '/api/projects') {
       const trash = url.searchParams.get('trash') === 'true'
       return Promise.resolve(json({ projects: trash ? корзина : активные }))

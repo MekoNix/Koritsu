@@ -53,7 +53,13 @@ export type KadaiRunState = {
   rework: (opts: { block: string; kind: ReworkKind; note: string }) => void
 }
 
-export function useKadaiRun(projectId: string, endpoint: string | null): KadaiRunState {
+/**
+ * `runId` — решение, которое считают. Оно уезжает в `payload.run_id`: работа
+ * держит несколько решений, у каждого свой ход стадий и свой список блоков, и
+ * задание без этого поля посчитало бы соседнюю задачу. Пусто — работа целиком,
+ * какой её видели, пока решение в ней было одно.
+ */
+export function useKadaiRun(projectId: string, endpoint: string | null, runId = ''): KadaiRunState {
   const qc = useQueryClient()
   const enqueue = useEnqueueJob()
 
@@ -80,9 +86,11 @@ export function useKadaiRun(projectId: string, endpoint: string | null): KadaiRu
     закрыто.current = running.id
     // Перечитывается всё, что могло измениться прогоном: ход работы, блоки, их
     // версии, остаток месяца. Карточка проекта — из-за размера на томе.
-    void qc.invalidateQueries({ queryKey: keys.kadai.status(projectId) })
-    void qc.invalidateQueries({ queryKey: keys.kadai.blocks(projectId) })
-    void qc.invalidateQueries({ queryKey: keys.kadai.blockVersions(projectId) })
+    void qc.invalidateQueries({ queryKey: keys.kadai.status(projectId, runId) })
+    void qc.invalidateQueries({ queryKey: keys.kadai.blocks(projectId, runId) })
+    void qc.invalidateQueries({ queryKey: keys.kadai.blockVersions(projectId, runId) })
+    // Карточка решения в списке показывает стадию: после прогона она другая.
+    void qc.invalidateQueries({ queryKey: keys.kadai.runs(projectId) })
     void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
     void qc.invalidateQueries({ queryKey: keys.usage })
     if (stream.job?.status !== 'done') {
@@ -90,7 +98,7 @@ export function useKadaiRun(projectId: string, endpoint: string | null): KadaiRu
       setError(errorText(new ApiError(беда.code || 'unknown', беда.message || '')))
     }
     setRunning(null)
-  }, [running, stream.done, stream.job, projectId, qc])
+  }, [running, stream.done, stream.job, projectId, runId, qc])
 
   const поставить = useCallback(
     (kind: string, payload: Record<string, unknown>) => {
@@ -122,17 +130,23 @@ export function useKadaiRun(projectId: string, endpoint: string | null): KadaiRu
       first: boolean
     }) => {
       if (!endpoint) return
-      поставить(KADAI_RUN, { ...runPayload({ endpoint, until, stages, wishes, first }) })
+      поставить(KADAI_RUN, {
+        ...runPayload({ endpoint, until, stages, wishes, first }),
+        ...(runId ? { run_id: runId } : {}),
+      })
     },
-    [endpoint, поставить],
+    [endpoint, runId, поставить],
   )
 
   const rework = useCallback(
     ({ block, kind, note }: { block: string; kind: ReworkKind; note: string }) => {
       if (!endpoint || !note.trim()) return
-      поставить(KADAI_REWORK, { ...reworkPayload({ endpoint, block, kind, note }) })
+      поставить(KADAI_REWORK, {
+        ...reworkPayload({ endpoint, block, kind, note }),
+        ...(runId ? { run_id: runId } : {}),
+      })
     },
-    [endpoint, поставить],
+    [endpoint, runId, поставить],
   )
 
   const последнее = stageEvents.length > 0 ? stageEvents[stageEvents.length - 1] : null

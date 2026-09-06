@@ -290,7 +290,7 @@ def отвязать(s: Session, project_id: str, template_id: str) -> None:
     s.flush()
 
 
-def текущий_шаблон(проект) -> str:
+def текущий_шаблон(проект, *, report: str = "") -> str:
     """Идентификатор артефакта бланка, по которому работа собирается сейчас.
 
     Пустая строка — бланка нет вовсе (работа заведена «с нуля») или каталога
@@ -304,35 +304,47 @@ def текущий_шаблон(проект) -> str:
     смене бланка мимо службы.
     """
     try:
-        return orchestrator.Project(проект.dir).template_artifact()
+        return orchestrator.Project(проект.dir,
+                                    report=report).template_artifact()
     except Exception:                                        # noqa: BLE001
         return ""
 
 
-def выбрать(s: Session, settings: Settings, проект,
-            template_id: str) -> ReportTemplate:
-    """Собирать работу по этому приложенному бланку. → сам шаблон.
+def приложенный(s: Session, project_id: str, template_id: str, *,
+                where: str = "path.template_id") -> ReportTemplate:
+    """Бланк, приложенный к этой работе, — или `404`.
 
     Только из приложенных: список приложенных и есть то, из чего выбирают, а
     любой другой идентификатор означал бы работу по бланку, которого в ней
     никто не видел.
 
+    Отдельной функцией, потому что спрашивают об этом двое: «собирать по нему»
+    и заведение отчёта, у которого свой бланк. Вторая такая же проверка рядом
+    разошлась бы с первой на первом же уточнении.
+    """
+    связка = s.scalars(
+        select(ProjectTemplate)
+        .where(ProjectTemplate.project_id == project_id,
+               ProjectTemplate.template_id == check_id(
+                   template_id, where=where))).first()
+    if связка is None:
+        raise ApiError(NOT_FOUND, "Template is not attached to this project",
+                       404, where=where)
+    return по_ид(s, template_id, where=where)
+
+
+def выбрать(s: Session, settings: Settings, проект,
+            template_id: str, *, report: str = "") -> ReportTemplate:
+    """Собирать работу по этому приложенному бланку. → сам шаблон.
+
     Решения человека о тегах переносит `Project.update_template` — он строит
     новый манифест поверх старого. Беда оттуда наружу идёт как `bad_template`
     без подробностей: в её тексте бывает путь на томе.
     """
-    связка = s.scalars(
-        select(ProjectTemplate)
-        .where(ProjectTemplate.project_id == проект.id,
-               ProjectTemplate.template_id == check_id(
-                   template_id, where="path.template_id"))).first()
-    if связка is None:
-        raise ApiError(NOT_FOUND, "Template is not attached to this project",
-                       404, where="path.template_id")
-    шаблон = по_ид(s, template_id, where="path.template_id")
+    шаблон = приложенный(s, проект.id, template_id)
     данные = байты(settings, шаблон)
     try:
-        orchestrator.Project(проект.dir).update_template(данные)
+        orchestrator.Project(проект.dir, report=report).update_template(данные)
     except ApiError:
         raise
     except Exception:                                        # noqa: BLE001
@@ -378,5 +390,5 @@ def карточка(шаблон: ReportTemplate, *, активный: bool | N
 __all__ = ["путь", "байты", "добавить", "мои", "найти", "по_ид", "удалить",
            "карточка", "число_тегов", "имя_шаблона", "по_содержимому",
            "приложить", "шаблоны_проекта", "отвязать", "текущий_шаблон",
-           "выбрать", "BAD_TEMPLATE", "INVALID_NAME", "NOT_FOUND",
+           "приложенный", "выбрать", "BAD_TEMPLATE", "INVALID_NAME", "NOT_FOUND",
            "РАСШИРЕНИЕ"]

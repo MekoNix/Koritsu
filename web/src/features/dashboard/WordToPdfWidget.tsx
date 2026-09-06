@@ -15,7 +15,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { errorText } from '@/api'
 import { useJobStream } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { Button, Icon, Spinner, useToast } from '@/ui'
@@ -65,7 +64,7 @@ export function WordToPdfWidget() {
       })
       setРаботу({ projectId: project.id, jobId: job.id, name })
     } catch (error) {
-      toast.error(t('dashboard.wordToPdf.failed'), errorText(error))
+      toast.fail(error, t('dashboard.wordToPdf.failed'))
     }
   }
 

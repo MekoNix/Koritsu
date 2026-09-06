@@ -9,10 +9,18 @@
  * адрес артефакта) берётся из `@/features/projects/data` и здесь не
  * повторяется: второй `useProject` рядом с первым — это два кэша одного
  * проекта, которые расходятся после переименования.
+ *
+ * **Почти каждый хук берёт `runId`.** Решений в работе несколько, у каждого
+ * своё условие, свои пожелания, свой ход стадий и свой список блоков; служба
+ * различает их параметром `run`, и хук, который его не передаёт, показал бы на
+ * экране одного решения ответ, полученный для другого. Пустая строка — работа
+ * целиком, какой её видели, пока решение в ней было одно.
  */
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 
 import { api, keys, unwrap } from '@/api'
+import { СВЕЖЕСТЬ_ПОД_ПОТОКОМ } from '@/features/projects/data'
+import type { Material } from '@/features/projects/types'
 
 import type { Wishes } from './stages'
 import type {
@@ -21,6 +29,7 @@ import type {
   BlockVersionHead,
   BlockVersionsBody,
   BlocksBody,
+  KadaiRunCard,
   KadaiStatus,
   StageNamesBody,
 } from './types'
@@ -48,14 +57,17 @@ export function useStageNames(): UseQueryResult<string[]> {
  * перечитывается на конце задания — второй способ узнать то же самое раз в
  * секунду был бы запросом на каждое событие.
  */
-export function useKadaiStatus(projectId: string | undefined): UseQueryResult<KadaiStatus> {
+export function useKadaiStatus(
+  projectId: string | undefined,
+  runId = '',
+): UseQueryResult<KadaiStatus> {
   return useQuery({
-    queryKey: keys.kadai.status(projectId ?? ''),
+    queryKey: keys.kadai.status(projectId ?? '', runId),
     enabled: !!projectId,
     queryFn: () =>
       unwrap<KadaiStatus>(
         api.GET('/api/projects/{project_id}/kadai', {
-          params: { path: { project_id: projectId as string } },
+          params: { path: { project_id: projectId as string }, query: { run: runId } },
         }),
       ),
   })
@@ -70,15 +82,26 @@ export function useKadaiStatus(projectId: string | undefined): UseQueryResult<Ka
 export function useSetCondition() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ projectId, materialId }: { projectId: string; materialId: string }) =>
+    mutationFn: ({
+      projectId,
+      materialId,
+      runId = '',
+    }: {
+      projectId: string
+      materialId: string
+      runId?: string
+    }) =>
       unwrap<{ condition: string | null }>(
         api.PUT('/api/projects/{project_id}/kadai/condition', {
-          params: { path: { project_id: projectId } },
+          params: { path: { project_id: projectId }, query: { run: runId } },
           body: { material_id: materialId },
         }),
       ),
-    onSuccess: (_answer, { projectId }) => {
-      void qc.invalidateQueries({ queryKey: keys.kadai.status(projectId) })
+    onSuccess: (_answer, { projectId, runId = '' }) => {
+      void qc.invalidateQueries({ queryKey: keys.kadai.status(projectId, runId) })
+      // Условие — карточка решения в списке: пока его не назвали, карточка
+      // молчит о том, какую задачу решают.
+      void qc.invalidateQueries({ queryKey: keys.kadai.runs(projectId) })
     },
   })
 }
@@ -91,14 +114,14 @@ export function useSetCondition() {
  * запись на томе (`PUT …/kadai/wishes`), и они переживают и вкладку, и второе
  * устройство. Читает их прогон сам, когда в задании пожеланий нет.
  */
-export function useKadaiWishes(projectId: string | undefined): UseQueryResult<Wishes> {
+export function useKadaiWishes(projectId: string | undefined, runId = ''): UseQueryResult<Wishes> {
   return useQuery({
-    queryKey: keys.kadai.wishes(projectId ?? ''),
+    queryKey: keys.kadai.wishes(projectId ?? '', runId),
     enabled: !!projectId,
     queryFn: () =>
       unwrap<Wishes>(
         api.GET('/api/projects/{project_id}/kadai/wishes', {
-          params: { path: { project_id: projectId as string } },
+          params: { path: { project_id: projectId as string }, query: { run: runId } },
         }),
       ),
   })
@@ -115,15 +138,23 @@ export function useKadaiWishes(projectId: string | undefined): UseQueryResult<Wi
 export function useSetKadaiWishes() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ projectId, wishes }: { projectId: string; wishes: Wishes }) =>
+    mutationFn: ({
+      projectId,
+      wishes,
+      runId = '',
+    }: {
+      projectId: string
+      wishes: Wishes
+      runId?: string
+    }) =>
       unwrap<Wishes>(
         api.PUT('/api/projects/{project_id}/kadai/wishes', {
-          params: { path: { project_id: projectId } },
+          params: { path: { project_id: projectId }, query: { run: runId } },
           body: wishes,
         }),
       ),
-    onSuccess: (_ответ, { projectId }) => {
-      void qc.invalidateQueries({ queryKey: keys.kadai.wishes(projectId) })
+    onSuccess: (_ответ, { projectId, runId = '' }) => {
+      void qc.invalidateQueries({ queryKey: keys.kadai.wishes(projectId, runId) })
     },
   })
 }
@@ -136,32 +167,35 @@ export function useSetKadaiWishes() {
  * которым работа запускалась в первый раз, и это единственное место, где
  * начинается платный прогон.
  */
-export function useRestartKadai(projectId: string | undefined) {
+export function useRestartKadai(projectId: string | undefined, runId = '') {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (stage?: string) =>
       unwrap<KadaiStatus & { restarted: string }>(
         api.POST('/api/projects/{project_id}/kadai/restart', {
-          params: { path: { project_id: projectId as string } },
+          params: { path: { project_id: projectId as string }, query: { run: runId } },
           body: { stage: stage ?? '' },
         }),
       ),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: keys.kadai.status(projectId ?? '') })
+      void qc.invalidateQueries({ queryKey: keys.kadai.status(projectId ?? '', runId) })
     },
   })
 }
 
 /** Блоки работы в порядке документа. Пусто — списка ещё не заводили. */
-export function useBlocks(projectId: string | undefined): UseQueryResult<BlockRecordBody[]> {
+export function useBlocks(
+  projectId: string | undefined,
+  runId = '',
+): UseQueryResult<BlockRecordBody[]> {
   return useQuery({
-    queryKey: keys.kadai.blocks(projectId ?? ''),
+    queryKey: keys.kadai.blocks(projectId ?? '', runId),
     enabled: !!projectId,
     queryFn: async () =>
       (
         await unwrap<BlocksBody>(
           api.GET('/api/projects/{project_id}/blocks', {
-            params: { path: { project_id: projectId as string } },
+            params: { path: { project_id: projectId as string }, query: { run: runId } },
           }),
         )
       ).blocks,
@@ -174,15 +208,16 @@ export function useBlocks(projectId: string | undefined): UseQueryResult<BlockRe
  */
 export function useBlockVersions(
   projectId: string | undefined,
+  runId = '',
 ): UseQueryResult<BlockVersionHead[]> {
   return useQuery({
-    queryKey: keys.kadai.blockVersions(projectId ?? ''),
+    queryKey: keys.kadai.blockVersions(projectId ?? '', runId),
     enabled: !!projectId,
     queryFn: async () =>
       (
         await unwrap<BlockVersionsBody>(
           api.GET('/api/projects/{project_id}/blocks/versions', {
-            params: { path: { project_id: projectId as string } },
+            params: { path: { project_id: projectId as string }, query: { run: runId } },
           }),
         )
       ).versions,
@@ -194,14 +229,18 @@ export function useBlockVersions(
 export function useBlockVersion(
   projectId: string | undefined,
   n: number | null,
+  runId = '',
 ): UseQueryResult<BlockVersionBody> {
   return useQuery({
-    queryKey: keys.kadai.blockVersion(projectId ?? '', n ?? 0),
+    queryKey: keys.kadai.blockVersion(projectId ?? '', runId, n ?? 0),
     enabled: !!projectId && n !== null,
     queryFn: () =>
       unwrap<BlockVersionBody>(
         api.GET('/api/projects/{project_id}/blocks/versions/{n}', {
-          params: { path: { project_id: projectId as string, n: n as number } },
+          params: {
+            path: { project_id: projectId as string, n: n as number },
+            query: { run: runId },
+          },
         }),
       ),
     retry: false,
@@ -215,19 +254,117 @@ export function useBlockVersion(
  * и номер в ответе БОЛЬШЕ того, к которому вернулись (`versions/routes.py`).
  * Поэтому и список версий, и сами блоки после возврата обязаны перечитаться.
  */
-export function useRollbackBlocks(projectId: string | undefined) {
+export function useRollbackBlocks(projectId: string | undefined, runId = '') {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (n: number) =>
       unwrap<{ version: BlockVersionHead; restored_from: number }>(
         api.POST('/api/projects/{project_id}/blocks/rollback', {
-          params: { path: { project_id: projectId as string } },
+          params: { path: { project_id: projectId as string }, query: { run: runId } },
           body: { n },
         }),
       ),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: keys.kadai.blocks(projectId ?? '') })
-      void qc.invalidateQueries({ queryKey: keys.kadai.blockVersions(projectId ?? '') })
+      void qc.invalidateQueries({ queryKey: keys.kadai.blocks(projectId ?? '', runId) })
+      void qc.invalidateQueries({ queryKey: keys.kadai.blockVersions(projectId ?? '', runId) })
     },
+  })
+}
+
+// ── решения работы ───────────────────────────────────────────────────────────
+// Решение — запись журнала запусков (`module: "kadai"`) и каталог на томе под
+// её идентификатором. Второй таблицы у службы нет: имя, номер и время описаны
+// журналом, а условие, пожелания, ход стадий и блоки лежат в каталоге решения.
+
+/**
+ * Решения работы карточками, старые сверху. Пусто — их ещё не заводили.
+ *
+ * Список чинит и старые работы: первое решение переезжает из корня работы в
+ * свой каталог со всем, что у него было (служба делает это на чтении списка),
+ * поэтому спрашивать его до открытия решения обязательно.
+ */
+export function useKadaiRuns(projectId: string | undefined): UseQueryResult<KadaiRunCard[]> {
+  return useQuery({
+    queryKey: keys.kadai.runs(projectId ?? ''),
+    enabled: !!projectId,
+    queryFn: () =>
+      unwrap<KadaiRunCard[]>(
+        api.GET('/api/projects/{project_id}/kadai/runs', {
+          params: { path: { project_id: projectId as string } },
+        }),
+      ),
+  })
+}
+
+/**
+ * Завести решение: запись журнала и каталог под ней.
+ *
+ * Ничего не считается и не стоит — прогон ставится позже, после того как
+ * человек подтвердит распознанное условие. Журнал запусков работы сбрасывается
+ * заодно: решение видно и в нём.
+ */
+export function useCreateKadaiRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ projectId, name = '' }: { projectId: string; name?: string }) =>
+      unwrap<KadaiRunCard>(
+        api.POST('/api/projects/{project_id}/kadai/runs', {
+          params: { path: { project_id: projectId } },
+          body: { name },
+        }),
+      ),
+    onSuccess: (_карточка, { projectId }) => {
+      void qc.invalidateQueries({ queryKey: keys.kadai.runs(projectId) })
+      void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
+    },
+  })
+}
+
+/**
+ * Снести решение: его ход стадий, условие, пожелания и блоки с историей.
+ *
+ * Файлы его папки контекста от него отвязываются, но с тома не уходят: файл
+ * принадлежит работе, и удалять его — отдельное действие с отдельной ценой
+ * ошибки. Общие файлы работы и артефакты не трогаются вовсе.
+ */
+export function useDeleteKadaiRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ projectId, runId }: { projectId: string; runId: string }) =>
+      unwrap<void>(
+        api.DELETE('/api/projects/{project_id}/kadai/runs/{run_id}', {
+          params: { path: { project_id: projectId, run_id: runId } },
+        }),
+      ),
+    onSuccess: (_ответ, { projectId }) => {
+      void qc.invalidateQueries({ queryKey: keys.kadai.runs(projectId) })
+      void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
+    },
+  })
+}
+
+/**
+ * Папка контекста решения: только его файлы, без общих файлов работы.
+ *
+ * Отдельный ключ кэша, а не отбор описи работы на клиенте: описи у решений
+ * разные ответы службы, и общая строка кэша показала бы файлы одного решения
+ * на экране другого — ровно то, ради чего папки и заведены.
+ */
+export function useContextMaterials(
+  projectId: string | undefined,
+  runId: string,
+): UseQueryResult<Material[]> {
+  return useQuery({
+    queryKey: keys.kadai.context(projectId ?? '', runId),
+    enabled: !!projectId && !!runId,
+    queryFn: () =>
+      unwrap<Material[]>(
+        api.GET('/api/projects/{project_id}/materials', {
+          params: { path: { project_id: projectId as string }, query: { run: runId } },
+        }),
+      ),
+    // Тот же довод, что у описи работы: список меняют загрузка и конец разбора,
+    // и оба гасят ключ сами.
+    staleTime: СВЕЖЕСТЬ_ПОД_ПОТОКОМ,
   })
 }

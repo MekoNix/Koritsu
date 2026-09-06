@@ -351,7 +351,9 @@ def stage_structure(session: Session) -> None:
     строение = dict(answer.value or {})
 
     try:
-        profile = compose(строение, stages=STAGE_NAMES)
+        # Замечания `compose` уезжают в те же `problems` работы, что и замечания
+        # сит: человек смотрит на один список, а не на два.
+        profile = compose(строение, stages=STAGE_NAMES, problems=work.problems)
     except KadaiError as exc:
         _stumble(session, "шаблон", problem("строение_не_годится", str(exc)))
     беды = check_structure(profile, строение)

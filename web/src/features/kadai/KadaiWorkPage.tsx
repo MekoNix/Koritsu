@@ -1,5 +1,10 @@
 /**
- * KadaiWorkPage — экран одной работы: `/kadai/:projectId`.
+ * KadaiWorkPage — экран одного решения: `/kadai/:projectId/:runId`.
+ *
+ * Решений в работе несколько, и весь экран работает с одним: `runId` уезжает
+ * параметром `run` в каждый запрос и в задание прогона. Без него страница
+ * второго решения показывала бы ход первого — с его условием, его блоками и
+ * его историей версий.
  *
  * Сверху шаги стадий, слева работа (условие → блоки), справа история версий
  * списка, а после первой сборки — ещё и «как будет в Word». Порядок не
@@ -37,7 +42,12 @@ import { errorText, keys } from '@/api'
 import { useDocumentCrumb } from '@/app/shell/breadcrumbs'
 import { useT } from '@/i18n'
 import { Button, ErrorState, Icon, Segmented, SkeletonLines } from '@/ui'
-import { artifactUrl, useMaterials, useProject } from '@/features/projects/data'
+import {
+  artifactUrl,
+  useMaterials,
+  usePendingMaterials,
+  useProject,
+} from '@/features/projects/data'
 import { useDefaultEndpoint, useProviders } from '@/features/reports/data'
 import { PdfPreview } from '@/features/reports/PdfPreview'
 import type { BuildState } from '@/features/reports/useBuild'
@@ -46,10 +56,13 @@ import { ModelPicker } from '@/features/reports/runControls'
 import { BlockList, type ReworkRequest } from './BlockList'
 import { BlockVersions } from './BlockVersions'
 import { ConditionStep } from './ConditionStep'
+import { ContextFiles } from './ContextFiles'
 import { StageStrip } from './StageStrip'
 import { WishesBox } from './WishesBox'
 import {
   useBlocks,
+  useContextMaterials,
+  useKadaiRuns,
   useKadaiStatus,
   useKadaiWishes,
   useRestartKadai,
@@ -57,6 +70,7 @@ import {
   useSetKadaiWishes,
   useStageNames,
 } from './data'
+import { запомненный } from './preset'
 import { STUMBLED, currentStage, mergeStages, reached, ПУСТЫЕ_ПОЖЕЛАНИЯ } from './stages'
 import { KADAI_RUN } from './types'
 import { useKadaiRun } from './useKadaiRun'
@@ -69,28 +83,48 @@ const ОПРОСОВ = 60
 
 export function KadaiWorkPage() {
   const t = useT()
-  const { projectId = '' } = useParams()
+  const { projectId = '', runId = '' } = useParams()
   const project = useProject(projectId)
-  const status = useKadaiStatus(projectId)
+  // Список решений спрашивается ради имени в заголовке — и ради переезда
+  // старых работ: первое решение перебирается из корня работы в свой каталог
+  // именно на чтении списка, и без него открытое по прямой ссылке решение
+  // показало бы пустой ход стадий у работы, которая давно решена.
+  const runs = useKadaiRuns(projectId)
+  // Ход стадий и блоки спрашиваются ПОСЛЕ списка решений, а не вместе с ним:
+  // переезд старой работы в каталоги решений делает именно список, и запрос,
+  // обогнавший его, прочитал бы пустой каталог и показал бы решённую работу
+  // незапускавшейся.
+  const развели = runs.isSuccess || runs.isError
+  const status = useKadaiStatus(развели ? projectId : undefined, runId)
   const stageNames = useStageNames()
-  const blocks = useBlocks(projectId)
+  const blocks = useBlocks(развели ? projectId : undefined, runId)
+  // Опись папки контекста решения, а не всей работы: условие лежит в ней, и
+  // искать его среди общих файлов работы значило бы принять за условие чужой
+  // файл.
+  const свои = useContextMaterials(projectId, runId)
   const materials = useMaterials(projectId)
+  const ждущие = usePendingMaterials(projectId)
   const providers = useProviders()
   const setCondition = useSetCondition()
-  const wishes = useKadaiWishes(projectId)
+  const wishes = useKadaiWishes(projectId, runId)
   const saveWishes = useSetKadaiWishes()
-  const restart = useRestartKadai(projectId)
+  const restart = useRestartKadai(projectId, runId)
 
-  useDocumentCrumb(project.data?.name)
+  const решение = (runs.data ?? []).find((з) => з.id === runId)
+  const заголовок = решение
+    ? решение.name || t('kadai.home.runName', { n: решение.n })
+    : (project.data?.name ?? t('kadai.work.title'))
+
+  useDocumentCrumb(заголовок)
 
   const [endpoint, setEndpoint] = useState<string | null>(null)
   // Умолчание пресета: выбор человека из профиля, иначе правило сайта.
   const умолчание = useDefaultEndpoint()
   const [confirmed, setConfirmed] = useState(false)
   const [вкладка, setВкладка] = useState<'preview' | 'versions'>('preview')
-  const пресет = endpoint ?? запомненный(projectId) ?? умолчание
+  const пресет = endpoint ?? запомненный(runId) ?? умолчание
 
-  const run = useKadaiRun(projectId, пресет)
+  const run = useKadaiRun(projectId, пресет, runId)
   const стадии = useMemo(
     () => mergeStages(stageNames.data ?? [], status.data?.stages, run.stageEvents),
     [stageNames.data, status.data?.stages, run.stageEvents],
@@ -100,9 +134,12 @@ export function KadaiWorkPage() {
   // описи — его же и назовёт кнопка «всё верно».
   const ид_условия = status.data?.condition?.material
   const условие = useMemo(() => {
+    const папка = свои.data ?? []
     const опись = materials.data ?? []
-    return опись.find((m) => m.id === ид_условия) ?? опись[0]
-  }, [materials.data, ид_условия])
+    return (
+      папка.find((m) => m.id === ид_условия) ?? опись.find((m) => m.id === ид_условия) ?? папка[0]
+    )
+  }, [свои.data, materials.data, ид_условия])
 
   // Работа, у которой уже есть стадии, условие переживает перезагрузку: спорить
   // с ней вопросом «всё верно?» второй раз незачем.
@@ -110,23 +147,27 @@ export function KadaiWorkPage() {
     if (reached(стадии, 'разбор задания')) setConfirmed(true)
   }, [стадии])
 
-  // Пока условия в описи нет, опись перечитывается: файл принят `202`, а
+  // Пока разбор не кончился, опись перечитывается: файл принят `202`, а
   // разбирает его очередь (`parse`), и материала в момент открытия экрана ещё
   // нет. Без этого страница навсегда показывает «условие не приложено» — при
-  // том, что оно приложено и разбирается прямо сейчас. Опрос ограничен по
-  // числу шагов: у проекта без единого файла ждать нечего, и вечный запрос раз
-  // в полторы секунды был бы дороже пустого экрана.
+  // том, что оно приложено и разбирается прямо сейчас. Ждать только условия
+  // мало: файлы контекста ложатся в папку следом за ним и разбираются дольше,
+  // а опрос, остановленный на условии, оставил бы папку без них до перезагрузки
+  // страницы. Опрос ограничен по числу шагов: у проекта без единого файла ждать
+  // нечего, и вечный запрос раз в полторы секунды был бы дороже пустого экрана.
   const qc = useQueryClient()
   const шагов = useRef(0)
+  const разбирается = (ждущие.data ?? []).length > 0
   useEffect(() => {
-    if (условие || шагов.current > ОПРОСОВ) return
+    if ((условие && !разбирается) || шагов.current > ОПРОСОВ) return
     const таймер = setInterval(() => {
       шагов.current += 1
+      void qc.invalidateQueries({ queryKey: keys.kadai.context(projectId, runId) })
       void qc.invalidateQueries({ queryKey: keys.projects.materials(projectId) })
       void qc.invalidateQueries({ queryKey: keys.projects.pending(projectId) })
     }, 1500)
     return () => clearInterval(таймер)
-  }, [условие, projectId, qc])
+  }, [условие, разбирается, projectId, runId, qc])
 
   const работа_заведена = !!status.data?.work
   const остановка = status.data?.hold ?? null
@@ -153,7 +194,7 @@ export function KadaiWorkPage() {
       пуск()
       return
     }
-    setCondition.mutate({ projectId, materialId: условие.id }, { onSuccess: пуск })
+    setCondition.mutate({ projectId, materialId: условие.id, runId }, { onSuccess: пуск })
   }
 
   function замечание({ block, kind, note }: ReworkRequest) {
@@ -191,12 +232,14 @@ export function KadaiWorkPage() {
       <header className="flex flex-wrap items-end justify-between gap-s3">
         <div className="min-w-0">
           <h1 className="truncate font-display text-2xl font-semibold text-ink-strong">
-            {project.data?.name ?? t('kadai.work.title')}
+            {заголовок}
           </h1>
-          <p className="text-sm text-muted">{t('kadai.work.subtitle')}</p>
+          <p className="text-sm text-muted">
+            {t('kadai.work.inWork', { work: project.data?.name ?? '' })}
+          </p>
         </div>
         <Button variant="ghost" asChild>
-          <Link to="/kadai">
+          <Link to={`/kadai/${projectId}`}>
             <Icon name="arrowLeft" size={15} />
             {t('kadai.work.toList')}
           </Link>
@@ -272,6 +315,7 @@ export function KadaiWorkPage() {
         <div className="flex min-w-0 flex-col gap-s3">
           <ConditionStep
             projectId={projectId}
+            runId={runId}
             material={условие}
             ocr={!!status.data?.condition?.ocr}
             confirmed={confirmed}
@@ -313,7 +357,17 @@ export function KadaiWorkPage() {
             error={saveWishes.error}
             started={работа_заведена}
             disabled={run.running}
-            onSave={(это) => saveWishes.mutate({ projectId, wishes: это })}
+            onSave={(это) => saveWishes.mutate({ projectId, runId, wishes: это })}
+          />
+
+          {/* Папка контекста этого решения: в промпт уезжают только её файлы
+              (плюс условие). Файл соседней задачи сбивает модель ровно так же,
+              как чужое условие, и платит за это человек. */}
+          <ContextFiles
+            projectId={projectId}
+            runId={runId}
+            conditionId={ид_условия}
+            disabled={run.running}
           />
 
           <h2 className="text-sm font-semibold text-ink-strong">{t('kadai.blocks.title')}</h2>
@@ -346,7 +400,12 @@ export function KadaiWorkPage() {
             </div>
           ) : (
             <div className="rounded-md border border-line bg-surface p-s3">
-              <BlockVersions projectId={projectId} blocks={blocks.data} canEdit={!run.running} />
+              <BlockVersions
+                projectId={projectId}
+                runId={runId}
+                blocks={blocks.data}
+                canEdit={!run.running}
+              />
             </div>
           )}
           {status.data && status.data.problems.length > 0 && (
@@ -368,13 +427,4 @@ export function KadaiWorkPage() {
 function заметка_споткнувшейся(стадии: { state: string; note?: string | null }[]): string | null {
   const беда = стадии.find((s) => s.state === STUMBLED)
   return беда?.note || null
-}
-
-/** Пресет, выбранный при заведении работы. */
-function запомненный(projectId: string): string | null {
-  try {
-    return sessionStorage.getItem(`kadai.endpoint.${projectId}`)
-  } catch {
-    return null
-  }
 }

@@ -26,6 +26,12 @@ export type Workspace = {
 export type Project = {
   id: string
   workspace_id: string
+  /**
+   * Имя пространства, в котором лежит работа. Приезжает вместе с работой, а не
+   * добирается вторым запросом: идентификатор пространства на экране человеку
+   * ничего не говорит, а список работ и без того знает про них всё остальное.
+   */
+  workspace_name: string
   owner_id: string
   name: string
   /**

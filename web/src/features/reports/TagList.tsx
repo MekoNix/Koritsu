@@ -18,7 +18,7 @@ import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { Icon, Input, SkeletonLines, Spinner } from '@/ui'
 
-import { summarize, tagTitle, type TagFilter } from './tags'
+import { summarize, tagLines, type TagFilter } from './tags'
 import type { ProjectTag } from './types'
 
 const ФИЛЬТРЫ: TagFilter[] = ['all', 'empty', 'filled', 'agent']
@@ -130,18 +130,30 @@ export function TagList({
       {/* Конструкции бланка, которых сборщик не понимает. Показаны здесь, над
           списком тегов, потому что вопрос у человека один и тот же: «почему в
           отчёте не то, что в бланке». Сборку они не ломают и остаются в
-          документе текстом — так и написано. */}
+          документе текстом — так и написано.
+
+          Свёрнутым списком, а не развёрнутым: конструкций бывает десяток, они
+          длинные, и раскрытыми они съедали бы колонку тегов — ту самую, ради
+          которой на экран и смотрят. Одной строкой «Непонятных конструкций: N»
+          факт назван, а разбираться в нём человек идёт по своей воле. Раскрытие
+          — `<details>`, а не своё состояние: браузер уже умеет и клавиатуру, и
+          доступность этого. */}
       {constructs && constructs.length > 0 && (
-        <div className="border-b border-line bg-warn-bg p-s3 text-xs text-warn">
-          <p>{t('reports.tags.unknownConstructs', { n: constructs.length })}</p>
-          <ul className="mt-s2 flex flex-col gap-1">
-            {constructs.map((текст) => (
-              <li key={текст} className="truncate font-mono" title={текст}>
-                {текст}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <details className="border-b border-line bg-warn-bg text-xs text-warn">
+          <summary className="cursor-pointer p-s3 focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent">
+            {t('reports.tags.unknownConstructs', { n: constructs.length })}
+          </summary>
+          <div className="px-s3 pb-s3">
+            <p>{t('reports.tags.unknownConstructsHint')}</p>
+            <ul className="mt-s2 flex flex-col gap-1">
+              {constructs.map((текст) => (
+                <li key={текст} className="truncate font-mono" title={текст}>
+                  {текст}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
       )}
 
       <div className="min-h-0 flex-1 overflow-auto">
@@ -153,29 +165,37 @@ export function TagList({
           </p>
         ) : (
           <ul className="py-s1">
-            {shown.map((tag, i) => (
-              <li key={tag.key}>
-                <button
-                  type="button"
-                  onClick={() => onSelect(tag.key)}
-                  aria-current={selected === tag.key}
-                  className={cn(
-                    'flex w-full items-center gap-s2 px-s3 py-1.5 text-left text-sm',
-                    'focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent',
-                    selected === tag.key ? 'bg-accent-bg' : 'hover:bg-surface-2',
-                  )}
-                >
-                  <StatusDot tag={tag} busy={busy.has(tag.key)} streaming={current === tag.key} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-mono text-xs text-ink">
-                      {`{{${tag.key}}}`}
+            {shown.map((tag, i) => {
+              const строки = tagLines(tag)
+              return (
+                <li key={tag.key}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(tag.key)}
+                    aria-current={selected === tag.key}
+                    className={cn(
+                      'flex w-full items-center gap-s2 px-s3 py-1.5 text-left text-sm',
+                      'focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent',
+                      selected === tag.key ? 'bg-accent-bg' : 'hover:bg-surface-2',
+                    )}
+                  >
+                    <StatusDot tag={tag} busy={busy.has(tag.key)} streaming={current === tag.key} />
+                    {/* Сверху описание тега, снизу ключ без фигурных скобок — см.
+                      `tagLines`. Без описания строка одна: ключ и есть всё, что
+                      о теге известно. */}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs text-ink">{строки.title}</span>
+                      {строки.key !== null && (
+                        <span className="block truncate font-mono text-xs text-muted">
+                          {строки.key}
+                        </span>
+                      )}
                     </span>
-                    <span className="block truncate text-xs text-muted">{tagTitle(tag)}</span>
-                  </span>
-                  <span className="shrink-0 font-mono text-[10px] text-muted">{i + 1}</span>
-                </button>
-              </li>
-            ))}
+                    <span className="shrink-0 font-mono text-[10px] text-muted">{i + 1}</span>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>

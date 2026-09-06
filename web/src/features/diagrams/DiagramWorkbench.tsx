@@ -20,6 +20,8 @@
  *   попадает в журнал запусков под своим номером («Схема 1 — Курсовая»), а
  *   рядом с ней хранится код и параметры. Кнопки «сохранить в проект» нет —
  *   половина построенных схем терялась бы молча;
+ * * имя сохранённой схемы правится прямо в шапке (`RunName`): имя схемы и есть
+ *   имя записи журнала, и второго места, где его менять, нет;
  * * следующие нажатия перестраивают **ту же** схему (`PUT …/{run_id}`), а не
  *   заводят вторую: пять нажатий, пока подбирается код, — это одна схема;
  * * XML уезжает в кадр `embed.diagrams.net` сообщением; правки руками
@@ -46,11 +48,22 @@ import { useWidePage } from '@/app/shell/widePage'
 // Имя запуска рисует область работ (`runTitle`), а не этот экран: имя схемы в
 // журнале работы и имя схемы здесь — одно и то же имя, и второе такое же
 // правило разошлось бы с первым на первом же переименовании.
+import { RunName } from '@/features/projects/RunName'
 import { runTitle } from '@/features/projects/format'
 import { dictionary, useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { useAppearance } from '@/theme'
-import { Button, EmptyState, ErrorState, Icon, Input, SkeletonLines, Spinner, useToast } from '@/ui'
+import {
+  Button,
+  Dialog,
+  EmptyState,
+  ErrorState,
+  Icon,
+  Input,
+  SkeletonLines,
+  Spinner,
+  useToast,
+} from '@/ui'
 
 import { CodeEditor } from './CodeEditor'
 import { DrawioFrame, type FrameState } from './DrawioFrame'
@@ -76,6 +89,21 @@ export type { Module }
 
 /** Расширение файла по языку — для имени нового исходника. */
 const РАСШИРЕНИЕ: Record<Lang, string> = { py: 'py', cs: 'cs', cpp: 'cpp' }
+
+/**
+ * Язык по расширению имени файла, а нет расширения — `null`.
+ *
+ * Одно правило на оба способа завести исходник: загрузку с диска и «Добавить
+ * файл». Второе такое же разошлось бы с первым на первом же новом расширении,
+ * и один и тот же `.hpp` открывался бы то как C++, то как Python.
+ */
+function языкПоИмени(name: string): Lang | null {
+  const имя = name.toLowerCase()
+  if (имя.endsWith('.py')) return 'py'
+  if (имя.endsWith('.cs')) return 'cs'
+  if (/\.(cpp|cc|cxx|hpp|h)$/.test(имя)) return 'cpp'
+  return null
+}
 
 /** Ключ тега по умолчанию. Те же слова, что служба даёт артефактам. */
 const ТЕГ: Record<'flowchart' | UmlKind, string> = {
@@ -119,7 +147,11 @@ export function DiagramWorkbench({ module }: { module: Module }) {
   const [theme, setTheme] = useState(appearance.mode === 'dark' ? 'dark' : 'light')
   // У UML исходников несколько, и при входе их **ноль**: файл, заведённый до
   // того, как человек что-то написал, — это пустая заготовка, о которой он не
-  // просил. Первый файл появляется от первой же строки кода (`правитьКод`).
+  // просил, и убрать её было нельзя. Файлы заводит только человек — кнопкой
+  // «Добавить файл» или загрузкой с диска, — и любой из них, включая
+  // последний, он вправе убрать. У блок-схем исходник один и списка нет:
+  // маршрут службы принимает ровно один `source`, и выбор «какой из двух»
+  // означал бы выбор, которого у постройки не бывает.
   const [files, setFiles] = useState<SourceFile[]>(
     module === 'uml' ? [] : [{ name: 'source.py', source: '' }],
   )
@@ -131,6 +163,9 @@ export function DiagramWorkbench({ module }: { module: Module }) {
   const [сохранена, setСохранена] = useState<{ n: number; name: string } | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
   const [frameState, setFrameState] = useState<FrameState>('connecting')
+  /** Окно «Добавить файл»: имя спрашивается, язык выводится из расширения. */
+  const [добавление, setДобавление] = useState(false)
+  const [новоеИмя, setНовоеИмя] = useState('')
 
   const текущий = files[Math.min(активный, files.length - 1)] ?? {
     name: `source.${РАСШИРЕНИЕ[lang]}`,
@@ -301,16 +336,32 @@ export function DiagramWorkbench({ module }: { module: Module }) {
 
   // ── код и файлы ────────────────────────────────────────────────────────────
 
-  /** Правка кода. Первый исходник UML заводится здесь — не раньше. */
+  /** Правка кода. Файлов нет — править нечего: поля кода на экране тоже нет. */
   const правитьКод = useCallback(
     (значение: string) => {
-      setFiles((было) => {
-        if (!было.length) return [{ name: `source.${РАСШИРЕНИЕ[lang]}`, source: значение }]
-        return было.map((f, i) => (i === активный ? { ...f, source: значение } : f))
-      })
+      setFiles((было) => было.map((f, i) => (i === активный ? { ...f, source: значение } : f)))
     },
-    [активный, lang],
+    [активный],
   )
+
+  /**
+   * Завести пустой исходник. Имя спрашивается, язык выводится из расширения.
+   *
+   * Имя без точки дополняется расширением выбранного языка: «модуль» на экране
+   * с выбранным Python — это `модуль.py`, и заставлять человека дописывать то,
+   * что уже выбрано переключателем, незачем.
+   */
+  const добавитьФайл = useCallback(() => {
+    const введено = новоеИмя.trim()
+    const основа = введено || `source${files.length + 1}`
+    const имя = основа.includes('.') ? основа : `${основа}.${РАСШИРЕНИЕ[lang]}`
+    const язык = языкПоИмени(имя)
+    if (язык) setLang(язык)
+    setFiles((было) => [...было, { name: имя, source: '' }])
+    setАктивный(files.length)
+    setДобавление(false)
+    setНовоеИмя('')
+  }, [новоеИмя, files.length, lang])
 
   const ввод = useRef<HTMLInputElement | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
@@ -328,22 +379,21 @@ export function DiagramWorkbench({ module }: { module: Module }) {
         setFileError(t('diagrams.file.notText'))
         return
       }
-      const по_имени = file.name.toLowerCase()
-      const язык: Lang | null = по_имени.endsWith('.py')
-        ? 'py'
-        : по_имени.endsWith('.cs')
-          ? 'cs'
-          : /\.(cpp|cc|cxx|hpp|h)$/.test(по_имени)
-            ? 'cpp'
-            : null
+      const язык = языкПоИмени(file.name)
       if (язык) setLang(язык)
       setFiles((было) => {
         const кусок = { name: file.name, source: текст }
+        // У блок-схем исходник один: маршрут службы принимает ровно один
+        // `source`, и загруженный файл встаёт на место прежнего.
         if (module === 'flowcharts') return [кусок]
-        const без_пустых = было.filter((f) => f.source.trim())
-        return [...без_пустых, кусок]
+        // У UML загруженный файл встаёт рядом с теми, что уже завели, — и
+        // пустые среди них остаются. Пустой файл здесь не заготовка службы, а
+        // файл, о котором человек попросил кнопкой «Добавить файл»; выбросить
+        // его за него значило бы решить за человека, из чего строится
+        // диаграмма.
+        return [...было, кусок]
       })
-      setАктивный(module === 'flowcharts' ? 0 : Math.max(0, files.length))
+      setАктивный(module === 'flowcharts' ? 0 : files.length)
     },
     [module, files.length, t],
   )
@@ -385,9 +435,28 @@ export function DiagramWorkbench({ module }: { module: Module }) {
           <Icon name="arrowLeft" size={16} />
           {t('diagrams.work.backToList')}
         </Link>
-        <h1 className="font-display text-xl font-bold tracking-tight text-ink-strong">
-          {заголовок}
-        </h1>
+        <div className="flex flex-wrap items-center gap-x-s3 gap-y-1">
+          <h1 className="font-display text-xl font-bold tracking-tight text-ink-strong">
+            {заголовок}
+          </h1>
+          {/* Имя схемы стоит в шапке и правится там же: это имя записи журнала,
+              то самое, под которым схема лежит в списке модуля и в «Что в
+              работе». Пока схемы нет, называть нечего — строки тоже нет. */}
+          {runId && сохранена && имяСхемы && (
+            <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted">
+              <Icon name="checkCircle" size={14} className="shrink-0 text-ok" />
+              {t('diagrams.work.savedAs')}
+              <RunName
+                projectId={projectId}
+                runId={runId}
+                name={сохранена.name}
+                title={имяСхемы}
+                className="font-semibold text-ink-strong"
+                onRenamed={(имя) => setСохранена((было) => (было ? { ...было, name: имя } : было))}
+              />
+            </span>
+          )}
+        </div>
       </header>
 
       <div className="flex flex-wrap items-center gap-s2">
@@ -400,6 +469,9 @@ export function DiagramWorkbench({ module }: { module: Module }) {
           <Icon name={module === 'uml' ? 'uml' : 'flowchart'} size={16} />
           {t('diagrams.work.build')}
         </Button>
+        {/* Выключенная кнопка молча ничего не делает, и человек ищет причину в
+            себе. Причина у неё одна: строить нечего. */}
+        {!естьКод && <p className="text-xs text-muted">{t('diagrams.work.buildNeedsCode')}</p>}
         <Button variant="secondary" disabled={!preview.xml} onClick={() => открытьВDrawio('edit')}>
           <Icon name="external" size={16} />
           {t('diagrams.work.editInDrawio')}
@@ -429,12 +501,6 @@ export function DiagramWorkbench({ module }: { module: Module }) {
           {t('diagrams.work.downloadWord')}
         </Button>
         <div className="grow" />
-        {имяСхемы && (
-          <p className="flex items-center gap-1.5 text-xs text-ok">
-            <Icon name="checkCircle" size={14} />
-            {t('diagrams.work.savedAs', { name: имяСхемы })}
-          </p>
-        )}
       </div>
 
       <div className="grid min-h-[520px] gap-s3 lg:h-[calc(100vh-210px)] lg:grid-cols-2">
@@ -507,10 +573,26 @@ export function DiagramWorkbench({ module }: { module: Module }) {
             )}
           </div>
 
-          {module === 'uml' && files.length > 0 && (
+          {/* Поле выбора файла одно на оба состояния экрана: оно нужно и
+              списку исходников, и пустому экрану без единого файла. */}
+          <input
+            ref={ввод}
+            type="file"
+            className="hidden"
+            accept=".py,.cs,.cpp,.cc,.cxx,.hpp,.h,text/plain"
+            onChange={(событие) => {
+              const file = событие.target.files?.[0]
+              if (file) void принятьФайл(file)
+              событие.target.value = ''
+            }}
+          />
+
+          {module === 'uml' && (
             <ControlBlock
               label={t('diagrams.work.files')}
-              hint={umlKind === 'objects' ? t('diagrams.work.entryHint') : undefined}
+              hint={
+                files.length && umlKind === 'objects' ? t('diagrams.work.entryHint') : undefined
+              }
             >
               <div className="flex flex-wrap items-center gap-1">
                 {files.map((file, i) => (
@@ -527,31 +609,23 @@ export function DiagramWorkbench({ module }: { module: Module }) {
                       {file.name}
                       {i === 0 && umlKind === 'objects' ? ` · ${t('diagrams.work.entry')}` : ''}
                     </button>
-                    {files.length > 1 && (
-                      <button
-                        type="button"
-                        aria-label={t('diagrams.work.removeFile')}
-                        onClick={() => {
-                          setFiles((было) => было.filter((_, n) => n !== i))
-                          setАктивный((n) => (n > 0 ? n - 1 : 0))
-                        }}
-                      >
-                        <Icon name="close" size={12} />
-                      </button>
-                    )}
+                    {/* Убрать можно любой исходник, и последний тоже: файл,
+                        который нельзя удалить, — это чужое решение о том, из
+                        чего строится диаграмма. Без файлов «Построить»
+                        выключается и говорит, почему. */}
+                    <button
+                      type="button"
+                      aria-label={t('diagrams.work.removeFileNamed', { name: file.name })}
+                      onClick={() => {
+                        setFiles((было) => было.filter((_, n) => n !== i))
+                        setАктивный((n) => (n > 0 ? n - 1 : 0))
+                      }}
+                    >
+                      <Icon name="close" size={12} />
+                    </button>
                   </span>
                 ))}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setFiles((было) => [
-                      ...было,
-                      { name: `source${было.length + 1}.${РАСШИРЕНИЕ[lang]}`, source: '' },
-                    ])
-                    setАктивный(files.length)
-                  }}
-                >
+                <Button size="sm" variant="ghost" onClick={() => setДобавление(true)}>
                   <Icon name="plus" size={14} />
                   {t('diagrams.work.addFile')}
                 </Button>
@@ -559,42 +633,45 @@ export function DiagramWorkbench({ module }: { module: Module }) {
             </ControlBlock>
           )}
 
-          <div className="flex min-h-[320px] flex-1 flex-col overflow-hidden rounded-sm border border-line bg-surface-2">
-            <div className="flex items-center justify-between gap-s2 border-b border-line px-s3 py-2 text-xs text-muted">
-              <span className="truncate font-mono">{текущий.name}</span>
-              <span>{t('diagrams.work.lines', { n: текущий.source.split('\n').length })}</span>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto">
-              <CodeEditor
-                value={текущий.source}
-                lang={lang}
-                ariaLabel={t('diagrams.work.codeLabel')}
-                placeholder={t('diagrams.work.codePlaceholder')}
-                onSubmit={preview.run}
-                onChange={правитьКод}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-s2 border-t border-line px-s3 py-2">
-              <span className="text-xs text-muted">{t('diagrams.work.buildHint')}</span>
-              <div className="flex items-center gap-s2">
-                <input
-                  ref={ввод}
-                  type="file"
-                  className="hidden"
-                  accept=".py,.cs,.cpp,.cc,.cxx,.hpp,.h,text/plain"
-                  onChange={(событие) => {
-                    const file = событие.target.files?.[0]
-                    if (file) void принятьФайл(file)
-                    событие.target.value = ''
-                  }}
-                />
+          {files.length === 0 ? (
+            <div className="flex min-h-[320px] flex-1 flex-col items-center justify-center gap-s3 rounded-sm border border-dashed border-line bg-surface-2 p-s3 text-center">
+              <p className="max-w-[46ch] text-sm text-muted">{t('diagrams.work.noFiles')}</p>
+              <div className="flex flex-wrap items-center justify-center gap-s2">
+                <Button size="sm" variant="secondary" onClick={() => setДобавление(true)}>
+                  <Icon name="plus" size={14} />
+                  {t('diagrams.work.addFile')}
+                </Button>
                 <Button size="sm" variant="ghost" onClick={() => ввод.current?.click()}>
                   <Icon name="upload" size={14} />
                   {t('diagrams.work.upload')}
                 </Button>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex min-h-[320px] flex-1 flex-col overflow-hidden rounded-sm border border-line bg-surface-2">
+              <div className="flex items-center justify-between gap-s2 border-b border-line px-s3 py-2 text-xs text-muted">
+                <span className="truncate font-mono">{текущий.name}</span>
+                <span>{t('diagrams.work.lines', { n: текущий.source.split('\n').length })}</span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto">
+                <CodeEditor
+                  value={текущий.source}
+                  lang={lang}
+                  ariaLabel={t('diagrams.work.codeLabel')}
+                  placeholder={t('diagrams.work.codePlaceholder')}
+                  onSubmit={preview.run}
+                  onChange={правитьКод}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-s2 border-t border-line px-s3 py-2">
+                <span className="text-xs text-muted">{t('diagrams.work.buildHint')}</span>
+                <Button size="sm" variant="ghost" onClick={() => ввод.current?.click()}>
+                  <Icon name="upload" size={14} />
+                  {t('diagrams.work.upload')}
+                </Button>
+              </div>
+            </div>
+          )}
           {fileError && <p className="text-xs text-err">{fileError}</p>}
 
           <div className="flex flex-wrap gap-s3">
@@ -664,6 +741,44 @@ export function DiagramWorkbench({ module }: { module: Module }) {
           </div>
         </div>
       </div>
+
+      {/* Имя спрашивается окном, а не придумывается молча: имя исходника стоит
+          в замечаниях разбора («в схему не вошло: goto case, main.cs:12»), и
+          `source3.py` вместо `main.cs` там ничего не объясняет. Язык при этом
+          не спрашивается: расширение о нём уже сказало. */}
+      <Dialog
+        open={добавление}
+        onOpenChange={(открыто) => {
+          setДобавление(открыто)
+          if (!открыто) setНовоеИмя('')
+        }}
+        title={t('diagrams.work.addFileTitle')}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setДобавление(false)}>
+              {t('common.action.cancel')}
+            </Button>
+            <Button variant="primary" onClick={добавитьФайл}>
+              {t('diagrams.work.addFile')}
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label={t('diagrams.work.fileName')}
+          hint={t('diagrams.work.fileNameHint')}
+          value={новоеИмя}
+          autoFocus
+          placeholder={`source${files.length + 1}.${РАСШИРЕНИЕ[lang]}`}
+          onChange={(событие) => setНовоеИмя(событие.target.value)}
+          onKeyDown={(событие) => {
+            if (событие.key === 'Enter') {
+              событие.preventDefault()
+              добавитьФайл()
+            }
+          }}
+        />
+      </Dialog>
     </section>
   )
 }

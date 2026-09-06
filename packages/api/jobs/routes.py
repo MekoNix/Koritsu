@@ -84,16 +84,27 @@ def поставить(тело: JobIn, request: Request, s: SessionDep,
             summary="List your jobs",
             description=(
                 "Your own jobs, newest first. Jobs of other people are never "
-                "listed, not even in a shared project. 400 invalid_id, "
+                "listed, not even in a shared project. `workspace_id` narrows "
+                "the list down to the jobs of that workspace's projects, plus "
+                "the ones that belong to no project at all. 400 invalid_id, "
                 "400 unknown_job_status."))
 def список(s: SessionDep, user: CurrentUser,
            project_id: str | None = Query(
                None, description="Only jobs of this project"),
+           workspace_id: str | None = Query(
+               None, description="Only jobs of this workspace's projects"),
            status: str | None = Query(
                None, description=f"Only jobs in this state: {', '.join(STATUSES)}"),
            limit: int = Query(100, ge=1, le=500)) -> dict:
-    """Свои задания, новые сверху."""
-    строки = service.мои(s, user.id, project_id=project_id, status=status,
+    """Свои задания, новые сверху.
+
+    Пространство — отбор, а не обязательный параметр: задание принадлежит
+    человеку, а не пространству, и задание без проекта (проверка ключа модели)
+    не лежит ни в одном из них. Экраны сайта отбор ставят всегда — они
+    показывают то, что происходит в текущем пространстве.
+    """
+    строки = service.мои(s, user.id, project_id=project_id,
+                         workspace_id=workspace_id, status=status,
                          limit=limit)
     return {"jobs": [service.карточка(j) for j in строки]}
 

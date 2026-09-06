@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { emptyKeys, filterTags, summarize, textToValue, valueText } from './tags'
+import { emptyKeys, filterTags, summarize, tagLines, textToValue, valueText } from './tags'
 import type { ProjectTag } from './types'
 
 function тег(part: Partial<ProjectTag> & { key: string }): ProjectTag {
@@ -112,5 +112,19 @@ describe('textToValue', () => {
       type: 'markdown',
       text: 'текст',
     })
+  })
+})
+
+describe('tagLines', () => {
+  it('сверху описание, снизу ключ без фигурных скобок', () => {
+    expect(tagLines(тег({ key: 'цель_работы', label: 'Цель работы' }))).toEqual({
+      title: 'Цель работы',
+      key: 'цель_работы',
+    })
+  })
+
+  it('описания нет — одна строка, сам ключ: выдумывать её неоткуда', () => {
+    expect(tagLines(тег({ key: 'выводы' }))).toEqual({ title: 'выводы', key: null })
+    expect(tagLines(тег({ key: 'выводы', label: '   ' }))).toEqual({ title: 'выводы', key: null })
   })
 })

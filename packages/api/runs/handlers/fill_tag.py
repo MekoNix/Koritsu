@@ -1,7 +1,8 @@
 """
 fill_tag — заполнить один тег. Уровень 1 оркестратора, обёрнутый в задание.
 
-    payload   {"key": "цель", "endpoint": "deepseek", "overwrite": false}
+    payload   {"key": "цель", "endpoint": "deepseek", "overwrite": false,
+               "report": "<id отчёта>"}
     result    {"key": …, "version": 3, "ok": true, "key_source": "own",
                "flags": [...], "stop": "end_turn"}
 

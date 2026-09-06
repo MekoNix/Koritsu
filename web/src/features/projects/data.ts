@@ -237,6 +237,38 @@ export function useCreateProjectRun() {
 }
 
 /**
+ * Переименовать запуск — так переименовывается схема, отчёт или решение.
+ *
+ * Имя правится в одном месте на всё: запись журнала и есть та вещь, которую
+ * человек видит списком в модуле, строкой в «Что в работе» и заголовком на
+ * экране схемы. Второе хранилище имени рядом разошлось бы с этим на первом же
+ * переименовании.
+ *
+ * Пустое имя — не отказ, а возврат к имени по умолчанию: его рисует сайт из
+ * модуля и номера (`runTitle`), и стереть своё название человек должен уметь
+ * тем же полем, которым он его давал.
+ */
+export function useRenameProjectRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ projectId, runId, name }: { projectId: string; runId: string; name: string }) =>
+      unwrap<ProjectRun>(
+        api.PATCH('/api/projects/{project_id}/runs/{run_id}', {
+          params: { path: { project_id: projectId, run_id: runId } },
+          body: { name },
+        }),
+      ),
+    onSuccess: (_data, { projectId }) => {
+      void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
+      // Схемы — те же записи журнала, только показанные модулем: списки схем
+      // обязаны узнать новое имя тем же действием, иначе оно появится в них
+      // только после перезагрузки страницы.
+      void qc.invalidateQueries({ queryKey: keys.diagrams.all })
+    },
+  })
+}
+
+/**
  * Убрать запись журнала — так удаляется схема из работы.
  *
  * Артефакт при этом остаётся на томе: он адресуется содержимым и может стоять
@@ -258,17 +290,25 @@ export function useDeleteProjectRun() {
 
 // ── шаблоны работы ───────────────────────────────────────────────────────────
 
-/** Бланки, приложенные к работе: у неё их бывает несколько. */
+/**
+ * Бланки, приложенные к работе: у неё их бывает несколько.
+ *
+ * `report` — какой отчёт работы спрашивает. Список приложенных от отчёта не
+ * зависит, а вот пометка «по этому бланку собирается» зависит: отчётов в работе
+ * несколько, и каждый собирается своим. Без отчёта спрашивают из мест, где
+ * документ у работы один (карточка работы).
+ */
 export function useProjectTemplates(
   projectId: string | undefined,
+  report = '',
 ): UseQueryResult<ReportTemplate[]> {
   return useQuery({
-    queryKey: keys.projects.projectTemplates(projectId ?? ''),
+    queryKey: keys.projects.projectTemplates(projectId ?? '', report),
     enabled: !!projectId,
     queryFn: () =>
       unwrap<ReportTemplate[]>(
         api.GET('/api/projects/{project_id}/templates', {
-          params: { path: { project_id: projectId as string } },
+          params: { path: { project_id: projectId as string }, query: { report } },
         }),
       ),
   })
@@ -305,7 +345,7 @@ export function useAttachProjectTemplate() {
       )
     },
     onSuccess: (_data, { projectId }) => {
-      void qc.invalidateQueries({ queryKey: keys.projects.projectTemplates(projectId) })
+      void qc.invalidateQueries({ queryKey: keys.projects.projectTemplatesAll(projectId) })
       void qc.invalidateQueries({ queryKey: keys.templates })
     },
   })
@@ -322,7 +362,7 @@ export function useDetachProjectTemplate() {
         }),
       ),
     onSuccess: (_data, { projectId }) =>
-      qc.invalidateQueries({ queryKey: keys.projects.projectTemplates(projectId) }),
+      qc.invalidateQueries({ queryKey: keys.projects.projectTemplatesAll(projectId) }),
   })
 }
 
@@ -422,9 +462,24 @@ export function useMaterialText(
  */
 export function useUploadMaterial() {
   return useMutation({
-    mutationFn: ({ projectId, file }: { projectId: string; file: File }) => {
+    mutationFn: ({
+      projectId,
+      file,
+      runId,
+    }: {
+      projectId: string
+      file: File
+      /**
+       * Решение, в папку контекста которого ложится файл. Пусто — файл общий
+       * для работы: его видят отчёты и схемы, как раньше. Приписка уезжает той
+       * же формой, что и байты: «файл принят, но неизвестно куда» — состояние,
+       * которого лучше не заводить.
+       */
+      runId?: string
+    }) => {
       const form = new FormData()
       form.append('file', file, file.name)
+      if (runId) form.append('run_id', runId)
       return unwrap<UploadAccepted>(
         api.POST('/api/projects/{project_id}/materials', {
           params: { path: { project_id: projectId } },

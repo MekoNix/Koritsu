@@ -13,7 +13,7 @@
 import type { ReactNode } from 'react'
 
 import { useT } from '@/i18n'
-import { errorText } from '@/api/errors'
+import { errorDetails, errorNext, errorWhat } from '@/api/errors'
 import { cn } from '@/lib/cn'
 
 import { Button } from './Button'
@@ -104,14 +104,25 @@ export type ErrorStateProps = {
   error?: unknown
   title?: ReactNode
   onRetry?: () => void
+  /**
+   * Второй выход, кроме «Повторить»: «К работам», «Переключить пространство».
+   * Нужен там, где повторять нечего — отказ повторится тем же отказом.
+   */
+  action?: ReactNode
   className?: string
 }
 
 /**
- * Экран ошибки. Текст берётся из `errorText()` — то есть русский по коду
- * службы, с английским сообщением как запасным. Второго перевода здесь нет.
+ * Экран ошибки: что случилось, что делать, чем повторить.
+ *
+ * Три части, а не одна строка. Текст отказа сам по себе оставляет человека
+ * перед выбором без подсказки («Место кончилось» — и что теперь?), поэтому под
+ * ним стоит действие из словаря (`errorNext`), а кнопка «Повторить» — только
+ * там, где повтор что-то меняет. Мелкая строка внизу — номер запроса и текст
+ * службы у незнакомого кода: человеку она не нужна, а в жалобе это
+ * единственное, чем экран связывается с журналом службы.
  */
-export function ErrorState({ error, title, onRetry, className }: ErrorStateProps) {
+export function ErrorState({ error, title, onRetry, action, className }: ErrorStateProps) {
   const t = useT()
   return (
     <div
@@ -128,25 +139,46 @@ export function ErrorState({ error, title, onRetry, className }: ErrorStateProps
       <div className="font-display text-lg font-semibold text-ink-strong">
         {title ?? t('ui.error.title')}
       </div>
-      {error !== undefined && <p className="max-w-[48ch] text-sm text-ink">{errorText(error)}</p>}
-      {onRetry && (
-        <Button variant="secondary" onClick={onRetry}>
-          <Icon name="refresh" size={16} />
-          {t('ui.error.retry')}
-        </Button>
+      {error !== undefined && (
+        <>
+          <p className="max-w-[48ch] text-sm text-ink">{errorWhat(error)}</p>
+          <p className="max-w-[48ch] text-sm text-muted">{errorNext(error)}</p>
+        </>
+      )}
+      {(onRetry || action) && (
+        <div className="flex flex-wrap items-center justify-center gap-s2">
+          {onRetry && (
+            <Button variant="secondary" onClick={onRetry}>
+              <Icon name="refresh" size={16} />
+              {t('ui.error.retry')}
+            </Button>
+          )}
+          {action}
+        </div>
+      )}
+      {error !== undefined && !!errorDetails(error) && (
+        <p className="break-all font-mono text-[11px] text-muted opacity-80">
+          {errorDetails(error)}
+        </p>
       )}
     </div>
   )
 }
 
-/** Отсутствие прав — отдельное состояние, а не ошибка: чинить человеку нечего. */
-export function ForbiddenState({ className }: { className?: string }) {
+/**
+ * Отсутствие прав — отдельное состояние, а не ошибка: чинить человеку нечего.
+ *
+ * Действие всё равно нужно, и приходит оно снаружи: куда уводить с закрытой
+ * страницы, знает область («к работам», «на дашборд»), а не общий примитив.
+ */
+export function ForbiddenState({ action, className }: { action?: ReactNode; className?: string }) {
   const t = useT()
   return (
     <EmptyState
       icon="user"
       title={t('common.state.forbidden')}
       text={t('common.state.forbiddenHint')}
+      action={action}
       className={className}
     />
   )

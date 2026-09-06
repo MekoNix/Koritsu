@@ -43,6 +43,8 @@ import type { ProjectTag, TagValue } from './types'
 
 export type TagEditorProps = {
   projectId: string
+  /** Какой отчёт работы правится: у каждого свои значения и свой бланк. */
+  report: string
   tag: ProjectTag | undefined
   value: TagValue | undefined
   /** Текст, приходящий по потоку прямо сейчас; `undefined` — прогон не идёт. */
@@ -58,6 +60,7 @@ export type TagEditorProps = {
 
 export function TagEditor({
   projectId,
+  report,
   tag,
   value,
   streamed,
@@ -67,7 +70,7 @@ export function TagEditor({
   canGenerate,
 }: TagEditorProps) {
   const t = useT()
-  const save = useSetValue(projectId)
+  const save = useSetValue(projectId, report)
 
   // Тип решает, каким полем правится тег, и берётся у значения, а не у тега:
   // объявленный тип бывает угадан по метке, а лежит в теге то, что лежит.
@@ -233,7 +236,7 @@ export function TagEditor({
           </Button>
         </div>
 
-        <TagPrompt projectId={projectId} tag={tag} canEdit={canEdit && !busy} />
+        <TagPrompt projectId={projectId} report={report} tag={tag} canEdit={canEdit && !busy} />
 
         {текстовый ? (
           <Textarea
@@ -295,6 +298,7 @@ export function TagEditor({
 
         <TagVersions
           projectId={projectId}
+          report={report}
           tagKey={tag.key}
           canEdit={canEdit && !busy}
           currentText={серверный}
@@ -322,15 +326,17 @@ export function TagEditor({
  */
 function TagPrompt({
   projectId,
+  report,
   tag,
   canEdit,
 }: {
   projectId: string
+  report: string
   tag: ProjectTag
   canEdit: boolean
 }) {
   const t = useT()
-  const save = useSetTagPrompt(projectId)
+  const save = useSetTagPrompt(projectId, report)
   const [draft, setDraft] = useState(tag.prompt)
   const [dirty, setDirty] = useState(false)
   const прежний = useRef(tag.key)

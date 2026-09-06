@@ -1,5 +1,12 @@
 /**
- * ReportWorkPage — экран работы над отчётом: `/reports/:projectId`.
+ * ReportWorkPage — экран работы над отчётом: `/reports/:projectId/:runId`.
+ *
+ * **Экран работает с одним отчётом, а не со всей работой.** Отчётов в работе
+ * несколько — титульный лист по одному ГОСТу, приложение по другому, — и у
+ * каждого свой бланк, свои значения тегов с историей и свои сборки. Поэтому
+ * идентификатор отчёта стоит в адресе и уезжает каждым запросом (`report`) и
+ * каждым заданием (`payload.report`). Материалы при этом общие: файл,
+ * принесённый человеком, принадлежит работе, а не одному её документу.
  *
  *     Композиция A («классика») из макета `05-reports.html`
  *     ---------------------------------------------------
@@ -47,12 +54,19 @@ import {
 import { ExportDialog } from '@/features/projects/ExportDialog'
 import { MaterialsPanel } from '@/features/projects/MaterialsPanel'
 import { canEditWorkspace, useMaterials, useProject, useWorkspace } from '@/features/projects/data'
+import { runTitle } from '@/features/projects/format'
 
 import { PdfPreview } from './PdfPreview'
 import { TagEditor } from './TagEditor'
 import { TagList } from './TagList'
 import { TemplatesPanel } from './TemplatesPanel'
-import { useDefaultEndpoint, useProjectTags, useProjectValues, useProviders } from './data'
+import {
+  useDefaultEndpoint,
+  useProjectReports,
+  useProjectTags,
+  useProjectValues,
+  useProviders,
+} from './data'
 import { ModelPicker } from './runControls'
 import { emptyKeys, filterTags, type TagFilter } from './tags'
 import { FILL_REPORT } from './types'
@@ -68,13 +82,14 @@ const ВЫСОТА = { height: 'calc(100vh - var(--topbar-h) - 2 * var(--space-3
 
 export function ReportWorkPage() {
   const t = useT()
-  const { projectId = '' } = useParams()
+  const { projectId = '', runId = '' } = useParams()
   const [params] = useSearchParams()
 
   const project = useProject(projectId)
   const workspace = useWorkspace(project.data?.workspace_id)
-  const tags = useProjectTags(projectId)
-  const values = useProjectValues(projectId)
+  const reports = useProjectReports(projectId)
+  const tags = useProjectTags(projectId, runId)
+  const values = useProjectValues(projectId, runId)
   const materials = useMaterials(projectId)
   const providers = useProviders()
 
@@ -91,10 +106,17 @@ export function ReportWorkPage() {
   // переживает работу. Задание отдельного тега — другое поле, в его карточке.
   const [runPrompt, setRunPrompt] = useState('')
 
-  const fill = useFill(projectId, endpoint)
-  const build = useBuild(projectId)
+  const fill = useFill(projectId, endpoint, runId)
+  const build = useBuild(projectId, runId)
 
-  useDocumentCrumb(project.data?.name)
+  // Этот отчёт среди отчётов работы: из него берётся имя в заголовке. Список
+  // общий с экраном выбора, второго запроса за одной строкой здесь нет.
+  const отчёт = reports.data?.find((r) => r.id === runId)
+  const заголовок = отчёт
+    ? runTitle(t, { module: 'reports', name: отчёт.name, n: отчёт.n }, project.data?.name ?? '')
+    : (project.data?.name ?? '')
+
+  useDocumentCrumb(заголовок || project.data?.name)
   useWidePage()
 
   // Пресет по умолчанию — выбранный человеком в настройках, а если он там
@@ -171,7 +193,9 @@ export function ReportWorkPage() {
           text={t('reports.work.noTemplateText')}
           action={
             <Button variant="secondary" asChild>
-              <Link to={`/projects/${projectId}`}>{t('reports.work.toProject')}</Link>
+              <Link to={`/reports?project=${encodeURIComponent(projectId)}`}>
+                {t('reports.work.toReports')}
+              </Link>
             </Button>
           }
         />
@@ -179,7 +203,7 @@ export function ReportWorkPage() {
           <h2 className="mb-s3 font-display text-md font-semibold text-ink-strong">
             {t('reports.templates.title')}
           </h2>
-          <TemplatesPanel projectId={projectId} canEdit={canEdit} />
+          <TemplatesPanel projectId={projectId} report={runId} canEdit={canEdit} />
         </section>
       </div>
     )
@@ -188,14 +212,16 @@ export function ReportWorkPage() {
   return (
     <div className="flex flex-col gap-s3" style={ВЫСОТА}>
       <header className="flex flex-wrap items-center gap-s3">
+        {/* Назад — к отчётам этой работы, а не к списку работ: пришли оттуда,
+            и туда же чаще всего возвращаются — за соседней главой. */}
         <Button variant="ghost" size="sm" iconOnly aria-label={t('reports.work.back')} asChild>
-          <Link to="/reports">
+          <Link to={`/reports?project=${encodeURIComponent(projectId)}`}>
             <Icon name="arrowLeft" size={16} />
           </Link>
         </Button>
         <div className="min-w-0">
           <h1 className="truncate font-display text-lg font-semibold text-ink-strong">
-            {project.data?.name}
+            {заголовок}
           </h1>
           <p className="text-xs text-muted">
             {t('reports.work.subtitle', { total: список?.length ?? 0, empty: пустые.length })}
@@ -267,6 +293,7 @@ export function ReportWorkPage() {
         <section className="min-h-0 border-r border-line">
           <TagEditor
             projectId={projectId}
+            report={runId}
             tag={выбранный}
             value={selected ? values.data?.[selected] : undefined}
             streamed={selected ? fill.textFor(selected) : undefined}
@@ -346,7 +373,7 @@ export function ReportWorkPage() {
         description={t('reports.templates.hint')}
         size="lg"
       >
-        <TemplatesPanel projectId={projectId} canEdit={canEdit} />
+        <TemplatesPanel projectId={projectId} report={runId} canEdit={canEdit} />
       </Dialog>
 
       <Dialog

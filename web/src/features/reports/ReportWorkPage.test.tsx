@@ -9,6 +9,9 @@
  *
  * Служба подменяется на уровне `fetch`: так проверяется и разбор ответа
  * клиентом, и то, какие адреса экран на самом деле зовёт.
+ *
+ * Экран открывается адресом с отчётом (`/reports/<работа>/<отчёт>`): отчётов в
+ * работе несколько, и без него он не знает, чьи значения показывать.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
@@ -82,6 +85,22 @@ function служба(теги: unknown[] = ТЕГИ, конструкции: st
     if (pathname === '/api/projects/p-1') return Promise.resolve(json(ПРОЕКТ))
     if (pathname === '/api/workspaces/ws-1')
       return Promise.resolve(json({ id: 'ws-1', name: 'Личное', personal: true, role: 'owner' }))
+    if (pathname === '/api/projects/p-1/reports')
+      return Promise.resolve(
+        json([
+          {
+            id: 'r-1',
+            project_id: 'p-1',
+            name: '',
+            n: 1,
+            user_id: 'u-1',
+            created_at: '2026-09-02T10:00:00+00:00',
+            preview_artifact_id: null,
+            template_name: 'ГОСТ кафедры',
+            tags: 3,
+          },
+        ]),
+      )
     if (pathname === '/api/projects/p-1/tags')
       return Promise.resolve(json({ tags: теги, constructs: конструкции }))
     if (pathname === '/api/projects/p-1/templates') return Promise.resolve(json([]))
@@ -119,9 +138,9 @@ function нарисовать() {
     <QueryClientProvider client={client}>
       <ThemeProvider>
         <ToastProvider>
-          <MemoryRouter initialEntries={['/reports/p-1']}>
+          <MemoryRouter initialEntries={['/reports/p-1/r-1']}>
             <Routes>
-              <Route path="/reports/:projectId" element={<ReportWorkPage />} />
+              <Route path="/reports/:projectId/:runId" element={<ReportWorkPage />} />
             </Routes>
           </MemoryRouter>
         </ToastProvider>
@@ -140,9 +159,13 @@ describe('экран работы над отчётом', () => {
 
   it('показывает теги шаблона, прогресс по ним и значение выбранного', async () => {
     нарисовать()
-    // Выбранный тег назван дважды — строкой в списке и шапкой редактора.
-    expect(await screen.findAllByText('{{цель}}')).toHaveLength(2)
-    expect(screen.getByText('{{листинг}}')).toBeInTheDocument()
+    // В списке тег назван описанием, а ключ стоит под ним и без фигурных
+    // скобок: человек ищет «Цель работы», а не подстановку. Скобки остаются в
+    // шапке редактора — там показано, как тег зовётся в бланке.
+    expect(await screen.findAllByText('Цель работы')).not.toHaveLength(0)
+    expect(screen.getByText('{{цель}}')).toBeInTheDocument()
+    expect(screen.getByText('листинг')).toBeInTheDocument()
+    expect(screen.queryByText('{{листинг}}')).not.toBeInTheDocument()
     // Прогресс — по тегам службы: один заполнен из трёх.
     expect(screen.getByText('1 из 3')).toBeInTheDocument()
     // Первый тег выбирается сам, и его значение уже в поле.
@@ -172,9 +195,12 @@ describe('экран работы над отчётом', () => {
     expect(await screen.findByDisplayValue('Четыре предложения, без оценок.')).toBeInTheDocument()
   })
 
-  it('непонятная конструкция бланка названа до сборки, а не после', async () => {
+  it('непонятные конструкции названы числом, а список свёрнут', async () => {
+    // Конструкций бывает десяток, и развёрнутыми они съели бы колонку тегов.
+    // Поэтому наверху одна строка со счётом, а сам список — под раскрытием.
     vi.stubGlobal('fetch', служба(ТЕГИ, ['{%tr for k in kpis %}']))
     нарисовать()
-    expect(await screen.findByText('{%tr for k in kpis %}')).toBeInTheDocument()
+    const заголовок = await screen.findByText('Непонятных конструкций: 1')
+    expect(заголовок.closest('details')?.open).toBe(false)
   })
 })

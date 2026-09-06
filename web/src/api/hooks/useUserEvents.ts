@@ -64,18 +64,23 @@ function видЗадания(card: Notification | null): string {
 }
 
 /**
- * Почему задание упало — строкой для человека.
+ * Почему задание упало и что с этим делать — строкой для человека.
  *
  * Код лежит в `data.code` уведомления. Русский текст ему даёт общий словарь
- * отказов; кода нет или он незнаком — второй строки у тоста просто не будет:
- * английское `unknown` в тосте хуже, чем его отсутствие.
+ * отказов, и берутся обе его строки: «прогон модели не удался» без «повторите
+ * прогон» оставляет человека смотреть на тост и гадать. Кода нет или он
+ * незнаком — второй строки у тоста просто не будет: английское `unknown` в
+ * тосте хуже, чем его отсутствие.
  */
 function failedReason(card: Notification | null): string | undefined {
   const code = card?.data?.code
   if (typeof code !== 'string' || !code) return undefined
-  const key = `errors.${code}`
-  const text = translate(key)
-  return text === key ? undefined : text
+  const ключ = `errors.${code}.what`
+  const что = translate(ключ)
+  if (что === ключ) return undefined
+  const ключ_дальше = `errors.${code}.next`
+  const дальше = translate(ключ_дальше)
+  return дальше === ключ_дальше ? что : `${что} ${дальше}`
 }
 
 export function useUserEvents(enabled = true): SseState {
@@ -101,7 +106,8 @@ export function useUserEvents(enabled = true): SseState {
       if (kind === JOB_DONE && !БЕЗ_ТОСТА.has(видЗадания(card)))
         toast.success(t('notifications.jobDone'))
       else if (kind === JOB_FAILED) toast.error(t('notifications.jobFailed'), failedReason(card))
-      else if (kind === LIMIT_EXHAUSTED) toast.error(t('errors.limit_exhausted'))
+      else if (kind === LIMIT_EXHAUSTED)
+        toast.error(t('errors.limit_exhausted.what'), t('errors.limit_exhausted.next'))
     },
     [qc, toast, t],
   )

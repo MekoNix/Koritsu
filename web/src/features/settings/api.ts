@@ -10,6 +10,7 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 
 import { api, keys as cacheKeys, unwrap } from '@/api'
+import type { Me } from '@/api/types'
 
 import type { ApiToken, ApiTokenCreated, KeyProviders, ModelKey } from './types'
 
@@ -61,6 +62,50 @@ export function useRevokeModelKey() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: cacheKeys.modelKeys })
       void qc.invalidateQueries({ queryKey: cacheKeys.keyProviders })
+    },
+  })
+}
+
+// ── своя картинка ────────────────────────────────────────────────────────────
+
+/**
+ * Загрузить свой аватар (`POST /api/auth/me/avatar`).
+ *
+ * Тело — `multipart/form-data`, собранное руками и отданное клиенту
+ * `bodySerializer`'ом: тот же приём, что у материалов и шаблонов. Клиент при
+ * этом остаётся общим — он ставит `X-CSRF-Token`, уводит на вход по `401` и
+ * разбирает отказ в `ApiError`.
+ *
+ * Ответ — профиль целиком, и он кладётся в кэш `me` напрямую. Это и есть
+ * «аватар обновился в шапке сразу»: шапка читает тот же ключ, а версия в нём
+ * стала другой, значит поменялся и адрес картинки.
+ */
+export function useSetAvatar() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (file: File) => {
+      const форма = new FormData()
+      форма.append('file', file, file.name)
+      return unwrap<{ user?: Me }>(
+        api.POST('/api/auth/me/avatar', {
+          body: { file: file.name },
+          bodySerializer: () => форма,
+        }),
+      )
+    },
+    onSuccess: (тело) => {
+      if (тело?.user) qc.setQueryData(cacheKeys.me, тело.user)
+    },
+  })
+}
+
+/** Убрать свою картинку: аватар снова рисуется из идентификатора. */
+export function useDeleteAvatar() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => unwrap<{ user?: Me }>(api.DELETE('/api/auth/me/avatar')),
+    onSuccess: (тело) => {
+      if (тело?.user) qc.setQueryData(cacheKeys.me, тело.user)
     },
   })
 }

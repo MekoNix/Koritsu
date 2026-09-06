@@ -1,194 +1,225 @@
 /**
- * KadaiHomePage — главная модуля «Решения»: список работ и заведение новой.
+ * KadaiHomePage — главная модуля «Решения»: работа → её решения.
  *
- * Своя страница в сайдбаре, а не вкладка отчётов: здесь
- * другой вход — не шаблон с тегами, а одна задача условием, — и другой путь
- * дальше.
+ * Два уровня, а не один, потому что их два и на томе: работа держит материалы,
+ * артефакты и потолок расхода, а решений в ней столько, сколько задач задали, и
+ * у каждого своё условие, свои пожелания, свой ход стадий, свой список блоков и
+ * своя папка файлов контекста. Пока экран показывал одну работу как одно
+ * решение, вторая задача в ней затирала первую.
  *
- *     Что происходит при «Завести»
- *     ----------------------------
+ * Работы берутся из текущего пространства: в другом пространстве чужих работ не
+ * видно, и список здесь — это список того пространства, в котором человек
+ * сейчас работает.
  *
- * Три действия подряд, и разорвать их нельзя:
- *
- * 1. **проект без шаблона** — у работы `kadai` шаблона нет вовсе, документ
- *    собирается из списка блоков;
- * 2. **условие материалом** — файлом как есть или текстом, завёрнутым в
- *    `.txt`: другого способа положить условие в проект у службы нет, а
- *    разбирает материалы очередь (`parse`), и текст она читает так же, как
- *    файл;
- * 3. **назвать материал условием** — до этого он обычный материал, и прогон
- *    отказал бы «условие задачи не приложено».
- *
- * Прогон отсюда НЕ запускается. Между приёмом условия и решением стоит шаг
- * «условие распознано», и он живёт на экране работы: жать
- * «Завести» и сразу платить за решение по неверно прочитанному скану — ровно
- * та ошибка, ради которой шаг и заведён.
- *
- * **Файлы контекста кладутся сразу и все разом**, а не по одному под каждый
- * блок: методичка, исходники и таблица данных нужны работе целиком, и делить
- * их по местам применения человеку нечем — он не знает, из чего сложится
- * строение. Разбирает их та же очередь, что и условие.
- *
- * **Запись в журнале работы ставится здесь.** Решение привязано к работе так
- * же, как отчёт: строка «Решение N — <работа>» появляется в её списке запусков
- * в момент заведения, а не когда-нибудь потом.
+ * **Прогон отсюда не запускается.** «Создать решение» ведёт на страницу нового
+ * запуска (условие, пожелания, файлы контекста), а платный прогон начинается на
+ * экране решения — после того, как человек подтвердит распознанное условие.
  */
-import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { errorText } from '@/api'
 import { useCurrentWorkspace } from '@/api/hooks'
 import { useT } from '@/i18n'
-import { Button, EmptyState, ErrorState, Field, Icon, Input, SkeletonLines, Textarea } from '@/ui'
-import {
-  useCreateProject,
-  useCreateProjectRun,
-  useProjects,
-  useUploadMaterial,
-} from '@/features/projects/data'
-import { FileDrop } from '@/features/projects/FileDrop'
-import { ModelPicker } from '@/features/reports/runControls'
-import { useProviders, useDefaultEndpoint } from '@/features/reports/data'
+import { Button, EmptyState, ErrorState, Field, Icon, Input, Select, SkeletonLines } from '@/ui'
+import { useCreateProject, useProjects } from '@/features/projects/data'
 
-import { useSetCondition, useSetKadaiWishes } from './data'
+import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
 
-/** Что принимает разбор материалов: те же виды, что и опись проекта. */
-const ПРИНИМАЕМ = '.docx,.doc,.pdf,.txt,.md,.png,.jpg,.jpeg,.py,.cs,.cpp,.c,.h'
+import { useDeleteKadaiRun, useKadaiRuns } from './data'
+import type { KadaiRunCard } from './types'
 
 export function KadaiHomePage() {
   const t = useT()
   const navigate = useNavigate()
   const workspace = useCurrentWorkspace()
   const projects = useProjects(workspace.data?.id)
-  const providers = useProviders()
-  // Умолчание пресета: выбор человека из профиля, иначе правило сайта.
-  const умолчание = useDefaultEndpoint()
+  const { projectId: изАдреса } = useParams()
 
-  const [query, setQuery] = useState('')
-  const [открыта, setОткрыта] = useState(false)
+  const [выбран, setВыбран] = useState('')
+  const [заводим, setЗаводим] = useState(false)
 
-  const найденные = useMemo(() => {
-    const запрос = query.trim().toLowerCase()
-    const все = projects.data ?? []
-    return запрос ? все.filter((p) => p.name.toLowerCase().includes(запрос)) : все
-  }, [projects.data, query])
+  // Работа из адреса старше выбранной руками: сюда ведёт «открыть в модуле» со
+  // страницы работы, и показать в этот момент чужой список значило бы не
+  // послушаться перехода. Пусто в обоих — первая работа пространства: список из
+  // одной работы иначе требовал бы выбрать её вручную ни за чем.
+  const работы = useMemo(() => projects.data ?? [], [projects.data])
+  const текущая = изАдреса || выбран || работы[0]?.id || ''
+  useEffect(() => {
+    if (изАдреса) setВыбран(изАдреса)
+  }, [изАдреса])
 
   return (
     <div className="flex flex-col gap-s5">
       <header className="flex flex-wrap items-end justify-between gap-s3">
         <div>
+          {/* Выбор работы — про текущее пространство: подпись отвечает на
+              «где эти работы лежат» до того, как человек полезет искать
+              пропавшую в другом пространстве. */}
+          <WorkspaceCaption className="mb-1" />
           <h1 className="font-display text-2xl font-semibold text-ink-strong">
             {t('kadai.home.title')}
           </h1>
           <p className="max-w-[64ch] text-sm text-muted">{t('kadai.home.subtitle')}</p>
         </div>
-        <Button variant="primary" onClick={() => setОткрыта((v) => !v)}>
-          <Icon name={открыта ? 'close' : 'plus'} size={16} />
-          {открыта ? t('common.action.cancel') : t('kadai.home.create')}
-        </Button>
+        <div className="flex flex-wrap items-center gap-s2">
+          <Button variant="secondary" onClick={() => setЗаводим((v) => !v)}>
+            <Icon name={заводим ? 'close' : 'plus'} size={16} />
+            {заводим ? t('common.action.cancel') : t('kadai.home.newWork')}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!текущая}
+            onClick={() => navigate(`/kadai/${текущая}/new`)}
+          >
+            <Icon name="plus" size={16} />
+            {t('kadai.home.create')}
+          </Button>
+        </div>
       </header>
 
-      {открыта && (
+      {заводим && (
         <NewWork
           workspaceId={workspace.data?.id}
-          onDone={(projectId) => navigate(`/kadai/${projectId}`)}
-          providers={providers.data}
-          defaultEndpoint={умолчание}
+          onDone={(projectId) => {
+            setВыбран(projectId)
+            setЗаводим(false)
+            navigate(`/kadai/${projectId}/new`)
+          }}
         />
       )}
 
-      <Input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder={t('kadai.home.search')}
-        aria-label={t('kadai.home.search')}
-        className="max-w-[420px]"
-      />
-
       {projects.isPending ? (
-        <SkeletonLines count={6} />
+        <SkeletonLines count={3} />
       ) : projects.isError ? (
         <ErrorState error={projects.error} onRetry={() => projects.refetch()} />
-      ) : найденные.length === 0 ? (
+      ) : работы.length === 0 ? (
         <EmptyState
           icon="tasks"
-          title={projects.data?.length ? t('kadai.home.nothingFound') : t('kadai.home.emptyTitle')}
-          text={projects.data?.length ? undefined : t('kadai.home.emptyText')}
+          title={t('kadai.home.emptyTitle')}
+          text={t('kadai.home.emptyText')}
           action={
-            projects.data?.length ? undefined : (
-              <Button variant="primary" onClick={() => setОткрыта(true)}>
-                {t('kadai.home.create')}
-              </Button>
-            )
+            <Button variant="primary" onClick={() => setЗаводим(true)}>
+              {t('kadai.home.newWork')}
+            </Button>
           }
         />
       ) : (
-        <ul className="grid gap-s3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
-          {найденные.map((p) => (
-            <li key={p.id}>
-              <Link
-                to={`/kadai/${p.id}`}
-                className="flex h-full flex-col gap-s2 rounded-md border border-line bg-surface p-s3 shadow-1 transition-colors hover:border-line-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >
-                <span className="flex items-center gap-s2">
-                  <Icon name="tasks" size={16} style={{ color: 'var(--mod-kadai)' }} />
-                  <span className="truncate font-semibold text-ink-strong">{p.name}</span>
-                </span>
-                <span className="text-xs text-muted">
-                  {t('kadai.home.updated', { at: когда(p.updated_at) })}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <>
+          <Select
+            label={t('kadai.home.work')}
+            hint={t('kadai.home.workHint', { workspace: workspace.data?.name ?? '' })}
+            value={текущая}
+            className="max-w-[420px]"
+            onChange={(e) => {
+              setВыбран(e.target.value)
+              navigate(`/kadai/${e.target.value}`)
+            }}
+          >
+            {работы.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+          {текущая && <SolutionList projectId={текущая} />}
+        </>
       )}
     </div>
   )
 }
 
 /**
- * Форма заведения работы: имя, условие файлом или текстом, пожелания, пресет.
+ * Решения выбранной работы карточками.
  *
- * Условие текстом заворачивается в `.txt` и уезжает тем же маршрутом, что
- * файл: у службы один путь приёма — через очередь, — и второй
- * — «а текст положите значением» — означал бы, что условие бывает двух видов и
- * прочитаны они будут по-разному.
+ * Список спрашивается у службы, а не складывается из журнала запусков: он же
+ * чинит работы, заведённые до появления второго решения — первое переезжает из
+ * корня работы в свой каталог со всем, что у него было.
+ */
+function SolutionList({ projectId }: { projectId: string }) {
+  const t = useT()
+  const runs = useKadaiRuns(projectId)
+  const удалить = useDeleteKadaiRun()
+
+  if (runs.isPending) return <SkeletonLines count={4} />
+  if (runs.isError) return <ErrorState error={runs.error} onRetry={() => runs.refetch()} />
+  if ((runs.data ?? []).length === 0) {
+    return (
+      <EmptyState
+        icon="tasks"
+        title={t('kadai.home.noRunsTitle')}
+        text={t('kadai.home.noRunsText')}
+        action={
+          <Button variant="primary" asChild>
+            <Link to={`/kadai/${projectId}/new`}>{t('kadai.home.create')}</Link>
+          </Button>
+        }
+      />
+    )
+  }
+
+  return (
+    <>
+      <ul
+        className="grid gap-s3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]"
+        data-testid="kadai-runs"
+      >
+        {(runs.data ?? []).map((решение) => (
+          <li key={решение.id}>
+            <article className="flex h-full flex-col gap-s2 rounded-md border border-line bg-surface p-s3 shadow-1">
+              <Link
+                to={`/kadai/${projectId}/${решение.id}`}
+                className="flex items-center gap-s2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                <Icon name="tasks" size={16} style={{ color: 'var(--mod-kadai)' }} />
+                <span className="truncate font-semibold text-ink-strong">{имя(решение, t)}</span>
+              </Link>
+              <span className="truncate text-xs text-muted">
+                {решение.condition_name || t('kadai.home.noCondition')}
+              </span>
+              <span className="mt-auto flex flex-wrap items-center gap-s2 text-xs text-muted">
+                <span>{решение.stage || t('kadai.home.notStarted')}</span>
+                <span>{когда(решение.created_at)}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto"
+                  disabled={удалить.isPending}
+                  onClick={() => удалить.mutate({ projectId, runId: решение.id })}
+                >
+                  {t('common.action.delete')}
+                </Button>
+              </span>
+            </article>
+          </li>
+        ))}
+      </ul>
+      {удалить.isError && <p className="text-sm text-err">{errorText(удалить.error)}</p>}
+    </>
+  )
+}
+
+/**
+ * Форма заведения работы: одно имя.
+ *
+ * Условие, пожелания и файлы контекста принадлежат решению, а не работе, и
+ * спрашиваются на следующем шаге — на странице нового запуска, куда эта форма и
+ * ведёт.
  */
 function NewWork({
   workspaceId,
   onDone,
-  providers,
-  defaultEndpoint,
 }: {
   workspaceId: string | undefined
   onDone: (projectId: string) => void
-  providers: ReturnType<typeof useProviders>['data']
-  defaultEndpoint: string | null
 }) {
   const t = useT()
   const create = useCreateProject()
-  const upload = useUploadMaterial()
-  const setCondition = useSetCondition()
-  const saveWishes = useSetKadaiWishes()
-  const noteRun = useCreateProjectRun()
-
   const [name, setName] = useState('')
-  const [файлом, setФайлом] = useState(true)
-  const [файл, setФайл] = useState<File | null>(null)
-  const [текст, setТекст] = useState('')
-  const [контекст, setКонтекст] = useState<File[]>([])
-  const [wishes, setWishes] = useState('')
-  const [showTask, setShowTask] = useState(false)
-  const [showStructure, setShowStructure] = useState(false)
-  const [endpoint, setEndpoint] = useState<string | null>(null)
   const [беда, setБеда] = useState<string | null>(null)
 
-  const пресет = endpoint ?? defaultEndpoint
-  const идёт = create.isPending || upload.isPending || setCondition.isPending
-  const готово = !!workspaceId && !!name.trim() && (файлом ? !!файл : !!текст.trim())
-
   async function завести() {
-    if (!workspaceId || !готово) return
+    if (!workspaceId || !name.trim()) return
     setБеда(null)
     try {
       const проект = await create.mutateAsync({
@@ -197,36 +228,6 @@ function NewWork({
         template: null,
         module: 'kadai',
       })
-      // Запись журнала ставится сразу после работы и до условия: по ней видно,
-      // что решение в этой работе заводили, даже если разбор условия не дошёл.
-      await noteRun.mutateAsync({ projectId: проект.id, module: 'kadai' })
-      const условие = файлом
-        ? (файл as File)
-        : new File([текст], `${имя_файла(name)}.txt`, { type: 'text/plain' })
-      const принят = await upload.mutateAsync({ projectId: проект.id, file: условие })
-      // Файлы контекста — обычные материалы работы, по одному запросу на файл:
-      // приём материалов у службы поштучный, а разбор всё равно идёт очередью.
-      for (const файл_контекста of контекст) {
-        await upload.mutateAsync({ projectId: проект.id, file: файл_контекста })
-      }
-      // Разбор уехал в очередь: назвать материал условием можно только после
-      // него, и делает это экран работы, увидев материал в описи. Здесь мы
-      // пробуем сразу — на текстовом условии разбор успевает за один запрос, а
-      // если нет, шаг «условие распознано» назовёт его сам.
-      try {
-        await setCondition.mutateAsync({ projectId: проект.id, materialId: принят.pending_id })
-      } catch {
-        /* материал ещё разбирается — назовёт экран работы */
-      }
-      // Пожелания ложатся в проект, а не в браузер: прогон начнётся позже —
-      // после того, как человек подтвердит распознанное условие, — и до тех пор
-      // хранить их в `sessionStorage` значило бы терять их вместе с вкладкой.
-      // Читает их потом сам прогон, если в задании пожеланий нет.
-      await saveWishes.mutateAsync({
-        projectId: проект.id,
-        wishes: { text: wishes, show_task: showTask, show_structure: showStructure },
-      })
-      if (пресет) sessionStorage.setItem(`kadai.endpoint.${проект.id}`, пресет)
       onDone(проект.id)
     } catch (е) {
       setБеда(errorText(е))
@@ -235,156 +236,42 @@ function NewWork({
 
   return (
     <section className="flex flex-col gap-s3 rounded-md border border-line bg-surface p-s4 shadow-1">
-      <h2 className="font-display text-lg font-semibold text-ink-strong">{t('kadai.new.title')}</h2>
-
-      <Field label={t('kadai.new.name')} htmlFor="kadai-name">
+      <h2 className="font-display text-lg font-semibold text-ink-strong">
+        {t('kadai.home.newWork')}
+      </h2>
+      <Field label={t('kadai.new.workName')} htmlFor="kadai-work-name">
         <Input
-          id="kadai-name"
+          id="kadai-work-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t('kadai.new.namePlaceholder')}
         />
       </Field>
-
-      <fieldset className="flex flex-col gap-s2">
-        <legend className="mb-s1 text-sm font-medium text-ink-strong">
-          {t('kadai.new.condition')}
-        </legend>
-        <div className="flex gap-s3 text-sm text-ink">
-          <label className="flex items-center gap-s2">
-            <input
-              type="radio"
-              checked={файлом}
-              onChange={() => setФайлом(true)}
-              className="accent-[var(--accent)]"
-            />
-            {t('kadai.new.byFile')}
-          </label>
-          <label className="flex items-center gap-s2">
-            <input
-              type="radio"
-              checked={!файлом}
-              onChange={() => setФайлом(false)}
-              className="accent-[var(--accent)]"
-            />
-            {t('kadai.new.byText')}
-          </label>
-        </div>
-        {файлом ? (
-          <div className="flex flex-col gap-1">
-            <input
-              type="file"
-              accept={ПРИНИМАЕМ}
-              onChange={(e) => setФайл(e.target.files?.[0] ?? null)}
-              aria-label={t('kadai.new.fileLabel')}
-              className="text-sm text-ink file:mr-s2 file:rounded-btn file:border file:border-line-strong file:bg-surface-2 file:px-s2 file:py-1 file:text-sm file:text-ink"
-            />
-            <span className="text-xs text-muted">{t('kadai.new.fileHint')}</span>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1">
-            <Textarea
-              value={текст}
-              onChange={(e) => setТекст(e.target.value)}
-              rows={5}
-              placeholder={t('kadai.new.textPlaceholder')}
-              aria-label={t('kadai.new.textLabel')}
-            />
-            <span className="text-xs text-muted">{t('kadai.new.textHint')}</span>
-          </div>
-        )}
-      </fieldset>
-
-      <fieldset className="flex flex-col gap-s2">
-        <legend className="mb-s1 text-sm font-medium text-ink-strong">
-          {t('kadai.new.context')}
-        </legend>
-        <FileDrop
-          multiple
-          accept={ПРИНИМАЕМ}
-          label={t('kadai.new.contextDrop')}
-          hint={t('kadai.new.contextHint')}
-          onFiles={(files) => setКонтекст((было) => [...было, ...files])}
-        />
-        {контекст.length > 0 && (
-          <ul className="flex flex-col gap-1 text-xs text-muted">
-            {контекст.map((f, i) => (
-              <li key={`${f.name}-${i}`} className="flex items-center gap-s2">
-                <Icon name="file" size={14} />
-                <span className="truncate">{f.name}</span>
-                <button
-                  type="button"
-                  className="ml-auto text-muted hover:text-ink"
-                  onClick={() => setКонтекст((было) => было.filter((_, j) => j !== i))}
-                >
-                  {t('common.action.delete')}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </fieldset>
-
-      <Field label={t('kadai.new.wishes')} hint={t('kadai.new.wishesHint')} htmlFor="kadai-wishes">
-        <Textarea
-          id="kadai-wishes"
-          value={wishes}
-          onChange={(e) => setWishes(e.target.value)}
-          rows={3}
-          placeholder={t('kadai.new.wishesPlaceholder')}
-        />
-      </Field>
-
-      <div className="flex flex-col gap-s2 text-sm text-ink">
-        <label className="flex items-center gap-s2">
-          <input
-            type="checkbox"
-            checked={showTask}
-            onChange={(e) => setShowTask(e.target.checked)}
-            className="accent-[var(--accent)]"
-          />
-          {t('kadai.new.showTask')}
-        </label>
-        <label className="flex items-center gap-s2">
-          <input
-            type="checkbox"
-            checked={showStructure}
-            onChange={(e) => setShowStructure(e.target.checked)}
-            className="accent-[var(--accent)]"
-          />
-          {t('kadai.new.showStructure')}
-        </label>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-s3 border-t border-line pt-s3">
-        <ModelPicker providers={providers} value={пресет} onChange={setEndpoint} disabled={идёт} />
-        <Button
-          variant="primary"
-          className="ml-auto"
-          disabled={!готово}
-          loading={идёт}
-          onClick={() => void завести()}
-        >
-          {t('kadai.new.submit')}
-        </Button>
-      </div>
-
+      <Button
+        variant="primary"
+        className="self-start"
+        disabled={!workspaceId || !name.trim()}
+        loading={create.isPending}
+        onClick={() => void завести()}
+      >
+        {t('kadai.home.newWorkSubmit')}
+      </Button>
       {беда && <p className="text-sm text-err">{беда}</p>}
     </section>
   )
 }
 
-/** Имя файла условия из имени работы: без знаков, которые ломают путь. */
-function имя_файла(name: string): string {
-  const чистое = name
-    .trim()
-    .replace(/[^\p{L}\p{N}\-_ ]/gu, '')
-    .replace(/\s+/g, '-')
-  return чистое ? чистое.slice(0, 40) : 'условие'
+/** Имя решения: своё, если дали, иначе «Решение N» — номер считает служба. */
+function имя(
+  решение: KadaiRunCard,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
+  return решение.name || t('kadai.home.runName', { n: решение.n })
 }
 
 /** Время человеку: дата и часы, без секунд. */
-function когда(iso: string): string {
+function когда(iso: string | null | undefined): string {
+  if (!iso) return ''
   const дата = new Date(iso)
   if (Number.isNaN(дата.getTime())) return iso
   return дата.toLocaleString('ru-RU', {

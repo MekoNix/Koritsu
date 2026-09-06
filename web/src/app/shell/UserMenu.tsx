@@ -56,7 +56,10 @@ export function UserMenu() {
           className="gap-s2 pl-1 pr-2"
           aria-label={t('shell.user.menu')}
         >
-          <Avatar id={me?.id} size={26} />
+          {/* Своя картинка, если человек её загрузил: `me` живёт одним ключом
+              кэша, и загрузка в настройках кладёт свежий профиль прямо в него —
+              шапка меняется тем же рендером, без перезагрузки страницы. */}
+          <Avatar id={me?.id} size={26} version={me?.avatar_version} />
           <span className="max-w-[180px] truncate text-sm font-medium text-ink">{name}</span>
           <Icon name="chevronDown" size={14} className="text-muted" />
         </Button>

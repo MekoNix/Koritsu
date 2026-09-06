@@ -43,6 +43,7 @@ import materials as _materials
 
 from ..db import SessionDep
 from ..errors import ApiError, INVALID_ID, NOT_FOUND
+from ..ids import check_id
 from ..jobs import service as задания
 from ..jobs.registry import PARSE
 from . import jobs as разбор
@@ -55,6 +56,20 @@ router = APIRouter(prefix="/projects/{project_id}/materials", tags=["materials"]
 # ссылки на материалы в значениях тегов (см. `service.ИД_RE`).
 MATERIAL_ID_RE = service.ИД_RE
 
+# Как в форме загрузки называют решение, которому файл принадлежит. Полем формы,
+# а не отдельным маршрутом: файл и его место приезжают одним запросом, и
+# «принят, но неизвестно куда» — состояние, которого лучше не заводить.
+ПОЛЕ_РЕШЕНИЯ = "run_id"
+
+# Как решение называют в запросе описи. Тот же параметр, что у остальных
+# маршрутов решения (`projects/routes.РЕШЕНИЕ`), — здесь он про то, чьи файлы
+# показывать.
+РЕШЕНИЕ = Query(
+    default="",
+    description=("Show only the files of this solution, by its run id "
+                 "(GET /api/projects/{id}/kadai/runs). Empty means every "
+                 "material of the project."))
+
 # Описание тела для OpenAPI. Пишется руками, потому что обработчик берёт
 # `Request`, а не `UploadFile` (см. докстроку `upload`), и вывести форму из
 # подписи FastAPI не может. Без него сгенерированный клиент сайта не знал бы,
@@ -64,7 +79,14 @@ MATERIAL_ID_RE = service.ИД_RE
         "required": True,
         "content": {"multipart/form-data": {"schema": {
             "type": "object",
-            "properties": {upload.ПОЛЕ: {"type": "string", "format": "binary"}},
+            "properties": {
+                upload.ПОЛЕ: {"type": "string", "format": "binary"},
+                ПОЛЕ_РЕШЕНИЯ: {
+                    "type": "string",
+                    "description": ("Solution this file belongs to, by its run "
+                                    "id. Empty means the project as a whole."),
+                },
+            },
             "required": [upload.ПОЛЕ]}}},
     }
 }
@@ -118,8 +140,19 @@ async def загрузить(request: Request, s: SessionDep, user: CurrentUser,
     задания.
     """
     settings = request.app.state.settings
-    имя, данные = await upload.принять_файл(request, settings.file_max_bytes)
+    имя, данные, поля = await upload.принять_файл_и_поля(
+        request, settings.file_max_bytes, (ПОЛЕ_РЕШЕНИЯ,))
     ключ, _уже = service.принять(s, settings, проект, имя, данные)
+    решение = str(поля.get(ПОЛЕ_РЕШЕНИЯ) or "").strip()
+    if решение:
+        # Форма проверяется здесь, а не в оркестраторе: из значения складывается
+        # имя каталога на томе, и мусор в нём обязан умереть отказом клиенту, а
+        # не пятисоткой из недр.
+        check_id(решение, where="body.run_id")
+        # Приписка ставится сразу, а не после разбора: файл уже принят, а
+        # разбор идёт очередью и может не дойти — «принят неизвестно куда»
+        # означало бы файл, которого не видно ни в одной папке контекста.
+        service.приписать(проект, ключ, решение)
     задание = задания.enqueue(s, user, PARSE,
                               {разбор.КЛЮЧ: ключ, разбор.ИМЯ: имя},
                               project_id=проект.id, settings=settings)
@@ -130,16 +163,23 @@ async def загрузить(request: Request, s: SessionDep, user: CurrentUser,
             summary="List project materials",
             description=(
                 "Cards of every parsed material of the project, in upload "
-                "order. Files still being parsed are in "
+                "order. `run` narrows the list to the context folder of one "
+                "solution. Files still being parsed are in "
                 "`GET ./materials/pending`. 400 invalid_id, 404 not_found."))
-def опись(проект: ЧитательПроекта) -> list[dict]:
+def опись(проект: ЧитательПроекта, run: str = РЕШЕНИЕ) -> list[dict]:
     """Все разобранные материалы проекта в порядке добавления.
 
     Разобранные, а не все принятые: материал — это то, у чего есть содержимое и
     нумерация, и показывать в той же описи файл без них значило бы отдать
     клиенту карточку, половина полей которой врёт. Ждущие — соседним маршрутом.
+
+    `run` оставляет в описи файлы одного решения — его папку контекста. Без
+    него опись прежняя, все файлы работы: отчёты и схемы видят их как раньше.
     """
-    return [service.карточка(m) for m in service.хранилище(проект).list()]
+    на_томе = service.открыть(проект)
+    свои = set(на_томе.solution_materials(run.strip())) if run.strip() else None
+    return [service.карточка(m) for m in на_томе.store().list()
+            if свои is None or m.id in свои]
 
 
 @router.get("/pending", operation_id="list_pending_materials",
@@ -270,4 +310,4 @@ def удалить(material_id: str, проект: РедакторПроект�
         raise _нет_такого(material_id) from None
 
 
-__all__ = ["router", "MATERIAL_ID_RE", "проверить_ид"]
+__all__ = ["router", "MATERIAL_ID_RE", "проверить_ид", "ПОЛЕ_РЕШЕНИЯ"]

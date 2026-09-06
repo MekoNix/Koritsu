@@ -20,7 +20,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
-import { ApiError, errorText, type ModuleInfo } from '@/api'
+import { ApiError, type ModuleInfo } from '@/api'
 import { useModules } from '@/api/hooks'
 import { useDocumentCrumb } from '@/app/shell/breadcrumbs'
 import { useT } from '@/i18n'
@@ -37,6 +37,8 @@ import {
   Skeleton,
   useToast,
 } from '@/ui'
+
+import { OtherWorkspaceNotice, WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
 
 import { ExportDialog } from './ExportDialog'
 import { MaterialsPanel } from './MaterialsPanel'
@@ -90,7 +92,7 @@ export function ProjectPage() {
             onClick={() =>
               restore.mutate(projectId, {
                 onSuccess: () => void project.refetch(),
-                onError: (e) => toast.error(errorText(e)),
+                onError: (e) => toast.fail(e),
               })
             }
           >
@@ -101,7 +103,17 @@ export function ProjectPage() {
       />
     )
   }
-  if (forbidden) return <ForbiddenState />
+  if (forbidden) {
+    return (
+      <ForbiddenState
+        action={
+          <Button variant="secondary" asChild>
+            <Link to="/projects">{t('projects.page.toList')}</Link>
+          </Button>
+        }
+      />
+    )
+  }
   if (missing) {
     return (
       <EmptyState
@@ -117,7 +129,17 @@ export function ProjectPage() {
     )
   }
   if (error || !project.data) {
-    return <ErrorState error={error} onRetry={() => void project.refetch()} />
+    return (
+      <ErrorState
+        error={error}
+        onRetry={() => void project.refetch()}
+        action={
+          <Button variant="ghost" asChild>
+            <Link to="/projects">{t('projects.page.toList')}</Link>
+          </Button>
+        }
+      />
+    )
   }
 
   const карточка = project.data
@@ -132,8 +154,13 @@ export function ProjectPage() {
 
   return (
     <div className="flex flex-col gap-s4">
+      {/* Работа открывается и по ссылке, а ссылка не обязана вести в то
+          пространство, в котором человек сейчас работает. */}
+      <OtherWorkspaceNotice ws={workspace.data} />
+
       <header className="flex flex-wrap items-start justify-between gap-s3">
         <div className="min-w-0">
+          <WorkspaceCaption ws={workspace.data} className="mb-1" />
           <h1 className="break-words font-display text-xl font-bold tracking-tight text-ink-strong">
             {карточка.name}
           </h1>
@@ -176,7 +203,7 @@ export function ProjectPage() {
                   onSelect={() =>
                     trash.mutate(projectId, {
                       onSuccess: () => navigate('/projects'),
-                      onError: (e) => toast.error(errorText(e)),
+                      onError: (e) => toast.fail(e),
                     })
                   }
                 >

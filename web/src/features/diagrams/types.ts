@@ -92,14 +92,6 @@ export type ProjectCard = {
   keys?: string[]
 }
 
-/** `packages/api/workspaces/routes.py: карточка()`. */
-export type WorkspaceCard = {
-  id: string
-  name: string
-  personal: boolean
-  role: string
-}
-
 /**
  * Значение тега со схемой (`hokoku.wire`, вид `diagram`). Ровно одно из
  * `artifact` и `xml`: служба кладёт артефакт, а `xml` бывает у схем, собранных

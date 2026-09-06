@@ -282,6 +282,91 @@
     }
    }
   },
+  "/api/auth/me/avatar": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Upload the signed-in user's avatar",
+    "description": "Takes a multipart form with a single 'file' field: a PNG, JPEG or WebP image of at most 1 MB. The format is decided by the leading bytes, never by the file name, and the picture is re-encoded into a 256x256 PNG cropped to its centre, so only pixels survive the upload. The name sent by the client is not used at all. Returns the whole profile, with avatar_version raised by one. 400 unsupported_type, 400 no_file, 401 unauthenticated, 413 file_too_large.",
+    "operationId": "set_avatar",
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         }
+        },
+        "type": "object",
+        "required": [
+         "file"
+        ]
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Set Avatar"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Remove the signed-in user's avatar",
+    "description": "Deletes the uploaded picture and goes back to the avatar generated from the account id. Answers the same whether or not a picture was there. Returns the whole profile, with avatar_version back to zero. 401 unauthenticated.",
+    "operationId": "delete_avatar",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Delete Avatar"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/auth/password/forgot": {
    "post": {
     "tags": [
@@ -356,6 +441,61 @@
         }
        }
       }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/users/{user_id}/avatar": {
+   "get": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "The avatar picture of a user",
+    "description": "The PNG uploaded by that user, 256x256. Any signed-in caller may ask: avatars are shown next to nicknames in shared workspaces. A user without an uploaded picture answers 404 - the interface draws the generated avatar itself. Pass the avatar_version from the profile as v to get a long-lived cached answer. 400 invalid_id, 401 unauthenticated, 404 not_found.",
+    "operationId": "get_user_avatar",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "User Id"
+      }
+     },
+     {
+      "name": "v",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 32
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "avatar_version from the profile",
+       "title": "V"
+      },
+      "description": "avatar_version from the profile"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response"
      },
      "default": {
       "description": "Any refusal: one shape, machine-readable code",
@@ -1048,7 +1188,7 @@
      "projects"
     ],
     "summary": "List projects of a workspace",
-    "description": "Lists the projects of one workspace; `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found.",
+    "description": "Lists the projects of one workspace; `workspace_id` is required, so a list of everything the caller can reach is not a request this route answers. `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found, 422 validation_failed.",
     "operationId": "list_projects",
     "parameters": [
      {
@@ -1113,7 +1253,7 @@
      "projects"
     ],
     "summary": "One project",
-    "description": "One project: name, workspace, the tag keys of its manifest and the size of its directory. Paths are never returned. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "description": "One project: name, workspace (`workspace_id` and `workspace_name`), the tag keys of its manifest and the size of its directory. Paths are never returned. 400 invalid_id, 404 not_found, 409 in_trash.",
     "operationId": "get_project",
     "parameters": [
      {
@@ -1310,6 +1450,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "responses": {
@@ -1364,6 +1516,18 @@
        "type": "string",
        "title": "Key"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "requestBody": {
@@ -1419,6 +1583,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "responses": {
@@ -1473,6 +1649,18 @@
        "type": "string",
        "title": "Key"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "requestBody": {
@@ -1638,6 +1826,66 @@
    }
   },
   "/api/projects/{project_id}/runs/{run_id}": {
+   "patch": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Rename one entry of the run journal",
+    "description": "Renames a run: this is how a diagram, a report or a solution is renamed. An empty name is not a refusal but a reset: the interface goes back to drawing the default name from the module and n. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "rename_project_run",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectRunPatchIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProjectRunOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
    "delete": {
     "tags": [
      "projects"
@@ -1662,6 +1910,149 @@
       "schema": {
        "type": "string",
        "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/reports": {
+   "get": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Reports of this project",
+    "description": "Every report of the project, oldest first: what it is called, which report of this project it is, which template it is built from and the first page of what it built last. A project carries several reports, each with its own template and its own tag values; the id of a report is what the other routes take as `report`. Viewer role. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "operationId": "list_project_reports",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ReportOut"
+         },
+         "title": "Response List Project Reports"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Start a new report in this project",
+    "description": "Starts a report: a journal entry and its own document on the volume, with its own manifest and its own tag values. `template_id` names one of the templates attached to the project; without it the report starts from a blank document. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found, 409 in_trash.",
+    "operationId": "create_project_report",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReportIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/reports/{run_id}": {
+   "delete": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Delete one report of this project",
+    "description": "Removes a report: its journal entry, its tag values, their version history and its build directory. The template it was built from stays attached to the project, and artifacts stay on the volume: an artifact is addressed by its content and may be the value of a tag in another report. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 409 in_trash.",
+    "operationId": "delete_project_report",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
       }
      }
     ],
@@ -1884,6 +2275,10 @@
          "file": {
           "type": "string",
           "format": "binary"
+         },
+         "run_id": {
+          "type": "string",
+          "description": "Solution this file belongs to, by its run id. Empty means the project as a whole."
          }
         },
         "required": [
@@ -1899,7 +2294,7 @@
      "materials"
     ],
     "summary": "List project materials",
-    "description": "Cards of every parsed material of the project, in upload order. Files still being parsed are in `GET ./materials/pending`. 400 invalid_id, 404 not_found.",
+    "description": "Cards of every parsed material of the project, in upload order. `run` narrows the list to the context folder of one solution. Files still being parsed are in `GET ./materials/pending`. 400 invalid_id, 404 not_found.",
     "operationId": "list_materials",
     "parameters": [
      {
@@ -1910,6 +2305,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Show only the files of this solution, by its run id (GET /api/projects/{id}/kadai/runs). Empty means every material of the project.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Show only the files of this solution, by its run id (GET /api/projects/{id}/kadai/runs). Empty means every material of the project."
      }
     ],
     "responses": {
@@ -2281,7 +2688,7 @@
      "jobs"
     ],
     "summary": "List your jobs",
-    "description": "Your own jobs, newest first. Jobs of other people are never listed, not even in a shared project. 400 invalid_id, 400 unknown_job_status.",
+    "description": "Your own jobs, newest first. Jobs of other people are never listed, not even in a shared project. `workspace_id` narrows the list down to the jobs of that workspace's projects, plus the ones that belong to no project at all. 400 invalid_id, 400 unknown_job_status.",
     "operationId": "jobs_list",
     "parameters": [
      {
@@ -2301,6 +2708,24 @@
        "title": "Project Id"
       },
       "description": "Only jobs of this project"
+     },
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Only jobs of this workspace's projects",
+       "title": "Workspace Id"
+      },
+      "description": "Only jobs of this workspace's projects"
      },
      {
       "name": "status",
@@ -2899,6 +3324,18 @@
        "type": "string",
        "title": "Key"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "responses": {
@@ -2962,6 +3399,18 @@
        "type": "integer",
        "title": "N"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "responses": {
@@ -3016,6 +3465,18 @@
        "type": "string",
        "title": "Key"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "requestBody": {
@@ -3071,6 +3532,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "responses": {
@@ -3116,6 +3589,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "responses": {
@@ -3170,6 +3655,18 @@
        "type": "integer",
        "title": "N"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "responses": {
@@ -3215,6 +3712,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "requestBody": {
@@ -3832,10 +4341,21 @@
     "tags": [
      "search"
     ],
-    "summary": "Find a project or a material by name",
-    "description": "Searches the names of every project the caller can reach (both the workspaces they own and the ones they were invited to) and the names of the materials inside those projects. Matching is case-insensitive and by substring, and the trash is not searched. Answers two lists, at most 20 entries each; an empty query answers two empty lists rather than everything. Each project carries the module its work belongs to, so the caller knows which screen to open.",
+    "summary": "Find a project or a material in one workspace",
+    "description": "Searches the names of the projects of one workspace and the names of the materials inside them. `workspace_id` is required: the search answers about the workspace the caller works in, never about all of them at once. Matching is case-insensitive and by substring, and the trash is not searched. Answers two lists, at most 20 entries each; an empty query answers two empty lists rather than everything. Each project carries the module its work belongs to, so the caller knows which screen to open. 400 invalid_id, 404 not_found, 422 validation_failed.",
     "operationId": "search",
     "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "description": "Workspace to search in; required",
+       "title": "Workspace Id"
+      },
+      "description": "Workspace to search in; required"
+     },
      {
       "name": "q",
       "in": "query",
@@ -4066,7 +4586,7 @@
      "templates"
     ],
     "summary": "Templates attached to this project",
-    "description": "The report templates attached to this project, in the order they were attached. A project may carry several: a title page, an appendix, a standard. `active` says which one the work is currently built from. Viewer role. 400 invalid_id, 404 not_found.",
+    "description": "The report templates attached to this project, in the order they were attached. A project may carry several: a title page, an appendix, a standard. `active` says which one the report named by `report` is currently built from; without `report` it is the single document of the work. Viewer role. 400 invalid_id, 404 not_found.",
     "operationId": "list_project_templates",
     "parameters": [
      {
@@ -4077,6 +4597,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "responses": {
@@ -4186,7 +4718,7 @@
      "templates"
     ],
     "summary": "Build this project from this template",
-    "description": "Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.",
+    "description": "Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. `report` says which report of the project changes its template; without it the single document of the work does. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.",
     "operationId": "use_project_template",
     "parameters": [
      {
@@ -4206,6 +4738,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "responses": {
@@ -4426,6 +4970,149 @@
     }
    }
   },
+  "/api/projects/{project_id}/kadai/runs": {
+   "get": {
+    "tags": [
+     "kadai"
+    ],
+    "summary": "Solutions of this project",
+    "description": "Every solution of the project, oldest first: what it is called, which solution of this project it is, how far its work has got and which file holds its assignment. A project carries several solutions, each with its own assignment, its own wishes, its own list of blocks and its own context files; the id of a solution is what the other routes take as `run`. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "kadai_runs",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/SolutionOut"
+         },
+         "title": "Response Kadai Runs"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "kadai"
+    ],
+    "summary": "Start a new solution in this project",
+    "description": "Starts a solution: a journal entry and its own directory on the volume, with its own assignment, wishes, block list and context files. Nothing is run and nothing is charged here: the run itself is started later by a `kadai_run` job, once the assignment has been confirmed. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "kadai_create_run",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SolutionIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SolutionOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/kadai/runs/{run_id}": {
+   "delete": {
+    "tags": [
+     "kadai"
+    ],
+    "summary": "Delete one solution of this project",
+    "description": "Removes a solution: its journal entry, the state of its work, its assignment, its wishes and its block list with the version history. Its context files are unbound from it; files attached to the project as a whole are left alone, and so are artifacts: an artifact is addressed by its content and may be part of another document. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "kadai_delete_run",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/kadai/stages": {
    "get": {
     "tags": [
@@ -4466,7 +5153,7 @@
      "kadai"
     ],
     "summary": "How far the work in this project has got",
-    "description": "A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. 400 invalid_id, 404 not_found.",
+    "description": "A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.",
     "operationId": "kadai_status",
     "parameters": [
      {
@@ -4477,6 +5164,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "responses": {
@@ -4511,7 +5210,7 @@
      "kadai"
     ],
     "summary": "Name the material that holds the assignment",
-    "description": "Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "description": "Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
     "operationId": "kadai_set_condition",
     "parameters": [
      {
@@ -4522,6 +5221,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "requestBody": {
@@ -4566,7 +5277,7 @@
      "kadai"
     ],
     "summary": "What the person asked of this work",
-    "description": "The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. 400 invalid_id, 404 not_found.",
+    "description": "The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. `run` names the solution they belong to. 400 invalid_id, 404 not_found.",
     "operationId": "kadai_wishes",
     "parameters": [
      {
@@ -4577,6 +5288,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "responses": {
@@ -4609,7 +5332,7 @@
      "kadai"
     ],
     "summary": "Store the wishes for this work",
-    "description": "Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "description": "Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. `run` names the solution they belong to. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
     "operationId": "kadai_set_wishes",
     "parameters": [
      {
@@ -4620,6 +5343,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "requestBody": {
@@ -4664,7 +5399,7 @@
      "kadai"
     ],
     "summary": "Start a stage over on a work that has stopped",
-    "description": "Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed.",
+    "description": "Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed. `run` names the solution.",
     "operationId": "kadai_restart",
     "parameters": [
      {
@@ -4675,6 +5410,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "requestBody": {
@@ -5478,7 +6225,7 @@
      "projects"
     ],
     "summary": "List projects of a workspace",
-    "description": "Lists the projects of one workspace; `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found.",
+    "description": "Lists the projects of one workspace; `workspace_id` is required, so a list of everything the caller can reach is not a request this route answers. `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found, 422 validation_failed.",
     "operationId": "list_projects_v1",
     "parameters": [
      {
@@ -5544,7 +6291,7 @@
      "projects"
     ],
     "summary": "One project",
-    "description": "One project: name, workspace, the tag keys of its manifest and the size of its directory. Paths are never returned. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "description": "One project: name, workspace (`workspace_id` and `workspace_name`), the tag keys of its manifest and the size of its directory. Paths are never returned. 400 invalid_id, 404 not_found, 409 in_trash.",
     "operationId": "get_project_v1",
     "parameters": [
      {
@@ -5745,6 +6492,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "responses": {
@@ -5800,6 +6559,18 @@
        "type": "string",
        "title": "Key"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "requestBody": {
@@ -5856,6 +6627,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "responses": {
@@ -5911,6 +6694,18 @@
        "type": "string",
        "title": "Key"
       }
+     },
+     {
+      "name": "report",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work.",
+       "default": "",
+       "title": "Report"
+      },
+      "description": "Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work."
      }
     ],
     "requestBody": {
@@ -6078,6 +6873,67 @@
    }
   },
   "/api/v1/projects/{project_id}/runs/{run_id}": {
+   "patch": {
+    "tags": [
+     "v1",
+     "projects"
+    ],
+    "summary": "Rename one entry of the run journal",
+    "description": "Renames a run: this is how a diagram, a report or a solution is renamed. An empty name is not a refusal but a reset: the interface goes back to drawing the default name from the module and n. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "rename_project_run_v1",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectRunPatchIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProjectRunOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
    "delete": {
     "tags": [
      "v1",
@@ -6177,6 +7033,10 @@
          "file": {
           "type": "string",
           "format": "binary"
+         },
+         "run_id": {
+          "type": "string",
+          "description": "Solution this file belongs to, by its run id. Empty means the project as a whole."
          }
         },
         "required": [
@@ -6193,7 +7053,7 @@
      "materials"
     ],
     "summary": "List project materials",
-    "description": "Cards of every parsed material of the project, in upload order. Files still being parsed are in `GET ./materials/pending`. 400 invalid_id, 404 not_found.",
+    "description": "Cards of every parsed material of the project, in upload order. `run` narrows the list to the context folder of one solution. Files still being parsed are in `GET ./materials/pending`. 400 invalid_id, 404 not_found.",
     "operationId": "list_materials_v1",
     "parameters": [
      {
@@ -6204,6 +7064,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Show only the files of this solution, by its run id (GET /api/projects/{id}/kadai/runs). Empty means every material of the project.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Show only the files of this solution, by its run id (GET /api/projects/{id}/kadai/runs). Empty means every material of the project."
      }
     ],
     "responses": {
@@ -6582,7 +7454,7 @@
      "jobs"
     ],
     "summary": "List your jobs",
-    "description": "Your own jobs, newest first. Jobs of other people are never listed, not even in a shared project. 400 invalid_id, 400 unknown_job_status.",
+    "description": "Your own jobs, newest first. Jobs of other people are never listed, not even in a shared project. `workspace_id` narrows the list down to the jobs of that workspace's projects, plus the ones that belong to no project at all. 400 invalid_id, 400 unknown_job_status.",
     "operationId": "jobs_list_v1",
     "parameters": [
      {
@@ -6602,6 +7474,24 @@
        "title": "Project Id"
       },
       "description": "Only jobs of this project"
+     },
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "Only jobs of this workspace's projects",
+       "title": "Workspace Id"
+      },
+      "description": "Only jobs of this workspace's projects"
      },
      {
       "name": "status",
@@ -7153,6 +8043,152 @@
     }
    }
   },
+  "/api/v1/projects/{project_id}/kadai/runs": {
+   "get": {
+    "tags": [
+     "v1",
+     "kadai"
+    ],
+    "summary": "Solutions of this project",
+    "description": "Every solution of the project, oldest first: what it is called, which solution of this project it is, how far its work has got and which file holds its assignment. A project carries several solutions, each with its own assignment, its own wishes, its own list of blocks and its own context files; the id of a solution is what the other routes take as `run`. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "kadai_runs_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/SolutionOut"
+         },
+         "title": "Response Kadai Runs V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "v1",
+     "kadai"
+    ],
+    "summary": "Start a new solution in this project",
+    "description": "Starts a solution: a journal entry and its own directory on the volume, with its own assignment, wishes, block list and context files. Nothing is run and nothing is charged here: the run itself is started later by a `kadai_run` job, once the assignment has been confirmed. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "kadai_create_run_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SolutionIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SolutionOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/kadai/runs/{run_id}": {
+   "delete": {
+    "tags": [
+     "v1",
+     "kadai"
+    ],
+    "summary": "Delete one solution of this project",
+    "description": "Removes a solution: its journal entry, the state of its work, its assignment, its wishes and its block list with the version history. Its context files are unbound from it; files attached to the project as a whole are left alone, and so are artifacts: an artifact is addressed by its content and may be part of another document. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "kadai_delete_run_v1",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/kadai/stages": {
    "get": {
     "tags": [
@@ -7195,7 +8231,7 @@
      "kadai"
     ],
     "summary": "How far the work in this project has got",
-    "description": "A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. 400 invalid_id, 404 not_found.",
+    "description": "A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.",
     "operationId": "kadai_status_v1",
     "parameters": [
      {
@@ -7206,6 +8242,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "responses": {
@@ -7241,7 +8289,7 @@
      "kadai"
     ],
     "summary": "Name the material that holds the assignment",
-    "description": "Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "description": "Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
     "operationId": "kadai_set_condition_v1",
     "parameters": [
      {
@@ -7252,6 +8300,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "requestBody": {
@@ -7297,7 +8357,7 @@
      "kadai"
     ],
     "summary": "What the person asked of this work",
-    "description": "The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. 400 invalid_id, 404 not_found.",
+    "description": "The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. `run` names the solution they belong to. 400 invalid_id, 404 not_found.",
     "operationId": "kadai_wishes_v1",
     "parameters": [
      {
@@ -7308,6 +8368,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "responses": {
@@ -7341,7 +8413,7 @@
      "kadai"
     ],
     "summary": "Store the wishes for this work",
-    "description": "Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "description": "Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. `run` names the solution they belong to. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
     "operationId": "kadai_set_wishes_v1",
     "parameters": [
      {
@@ -7352,6 +8424,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "requestBody": {
@@ -7397,7 +8481,7 @@
      "kadai"
     ],
     "summary": "Start a stage over on a work that has stopped",
-    "description": "Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed.",
+    "description": "Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed. `run` names the solution.",
     "operationId": "kadai_restart_v1",
     "parameters": [
      {
@@ -7408,6 +8492,18 @@
        "type": "string",
        "title": "Project Id"
       }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
      }
     ],
     "requestBody": {
@@ -9228,6 +10324,22 @@
     "title": "ProjectRunOut",
     "description": "Запись журнала наружу. Путей на томе в ней нет и быть не может."
    },
+   "ProjectRunPatchIn": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 200,
+      "title": "Name",
+      "description": "New name for this run. Empty resets it: the interface draws the default name from the module and n again."
+     }
+    },
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "title": "ProjectRunPatchIn",
+    "description": "Правка записи. Поле одно — имя: всё остальное в записи не редактируется.\n\nМодуль, номер и артефакт — это то, что случилось, а случившееся не правят:\nпереписать модуль у записи значило бы сказать, что схему построил отчёт.\nИмя — единственное, что в записи придумал человек, и единственное, что он\nможет передумать.\n\nОбязательное поле, а не необязательное: у правки с одним полем «поля нет»\nозначало бы «ничего не делать», то есть запрос, на который незачем ходить."
+   },
    "RegisterIn": {
     "properties": {
      "email": {
@@ -9255,6 +10367,110 @@
     ],
     "title": "RegisterIn",
     "description": "Регистрация. Длина пароля проверяется формой, а не обработчиком: беда\nформы уезжает клиенту с адресом поля (`where: body.password`).\n\nНик — обязательное поле: именно он показывается\nвместо почты, и завести человека без него значит завести его безымянным.\nГраницы и знаки ника формой НЕ проверяются намеренно: `422\nvalidation_failed` не отличить от беды в почте, а сайту нужен отдельный код\n`invalid_nickname`, чтобы показать подсказку под нужным полем. Форма здесь\nсторожит только длину строки — от тела запроса в мегабайт."
+   },
+   "ReportIn": {
+    "properties": {
+     "template_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Id",
+      "description": "One of the templates attached to this project (GET /api/projects/{id}/templates). Without it the report is started from a blank document."
+     },
+     "name": {
+      "type": "string",
+      "maxLength": 200,
+      "title": "Name",
+      "description": "What to call this report. Empty is fine: the interface names it itself, from the module and n.",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "ReportIn",
+    "description": "Тело создания отчёта: по какому бланку и как его звать."
+   },
+   "ReportOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Run id of this report: the value of ?report="
+     },
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Which report of this project, from 1"
+     },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "preview_artifact_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Preview Artifact Id",
+      "description": "First page of the built document, as a PNG artifact"
+     },
+     "template_name": {
+      "type": "string",
+      "title": "Template Name",
+      "description": "Name of the template this report is built from, if known",
+      "default": ""
+     },
+     "tags": {
+      "type": "integer",
+      "title": "Tags",
+      "description": "How many tags its template has",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "project_id",
+     "name",
+     "n"
+    ],
+    "title": "ReportOut",
+    "description": "Отчёт наружу: запись журнала плюс то, что видно на его карточке."
    },
    "ResetIn": {
     "properties": {
@@ -9305,6 +10521,104 @@
     ],
     "title": "RollbackIn",
     "description": "Тело возврата: номер версии, к которой возвращаемся.\n\nТело, а не путь, потому что возврат — действие над тегом, а не обращение к\nверсии: `POST …/values/{key}/versions/{n}` читалось бы как «создать версию\nномер n», чего служба не умеет и не должна."
+   },
+   "SolutionIn": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 200,
+      "title": "Name",
+      "description": "What to call this solution. Empty is fine: the interface names it itself, from the module and n.",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "SolutionIn",
+    "description": "Тело заведения решения. Поле одно: как его звать."
+   },
+   "SolutionOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Run id of this solution: the value of ?run="
+     },
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Which solution of this project, from 1"
+     },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "state": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "State",
+      "description": "State of the work: running, waiting_user, done, failed"
+     },
+     "stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stage",
+      "description": "Stage it has got to, in Russian"
+     },
+     "condition_name": {
+      "type": "string",
+      "title": "Condition Name",
+      "description": "File name of the assignment, when one is named",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "project_id",
+     "name",
+     "n"
+    ],
+    "title": "SolutionOut",
+    "description": "Решение наружу: запись журнала плюс то, что видно на его карточке."
    },
    "TagPromptIn": {
     "properties": {
@@ -9633,5 +10947,87 @@
    "name": "v1",
    "description": "External entrance for scripts and agents. Takes an API token: `Authorization: Bearer kor_...`, issued at `POST /api/tokens` from the site and shown once. Every token carries scopes (`projects:read`, `projects:write`, `materials:write`, `runs:run`) and is limited to 60 requests per minute. The handlers are the very same ones the site calls; only the way the caller is identified differs, so operation ids here carry a `_v1` suffix. Accounts, provider keys, tokens themselves and the admin area are not reachable with a token."
   }
+ ],
+ "x-error-codes": [
+  "account_blocked",
+  "agent_refused",
+  "already_finished",
+  "already_member",
+  "bad_outputs",
+  "bad_result",
+  "bad_template",
+  "build_failed",
+  "cancelled",
+  "cancelled_before",
+  "csrf_failed",
+  "diagram_failed",
+  "email_not_confirmed",
+  "email_taken",
+  "endpoint_required",
+  "export_too_large",
+  "file_too_large",
+  "forbidden",
+  "handler_crashed",
+  "handler_failed",
+  "http_error",
+  "in_trash",
+  "insufficient_scope",
+  "internal_error",
+  "invalid_credentials",
+  "invalid_id",
+  "invalid_key",
+  "invalid_name",
+  "invalid_nickname",
+  "invalid_source",
+  "invalid_token",
+  "invalid_value",
+  "kadai_failed",
+  "key_required",
+  "last_owner",
+  "limit_exhausted",
+  "method_not_allowed",
+  "nickname_taken",
+  "no_file",
+  "no_handler",
+  "no_invite",
+  "no_key",
+  "no_such_user",
+  "not_found",
+  "not_implemented",
+  "not_in_trash",
+  "not_ready",
+  "note_required",
+  "parse_failed",
+  "personal_workspace",
+  "project_exists",
+  "project_required",
+  "quota_exceeded",
+  "rate_limited",
+  "run_failed",
+  "source_too_large",
+  "tag_refused",
+  "task_too_long",
+  "timeout",
+  "token_expired",
+  "token_not_allowed",
+  "token_required",
+  "token_revoked",
+  "unauthenticated",
+  "unauthorized",
+  "unknown_job_kind",
+  "unknown_job_status",
+  "unknown_lang",
+  "unknown_mode",
+  "unknown_module",
+  "unknown_plan",
+  "unknown_provider",
+  "unknown_role",
+  "unknown_scope",
+  "unknown_stage",
+  "unknown_tag",
+  "unknown_theme",
+  "unsupported_type",
+  "validation_failed",
+  "worker_lost"
  ]
 }

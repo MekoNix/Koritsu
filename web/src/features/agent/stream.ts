@@ -62,15 +62,19 @@ export function buildAgentPayload({
   endpoint,
   task,
   overwrite = false,
+  report = '',
 }: {
   endpoint: string
   task: string
   overwrite?: boolean
+  /** Отчёт работы, в который агент пишет. Пусто — единственный документ работы. */
+  report?: string
 }): AgentPayload {
   return {
     endpoint,
     task: task.trim().slice(0, TASK_MAX),
     overwrite: !!overwrite,
+    report,
   }
 }
 

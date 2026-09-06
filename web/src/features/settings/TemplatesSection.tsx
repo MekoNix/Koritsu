@@ -22,7 +22,6 @@
  */
 import { useState } from 'react'
 
-import { errorText } from '@/api'
 import { useT } from '@/i18n'
 import {
   Button,
@@ -63,7 +62,7 @@ export function TemplatesSection() {
       setFile(null)
       setName('')
     } catch (e) {
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 
@@ -73,7 +72,7 @@ export function TemplatesSection() {
       await remove.mutateAsync(toDelete.id)
       setToDelete(null)
     } catch (e) {
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 

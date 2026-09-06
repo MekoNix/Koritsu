@@ -81,7 +81,7 @@ export function TokensSection() {
         form.setError(field, { message: errorText(e) })
         return
       }
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 
@@ -91,7 +91,7 @@ export function TokensSection() {
       await revoke.mutateAsync(toRevoke.id)
       setToRevoke(null)
     } catch (e) {
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 

@@ -34,6 +34,7 @@ import { useSetCondition } from './data'
 
 export function ConditionStep({
   projectId,
+  runId,
   material,
   ocr,
   confirmed,
@@ -41,7 +42,13 @@ export function ConditionStep({
   disabled,
 }: {
   projectId: string
-  /** Материал-условие проекта. `undefined` — ещё не назван. */
+  /**
+   * Решение, чьё условие правится. У каждого оно своё, и поправленный текст
+   * ложится в его же папку контекста: иначе правка одной задачи приехала бы в
+   * промпт соседней.
+   */
+  runId: string
+  /** Материал-условие решения. `undefined` — ещё не назван. */
   material: Material | undefined
   /** Читано ли условие распознаванием: тогда проверить его особенно нужно. */
   ocr: boolean
@@ -81,6 +88,7 @@ export function ConditionStep({
     try {
       const принят = await upload.mutateAsync({
         projectId,
+        runId,
         file: new File([черновик], `условие-правка.txt`, { type: 'text/plain' }),
       })
       // Разбор `.txt` — одна строка работы очереди, но она всё же очередь:
@@ -94,7 +102,7 @@ export function ConditionStep({
 
   async function новый_условием(materialId: string, попыток = 12) {
     try {
-      await setCondition.mutateAsync({ projectId, materialId })
+      await setCondition.mutateAsync({ projectId, materialId, runId })
       setПравим(false)
       setЧерновик('')
       onConfirm()

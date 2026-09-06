@@ -185,11 +185,45 @@ def test_вопрос_называет_запреты_и_потолок_вслу
     assert str(kadai.MAX_SECTIONS) in текст and "пожелания" in текст.lower()
 
 
-def test_обязательным_нельзя_объявить_вид_которого_в_строении_нет():
-    with pytest.raises(kadai.KadaiError, match="похоже на"):
-        kadai.compose({"work_kind": "сводка", "required_kinds": ["остатк"],
-                       "sections": [{"key": "o", "title": "О", "kind": "остатки",
-                                     "type": "table"}]}, stages=kadai.STAGE_NAMES)
+def test_обязательный_вид_с_близким_именем_считается_разделом():
+    """Модель называет один раздел дважды — заголовком и своими словами о нём.
+    Строгая сверка на этом роняла прогон, за который уже заплачено."""
+    profile = kadai.compose(
+        {"work_kind": "сводка", "required_kinds": ["остатк"],
+         "sections": [{"key": "o", "title": "О", "kind": "остатки",
+                       "type": "table"}]}, stages=kadai.STAGE_NAMES)
+    assert profile.kind("остатки").required is True
+
+
+def test_обязательный_вид_без_похожего_раздела_отбрасывается_замечанием():
+    """Несопоставленное — не отказ: работа собирается по тем разделам, что есть,
+    а человеку про разговор модели с самой собой знать нечего."""
+    беды = []
+    profile = kadai.compose(
+        {"work_kind": "анализ продаж",
+         "required_kinds": ["KPI-таблица", "Вывод", "План действий",
+                            "Продажи по регионам"],
+         "sections": [
+             {"key": "t", "title": "Таблица действий", "kind": "Таблица действий",
+              "type": "table"},
+             {"key": "r", "title": "Комментарии по регионам",
+              "kind": "Комментарии по регионам", "type": "markdown"}]},
+        stages=kadai.STAGE_NAMES, problems=беды)
+    # «План действий» → «Таблица действий», «Продажи по регионам» →
+    # «Комментарии по регионам»: оба сопоставлены по близости имён.
+    assert profile.kind("Таблица действий").required is True
+    assert profile.kind("Комментарии по регионам").required is True
+    assert [p["level"] for p in беды] == ["warning"]
+    assert "KPI-таблица" in беды[0]["message"] and "Вывод" in беды[0]["message"]
+
+
+def test_замечание_о_видах_не_обязательно_собирать():
+    """`problems=` не дан — прогон всё равно идёт: отбрасывание видов не отказ."""
+    profile = kadai.compose(
+        {"work_kind": "сводка", "required_kinds": ["ничего похожего"],
+         "sections": [{"key": "o", "title": "О", "kind": "остатки",
+                       "type": "table"}]}, stages=kadai.STAGE_NAMES)
+    assert profile.kind("остатки").required is False
 
 
 def test_неизвестное_поле_ответа_ошибка_а_не_молчание():

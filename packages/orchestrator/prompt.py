@@ -204,7 +204,7 @@ def _plain(text: str) -> str:
     return plain[:LABEL_CHARS] + "…" if len(plain) > LABEL_CHARS else plain
 
 
-def file_parts(store, *, chunks=()) -> list[Part]:
+def file_parts(store, *, chunks=(), only=None) -> list[Part]:
     """По куску на материал: карточка плюс запрошенные куски содержимого.
 
     Отдельный `Part` на файл, а не одна строка из `materials.build_context`, — и
@@ -219,6 +219,13 @@ def file_parts(store, *, chunks=()) -> list[Part]:
 
     `chunks` — запросы содержимого: `(id, начало, конец)`, `{"id": …}` или
     просто `id`; форма та же, что у `materials.build_context`.
+
+    `only` — какие материалы вообще показывать (`None` — все). Так работает
+    папка контекста решения: файлы одной задачи не должны приезжать в промпт
+    другой — чужая методичка сбивает модель ровно так же, как чужое условие, и
+    платит за это человек. Отбор стоит здесь, а не у вызывающего, потому что
+    именно здесь материал превращается в кусок промпта, и второе место, где
+    «какие файлы видит модель», разошлось бы с первым.
     """
     wanted: dict = {}
     for item in chunks:
@@ -226,6 +233,8 @@ def file_parts(store, *, chunks=()) -> list[Part]:
         wanted.setdefault(request.id, []).append(request)
     parts: list[Part] = []
     for material in store.list():
+        if only is not None and material.id not in only:
+            continue
         pieces = [store.card(material.id).text]
         for request in wanted.get(material.id, ()):
             piece = store.read(request.id, request.start, request.end)

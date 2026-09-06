@@ -14,6 +14,12 @@
  *
  * Модель здесь не участвует (`needs_secret=False`), поэтому пресета сборка не
  * спрашивает и без ключей работает.
+ *
+ * **Собирается один отчёт работы, а не работа целиком.** Какой именно, говорит
+ * `payload.report`: у каждого отчёта свой бланк и свои значения. Собрав PDF,
+ * служба кладёт картинку его первой страницы артефактом и записывает её у
+ * записи журнала — поэтому конец сборки гасит и список отчётов: на карточке
+ * появляется страница.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -45,7 +51,7 @@ export type BuildState = {
   start: () => void
 }
 
-export function useBuild(projectId: string): BuildState {
+export function useBuild(projectId: string, report = ''): BuildState {
   const t = useT()
   const toast = useToast()
   const qc = useQueryClient()
@@ -76,6 +82,9 @@ export function useBuild(projectId: string): BuildState {
     if (!jobId || !stream.done || закрыто.current === jobId) return
     закрыто.current = jobId
     void qc.invalidateQueries({ queryKey: keys.usage })
+    // Картинка первой страницы записана у запуска — карточка отчёта обязана
+    // узнать о ней тем же действием, а не после перезагрузки страницы.
+    void qc.invalidateQueries({ queryKey: keys.projects.reports(projectId) })
     const статус = stream.job?.status
     if (статус === 'done') {
       const итог = (stream.job?.result ?? {}) as BuildResult
@@ -91,13 +100,13 @@ export function useBuild(projectId: string): BuildState {
       setError(errorText(new ApiError(беда.code || 'unknown', беда.message || '')))
     }
     setJobId(null)
-  }, [jobId, stream.done, stream.job, из_потока, qc])
+  }, [jobId, stream.done, stream.job, из_потока, projectId, qc])
 
   const start = useCallback(() => {
     setError(null)
     setUnfilled([])
     enqueue.mutate(
-      { kind: BUILD, projectId, payload: { outputs: ['docx', 'pdf'] } },
+      { kind: BUILD, projectId, payload: { outputs: ['docx', 'pdf'], report } },
       {
         onSuccess: (задание) => {
           закрыто.current = null
@@ -106,11 +115,11 @@ export function useBuild(projectId: string): BuildState {
         },
         onError: (беда) => {
           setError(errorText(беда))
-          toast.error(t('reports.toast.buildFailed'), errorText(беда))
+          toast.fail(беда, t('reports.toast.buildFailed'))
         },
       },
     )
-  }, [enqueue, projectId, toast, t])
+  }, [enqueue, projectId, report, toast, t])
 
   const готово: BuiltArtifacts = { ...из_потока, ...artifacts }
   return {

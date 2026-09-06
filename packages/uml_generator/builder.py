@@ -7,9 +7,14 @@ from dataclasses import dataclass, field as dc_field
 
 from .extractor import ClassInfo, FieldInfo, MethodInfo
 
-from ._routing import (Rect, abs_point, assign_ports, path_clear, plan_route, points_xml)
+from ._bbox import (enforce_row_gap, label_box, label_dirs, label_size, place_label,
+                    spread_row, stack_rows)
+from ._routing import (CorridorGrid, Rect, abs_point, assign_ports, path_clear, plan_route,
+                       points_xml, side_of)
 from ._text import text_width
 from .styles import get_layout, get_theme
+
+_LABEL_FONT = 10                    # px, подпись у ребра (кратность)
 
 _ACCESS = {"public": "+", "protected": "#", "private": "-", "internal": "~",
            "protected internal": "#", "private protected": "#"}
@@ -182,9 +187,20 @@ def _grid(v: float, g: int) -> int:
     return int(-(-v // g) * g)
 
 
+def _header_h(cls: ClassInfo, cfg: dict) -> int:
+    """
+    Высота заголовка: у стереотипа («interface», «enumeration») он в две строки.
+
+    Постоянные 32 px хватало только на одну: у интерфейса имя класса вылезало
+    из шапки на первую строку членов и наезжало на неё.
+    """
+    lines = 2 if cls.kind in _STEREOTYPE else 1
+    return cfg["header_h"] + (lines - 1) * int(cfg["header_font"] * 1.4)
+
+
 def _class_height(cls: ClassInfo, cfg: dict) -> int:
     fields, methods = _member_rows(cls)
-    h = cfg["header_h"] + len(fields) * cfg["row_h"] + len(methods) * cfg["row_h"]
+    h = _header_h(cls, cfg) + len(fields) * cfg["row_h"] + len(methods) * cfg["row_h"]
     if fields and methods:
         h += cfg["sep_h"]
     return max(h, cfg["min_h"])
@@ -323,6 +339,9 @@ class Layout:
     row_tops:      list[int]       = dc_field(default_factory=list)
     row_corridors: list[int]       = dc_field(default_factory=list)   # y середины зазора под рядом
     col_corridors: list[int]       = dc_field(default_factory=list)
+    # (родитель, вид связи) → потомки, слитые в один ствол с точкой слияния
+    merged:        dict            = dc_field(default_factory=dict)
+    junctions:     dict            = dc_field(default_factory=dict)   # та же пара → (x, y) точки
 
 
 def _keys(classes: list[ClassInfo]) -> list[str]:
@@ -398,6 +417,31 @@ def _order_level(level_nodes: list[str], prev_x: dict[str, float],
     return sorted(level_nodes, key=key)
 
 
+def _junction_stacks(merged: dict, xs: dict[str, int], widths: dict[str, int],
+                     row_of: dict[str, int]) -> dict[tuple[str, str], int]:
+    """
+    Этаж точки слияния в коридоре: `(родитель, вид) → номер этажа`.
+
+    Две точки слияния в одном коридоре с пересекающимся размахом по x нельзя
+    поставить на одну высоту — стволы наложатся друг на друга, поэтому второй и
+    следующие опускаются на этаж ниже. Считаем это до расстановки рядов по y:
+    зазор под рядом потом делается таким, чтобы все этажи поместились в нём и
+    ни одна точка не легла на блок нижнего ряда.
+    """
+    stack: dict[tuple[str, str], int] = {}
+    used: dict[int, list[tuple[int, int, int]]] = {}       # ряд → [(x1, x2, этаж)]
+    for (parent, kind), kids in merged.items():
+        prow = row_of[parent]
+        span = (min(xs[k] + widths[k] // 2 for k in kids + [parent]),
+                max(xs[k] + widths[k] // 2 for k in kids + [parent]))
+        k = 0
+        while any(x1 <= span[1] and span[0] <= x2 and lvl == k for x1, x2, lvl in used.get(prow, [])):
+            k += 1
+        used.setdefault(prow, []).append((span[0], span[1], k))
+        stack[(parent, kind)] = k
+    return stack
+
+
 def _layout(names: list[str], relations: list[Relation],
             widths: dict[str, int], heights: dict[str, int], cfg: dict) -> Layout:
     index = {n: i for i, n in enumerate(names)}
@@ -427,10 +471,7 @@ def _layout(names: list[str], relations: list[Relation],
     # x внутри ряда — последовательно
     xs: dict[str, int] = {}
     for row in rows:
-        x = cfg["start_x"]
-        for n in row:
-            xs[n] = x
-            x += widths[n] + h_gap
+        xs.update(spread_row(row, widths, cfg["start_x"], h_gap))
 
     # центрирование родителей над потомками (снизу вверх), без наложений в ряду
     row_of = {n: ri for ri, row in enumerate(rows) for n in row}
@@ -448,27 +489,33 @@ def _layout(names: list[str], relations: list[Relation],
                 want[n] = int(cx - widths[n] / 2)
         if not want:
             continue
-        x_min = cfg["start_x"]
         for n in row:
-            target = max(want.get(n, xs[n]), x_min)
-            xs[n] = target
-            x_min = target + widths[n] + h_gap
+            xs[n] = max(want.get(n, xs[n]), cfg["start_x"])
+        # сдвиг «на середину потомков» мог наложить блок на соседа в ряду
+        enforce_row_gap(row, xs, widths, cfg["start_x"], h_gap)
 
-    # y рядов и коридоры
-    lay = Layout()
-    y = cfg["start_y"]
-    for ri, row in enumerate(rows):
-        row_h = max(heights[n] for n in row)
-        lay.row_tops.append(y)
-        for n in row:
-            lay.rects[n] = (xs[n], y, widths[n], heights[n])
-            lay.row_of[n] = ri
-        lay.row_bottoms.append(y + row_h)
-        lay.row_corridors.append(y + row_h + v_gap // 2)
-        y += row_h + v_gap
+    # зазор под рядом: обычный v_gap, но если в коридоре несколько этажей точек
+    # слияния — ровно столько, чтобы нижний этаж не задел блоки следующего ряда
+    merged, _ = _hier_groups(relations, row_of)
+    stacks = _junction_stacks(merged, xs, widths, row_of)
+    jr, step, m = cfg["junction_r"], cfg["junction_step"], cfg["route_margin"]
+    gaps = [v_gap] * len(rows)
+    for (parent, _kind), k in stacks.items():
+        ri = row_of[parent]
+        gaps[ri] = max(gaps[ri], 2 * (k * step + jr + m))
+
+    lay = Layout(merged=merged)
+    lay.rects, lay.row_tops, lay.row_bottoms, lay.row_corridors = stack_rows(
+        rows, xs, widths, heights, cfg["start_y"], gaps)
+    lay.row_of = row_of
+    for (parent, kind), k in stacks.items():
+        px, _py, pw, _ph = lay.rects[parent]
+        lay.junctions[(parent, kind)] = (px + pw // 2,
+                                         lay.row_corridors[row_of[parent]] + k * step)
     for row in rows:
         for n in row:
             lay.col_corridors.append(xs[n] + widths[n] + h_gap // 2)
+            lay.col_corridors.append(xs[n] - h_gap // 2)
     lay.col_corridors.append(cfg["start_x"] - h_gap // 2)
     return lay
 
@@ -540,9 +587,10 @@ def _class_cells(cls: ClassInfo, cid: str, rect: Rect, theme: dict, cfg: dict) -
     stereo = _STEREOTYPE.get(cls.kind)
     label = _esc(f"{stereo}<br>{name_html}" if stereo else name_html)
 
+    head_h = _header_h(cls, cfg)
     cells = [
         f'<mxCell id="{cid}" value="{label}" '
-        f'style="swimlane;html=1;fontStyle=1;align=center;startSize={cfg["header_h"]};'
+        f'style="swimlane;html=1;fontStyle=1;align=center;startSize={head_h};'
         f'fillColor={fill};strokeColor={stroke};'
         f'fontColor={theme["header_font"]};fontSize={cfg["header_font"]};rounded=1;arcSize=4;" '
         f'vertex="1" parent="1">'
@@ -554,7 +602,7 @@ def _class_cells(cls: ClassInfo, cid: str, rect: Rect, theme: dict, cfg: dict) -
         f'text;html=1;strokeColor=none;fillColor=none;align=left;'
         f'verticalAlign=middle;spacingLeft=6;fontSize={cfg["member_font"]};fontColor={theme["member_font"]};'
     )
-    cur_y = cfg["header_h"]
+    cur_y = head_h
     for prefix, rows in (("f", fields), ("m", methods)):
         if prefix == "m" and fields and methods:
             cells.append(
@@ -576,16 +624,8 @@ def _class_cells(cls: ClassInfo, cid: str, rect: Rect, theme: dict, cfg: dict) -
     return cells
 
 
-def _edge_label_cell(edge_id: str, text: str, nx_f: float, ny_f: float, color: str) -> str:
-    """Подпись у конца ребра (кратность): снаружи блока, со стороны входа."""
-    if ny_f >= 1.0:
-        off = (12, 12)          # вход снизу → подпись ниже блока, правее линии
-    elif ny_f <= 0.0:
-        off = (12, -12)         # вход сверху
-    elif nx_f <= 0.0:
-        off = (-16, -10)        # вход слева
-    else:
-        off = (16, -10)
+def _edge_label_cell(edge_id: str, text: str, off: tuple[int, int], color: str) -> str:
+    """Подпись у конца ребра (кратность). Место ей ищет `place_label` по рамкам."""
     return (
         f'<mxCell id="{edge_id}_l" value="{_esc(text)}" '
         f'style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;'
@@ -596,14 +636,14 @@ def _edge_label_cell(edge_id: str, text: str, nx_f: float, ny_f: float, color: s
     )
 
 
-def _hier_groups(relations: list[Relation], lay: Layout) -> tuple[dict, list[Relation]]:
+def _hier_groups(relations: list[Relation], row_of: dict[str, int]) -> tuple[dict, list[Relation]]:
     """
     Группы для junction: (parent, kind) → [child, …] при ≥2 потомках, лежащих ниже
     родителя. Остальные иерархические рёбра — как одиночные.
     """
     groups: dict[tuple[str, str], list[str]] = {}
     for r in relations:
-        if r.kind in _HIER and lay.row_of.get(r.src, 0) > lay.row_of.get(r.tgt, 0):
+        if r.kind in _HIER and row_of.get(r.src, 0) > row_of.get(r.tgt, 0):
             groups.setdefault((r.tgt, r.kind), []).append(r.src)
     merged = {k: v for k, v in groups.items() if len(v) >= 2}
     singles = [r for r in relations
@@ -623,7 +663,8 @@ def build_xml(classes: list[ClassInfo], theme: str = "dark",
     heights = {k: _class_height(c, cfg) for k, c in zip(keys, classes)}
     relations = _detect_relations(classes)
     lay = _layout(keys, relations, widths, heights, cfg)
-    merged, singles = _hier_groups(relations, lay)
+    merged = lay.merged
+    _, singles = _hier_groups(relations, lay.row_of)
 
     cells: list[str] = []
     ids = {k: f"c{i}" for i, k in enumerate(keys)}
@@ -632,24 +673,22 @@ def build_xml(classes: list[ClassInfo], theme: str = "dark",
 
     edge_color = pal["edge"]
     m = cfg["route_margin"]
+    # сетка коридоров строится один раз на диаграмму: по ней ищется обход, когда
+    # простых L/U-образных маршрутов нет, — иначе линия пошла бы сквозь блоки
+    grid = CorridorGrid(list(lay.rects.values()), lay.row_corridors, lay.col_corridors, m)
+    jr = cfg["junction_r"]
+    # точки слияния — препятствия для чужих линий: линия, прошедшая через чужую
+    # точку, читается как связь, которой нет
+    jdots = {k: (x - jr, y - jr, 2 * jr, 2 * jr) for k, (x, y) in lay.junctions.items()}
+    # занятые рамки: блоки, точки слияния и уже размещённые подписи — подпись,
+    # накрывшая точку слияния, прячет узел ветвления наследования
+    taken: list[Rect] = list(lay.rects.values()) + list(jdots.values())
 
     # ── junction: один ствол к родителю, ветки от потомков ────────────────────
     reserved: dict[tuple[str, str], list[int]] = {}
-    used_y: dict[int, list[tuple[int, int, int]]] = {}    # ряд → [(x1, x2, y)] занятых горизонталей
-    jr = cfg["junction_r"]
-    junction_pos: dict[tuple[str, str], tuple[int, int]] = {}
     for gi, ((parent, kind), kids) in enumerate(merged.items()):
-        px, py, pw, ph = lay.rects[parent]
-        jx = px + pw // 2
+        jx, jy = lay.junctions[(parent, kind)]
         prow = lay.row_of[parent]
-        jy = lay.row_corridors[prow]
-        span = (min(lay.rects[k][0] + lay.rects[k][2] // 2 for k in kids + [parent]),
-                max(lay.rects[k][0] + lay.rects[k][2] // 2 for k in kids + [parent]))
-        # второй junction в том же коридоре с перекрывающимся размахом — ниже на шаг
-        while any(x1 <= span[1] and span[0] <= x2 and y == jy for x1, x2, y in used_y.get(prow, [])):
-            jy += cfg["junction_step"]
-        used_y.setdefault(prow, []).append((span[0], span[1], jy))
-        junction_pos[(parent, kind)] = (jx, jy)
         reserved.setdefault((parent, "bottom"), []).append(jx)
         # ветка к junction выходит из середины верха потомка; при множественном
         # наследовании остальные рёбра того же потомка должны обойти эту точку
@@ -674,12 +713,14 @@ def build_xml(classes: list[ClassInfo], theme: str = "dark",
         for ki, kid in enumerate(kids):
             kx, ky, kw, kh = lay.rects[kid]
             cx = kx + kw // 2
-            obstacles = [r for n, r in lay.rects.items() if n not in (kid, parent)]
+            obstacles = ([r for n, r in lay.rects.items() if n not in (kid, parent)]
+                         + [d for gk, d in jdots.items() if gk != (parent, kind)])
             if lay.row_of[kid] == prow + 1 and path_clear([(cx, ky), (cx, jy), (jx, jy)], obstacles, m):
                 wps = [(cx, jy)] if cx != jx else []
             else:
                 wps = plan_route(cx, ky, jx, jy, obstacles, lay.row_corridors,
-                                 lay.col_corridors, m, prefer_corridor=True)
+                                 lay.col_corridors, m, prefer_corridor=True, grid=grid,
+                                 exit_side="top", entry_side="bottom")
             cells.append(
                 f'<mxCell id="jb{gi}_{ki}" value="" '
                 f'style="{_edge_base(edge_color, 0.5, 0.0, 0.5, 0.5)}endArrow=none;startArrow=none;" '
@@ -693,16 +734,23 @@ def build_xml(classes: list[ClassInfo], theme: str = "dark",
         ex_f, ey_f, nx_f, ny_f = ports.get((r.src, r.tgt), (0.5, 1.0, 0.5, 0.0))
         ex, ey = abs_point(lay.rects[r.src], ex_f, ey_f)
         nx, ny = abs_point(lay.rects[r.tgt], nx_f, ny_f)
-        obstacles = [rect for n, rect in lay.rects.items() if n not in (r.src, r.tgt)]
+        obstacles = ([rect for n, rect in lay.rects.items() if n not in (r.src, r.tgt)]
+                     + list(jdots.values()))
         vertical = ey_f in (0.0, 1.0) and ny_f in (0.0, 1.0)
         wps = plan_route(ex, ey, nx, ny, obstacles, lay.row_corridors, lay.col_corridors,
-                         m, prefer_corridor=vertical)
+                         m, prefer_corridor=vertical, grid=grid,
+                         exit_side=side_of(ex_f, ey_f), entry_side=side_of(nx_f, ny_f))
         style = _edge_style(r.kind, edge_color, ex_f, ey_f, nx_f, ny_f)
         cells.append(
             f'<mxCell id="e{ei}" value="" style="{style}" '
             f'edge="1" source="{ids[r.src]}" target="{ids[r.tgt]}" parent="1">{points_xml(wps)}</mxCell>'
         )
         if r.label:
-            cells.append(_edge_label_cell(f"e{ei}", r.label, nx_f, ny_f, pal["edge_label"]))
+            # подпись стоит у конца ребра: место ищем по рамкам, чтобы кратность
+            # не легла на блок, в который ребро входит, и на соседние подписи
+            size = label_size(r.label, _LABEL_FONT)
+            off = place_label((nx, ny), size, label_dirs(nx_f, ny_f), taken)
+            taken.append(label_box((nx, ny), off, size))
+            cells.append(_edge_label_cell(f"e{ei}", r.label, off, pal["edge_label"]))
 
     return _wrap_xml(cells)

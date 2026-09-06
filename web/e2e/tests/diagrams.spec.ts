@@ -11,7 +11,9 @@
  * 3. **«Редактировать в draw.io» и «Просмотреть диаграмму»** ведут на
  *    `app.diagrams.net` и `viewer.diagrams.net`, и схемы в адресе нет вовсе:
  *    раньше она уезжала в `#R…`, и длинная схема гасила кнопку;
- * 4. **UML при входе не заводит файл** — сначала текст, потом запуск;
+ * 4. **UML при входе не заводит файл** — список исходников пуст, и файл в нём
+ *    появляется только от «Добавить файл»; убрать можно любой, включая
+ *    последний, и тогда строить нечего;
  * 5. **схема удаляется** из списка модуля, и запись журнала уходит вместе с ней.
  *
  * Домены draw.io подменяются заглушкой (`context.route`): сети у стенда нет, а
@@ -77,8 +79,9 @@ test('схемы: сохранение само, перестройка кноп
 
   // Кнопку не нажимаем: первая схема на пустом экране строится сама — это
   // единственная самостоятельная постройка, что осталась.
-  const сохранено = page.getByText(t('diagrams.work.savedAs', { name: имяСхемы('flowcharts', 1) }))
+  const сохранено = page.getByText(t('diagrams.work.savedAs'))
   await expect(сохранено).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText(имяСхемы('flowcharts', 1))).toBeVisible()
   const xml = page.getByRole('button', { name: t('diagrams.work.downloadXml') })
   await expect(xml).toBeEnabled()
 
@@ -114,12 +117,45 @@ test('схемы: сохранение само, перестройка кноп
     await окно_drawio.close()
   }
 
-  // ── 4. UML: при входе файла нет, схема появляется после запуска ───────────
+  // ── 4. UML: файлов нет, пока их не завели, и любой из них можно убрать ────
   await page.goto(`/uml/${projectId}`)
   await expect(page.getByRole('heading', { name: t('diagrams.home.uml.title') })).toBeVisible()
-  // Ни одного исходника: блок «Исходники» появляется вместе с первым файлом.
-  await expect(page.getByText(t('diagrams.work.files'))).toHaveCount(0)
-  await expect(page.getByRole('button', { name: t('diagrams.work.build') })).toBeDisabled()
+  const построить = page.getByRole('button', { name: t('diagrams.work.build') })
+  // Список исходников виден и пуст: `source.py` сам не заводится, и подсказка
+  // объясняет, почему кнопка выключена.
+  await expect(page.getByText(t('diagrams.work.files'))).toBeVisible()
+  await expect(page.getByText(t('diagrams.work.noFiles'))).toBeVisible()
+  await expect(page.getByText(t('diagrams.work.buildNeedsCode'))).toBeVisible()
+  await expect(построить).toBeDisabled()
+  // Поля кода тоже нет: править нечего, пока нет файла.
+  await expect(page.getByRole('textbox', { name: t('diagrams.work.codeLabel') })).toHaveCount(0)
+
+  // Два файла руками: имя спрашивается, язык берётся из расширения.
+  const добавить = page.getByRole('button', { name: t('diagrams.work.addFile') }).first()
+  for (const имя of ['первый.py', 'второй.py']) {
+    await добавить.click()
+    const окно_файла = page.getByRole('dialog')
+    await окно_файла.getByLabel(t('diagrams.work.fileName')).fill(имя)
+    await окно_файла.getByRole('button', { name: t('diagrams.work.addFile') }).click()
+    // Именно кнопка списка: имя стоит и в шапке поля кода у выбранного файла.
+    await expect(page.getByRole('button', { name: имя, exact: true })).toBeVisible()
+  }
+  // Код есть — строить уже есть чем.
+  const кодUml = page.getByRole('textbox', { name: t('diagrams.work.codeLabel') })
+  await кодUml.click()
+  await page.keyboard.insertText('class A:\n    pass\n')
+  await expect(page.getByText(t('diagrams.work.buildNeedsCode'))).toHaveCount(0)
+
+  // Убирается любой файл, и последний тоже: тогда строить снова нечего.
+  for (const имя of ['второй.py', 'первый.py']) {
+    await page
+      .getByRole('button', { name: t('diagrams.work.removeFileNamed', { name: имя }) })
+      .click()
+    await expect(page.getByText(имя)).toHaveCount(0)
+  }
+  await expect(page.getByText(t('diagrams.work.noFiles'))).toBeVisible()
+  await expect(page.getByText(t('diagrams.work.buildNeedsCode'))).toBeVisible()
+  await expect(построить).toBeDisabled()
 
   // ── 5. схема видна в списке модуля и в журнале работы ─────────────────────
   await page.goto('/flowcharts')
@@ -127,6 +163,53 @@ test('схемы: сохранение само, перестройка кноп
   await expect(строка).toHaveCount(1)
 
   await page.goto(`/projects/${projectId}`)
+  await expect(page.getByText(имяСхемы('flowcharts', 1))).toBeVisible()
+
+  // ── 5а. переименование в списке модуля ────────────────────────────────────
+  const НОВОЕ = 'Алгоритм сортировки'
+  await page.goto('/flowcharts')
+  await page
+    .getByRole('button', { name: t('projects.runs.rename', { name: имяСхемы('flowcharts', 1) }) })
+    .click()
+  await page.keyboard.type(НОВОЕ)
+  await page.keyboard.press('Enter')
+  await expect(page.getByText(НОВОЕ)).toBeVisible()
+  await expect(page.getByText(имяСхемы('flowcharts', 1))).toHaveCount(0)
+
+  // Имя одно на весь сайт: журнал работы показывает его же.
+  await page.goto(`/projects/${projectId}`)
+  await expect(page.getByText(НОВОЕ)).toBeVisible()
+
+  // ── 5б. переименование на экране схемы, и `Esc` ничего не меняет ──────────
+  await page.goto('/flowcharts')
+  await page
+    .getByRole('listitem')
+    .filter({ hasText: НОВОЕ })
+    .getByRole('button', { name: t('diagrams.home.open') })
+    .click()
+  await expect(page).toHaveURL(/\/flowcharts\/[0-9a-f-]{36}\?run=/)
+  await expect(page.getByText(НОВОЕ)).toBeVisible({ timeout: 60_000 })
+
+  await page.getByRole('button', { name: t('projects.runs.rename', { name: НОВОЕ }) }).click()
+  await page.keyboard.type('передумал')
+  await page.keyboard.press('Escape')
+  await expect(page.getByText(НОВОЕ)).toBeVisible()
+
+  const ВТОРОЕ = 'Схема алгоритма'
+  await page.getByRole('button', { name: t('projects.runs.rename', { name: НОВОЕ }) }).click()
+  await page.keyboard.type(ВТОРОЕ)
+  await page.keyboard.press('Enter')
+  await expect(page.getByText(ВТОРОЕ)).toBeVisible()
+
+  await page.goto(`/projects/${projectId}`)
+  await expect(page.getByText(ВТОРОЕ)).toBeVisible()
+
+  // Пустое имя — не отказ, а возврат к имени по умолчанию.
+  await page.goto('/flowcharts')
+  await page.getByRole('button', { name: t('projects.runs.rename', { name: ВТОРОЕ }) }).click()
+  await page.keyboard.press('Control+a')
+  await page.keyboard.press('Delete')
+  await page.keyboard.press('Enter')
   await expect(page.getByText(имяСхемы('flowcharts', 1))).toBeVisible()
 
   // ── 6. удаление схемы ─────────────────────────────────────────────────────

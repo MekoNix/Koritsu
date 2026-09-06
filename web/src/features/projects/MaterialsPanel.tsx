@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { errorText, keys } from '@/api'
+import { keys } from '@/api'
 import { useJobStream } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { Button, EmptyState, ErrorState, Icon, SkeletonLines, Spinner, useToast } from '@/ui'
@@ -76,10 +76,7 @@ export function MaterialsPanel({ projectId, canEdit }: { projectId: string; canE
               // не принят вовсе, и в описи его не будет ни через секунду, ни
               // потом. Текст берётся по коду службы (413, квота, чужой тип).
               setOwn((was) => was.filter((row) => row.localId !== localId))
-              toast.error(
-                t('projects.materials.uploadFailed', { name: file.name }),
-                errorText(error),
-              )
+              toast.fail(error, t('projects.materials.uploadFailed', { name: file.name }))
             },
           },
         )
@@ -176,7 +173,7 @@ export function MaterialsPanel({ projectId, canEdit }: { projectId: string; canE
                 onDelete={(m: Material) =>
                   remove.mutate(
                     { projectId, materialId: m.id },
-                    { onError: (error) => toast.error(errorText(error)) },
+                    { onError: (error) => toast.fail(error) },
                   )
                 }
               />
@@ -223,7 +220,7 @@ function UploadRow({
 
   const текст =
     state.phase === 'failed'
-      ? t(`errors.${state.errorCode ?? 'unknown'}`)
+      ? t(`errors.${state.errorCode ?? 'unknown'}.what`)
       : t(`projects.materials.phase.${state.phase}`)
 
   return (

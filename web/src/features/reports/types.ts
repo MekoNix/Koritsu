@@ -10,6 +10,30 @@
  * У каждой формы стоит ссылка на место в службе, откуда она берётся.
  */
 
+/**
+ * `packages/api/projects/reports.py: карточка()` — строка `GET …/reports`.
+ *
+ * Отчёт — запись журнала запусков и свой документ рядом с ней: `id` здесь и
+ * есть тот `run_id`, который остальные запросы области передают как `report`.
+ * `preview_artifact_id` — картинка первой страницы последней сборки; пусто у
+ * отчёта, который ещё ни разу не собирали.
+ */
+export type ProjectReport = {
+  id: string
+  project_id: string
+  /** Имя, данное человеком. Пусто — имя рисует сайт из номера. */
+  name: string
+  /** Какой это отчёт работы по счёту, с 1. */
+  n: number
+  user_id: string | null
+  created_at: string | null
+  preview_artifact_id: string | null
+  /** Имя бланка, по которому собирается этот отчёт; пусто — бланк неизвестен. */
+  template_name: string
+  /** Сколько тегов в его бланке. */
+  tags: number
+}
+
 /** `packages/api/projects/routes.py: теги_проекта()` — строка `GET …/tags`. */
 export type ProjectTag = {
   /** Ключ тега в шаблоне: `{{цель}}` → `цель`. */

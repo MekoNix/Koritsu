@@ -13,7 +13,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { errorText } from '@/api'
 import { useMe } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { Button, Card, Chip, Dialog, Icon, Row, useToast } from '@/ui'
@@ -34,13 +33,13 @@ export function SecuritySection() {
       setAsking(false)
       navigate('/auth/login', { replace: true })
     } catch (e) {
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 
   return (
     <>
-      <Card title={t('settings.security.title')} desc={t('settings.security.text')}>
+      <Card title={t('settings.security.title')}>
         <div className="flex flex-col">
           <Row label={t('settings.security.totp')}>
             <Chip tone={me.data?.totp_enabled ? 'ok' : 'muted'}>

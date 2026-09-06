@@ -90,6 +90,58 @@
     background: var(--accent-bg);
   }
 
+  /*
+   * Полосы прокрутки — свои, на переменных темы.
+   *
+   * Системная полоса не знает про тему сайта: на тёмной теме она остаётся
+   * светлой серой лентой у края, а на «Бумаге» — холодной среди тёплых тонов.
+   * Прокручиваемых областей на сайте много (колонка тегов, список отчётов,
+   * превью, окна), и каждая из них показывала бы чужой элемент.
+   *
+   * Правила стоят здесь, а не у каждой области: полоса — часть темы, а не
+   * компонента, и второе описание рядом с первым разошлось бы с ним при первой
+   * же правке палитры.
+   *
+   * Оба набора правил нужны: `scrollbar-*` понимает Firefox, `::-webkit-*` —
+   * Chrome и Safari, и ни один из них не заменяет другой. Ширина «тонкая», а не
+   * заданная числом: полоса остаётся достаточно широкой, чтобы за неё можно
+   * было взяться мышью, — своя ширина ради вида ломала бы это молча.
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  /* Дорожка прозрачна: под ней бывает и `--surface`, и `--surface-2`, и своя
+     краска сделала бы у половины областей полосу другого цвета. */
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--line-strong);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    /* Рамка прозрачна, и без этого ползунок красился бы под неё во всю ширину:
+       поле вокруг него делает именно `background-clip`. */
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted);
+  }
+
+  /* Угол между двумя полосами: без правила он остаётся системным белым
+     квадратом в правом нижнем углу области с двусторонней прокруткой. */
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
   a {
     color: var(--accent);
     text-decoration: none;
@@ -109,6 +161,46 @@
     overflow: hidden;
     clip: rect(0 0 0 0);
     white-space: nowrap;
+  }
+
+  /*
+   * Фон страниц входа: сетка узлов, которая медленно дышит
+   * (`features/auth/AuthBackdrop.tsx`). Правила живут здесь, а не в компоненте,
+   * потому что `@keyframes` — это CSS, и место ему рядом с остальным CSS.
+   *
+   * Всё движение выбрано так, чтобы остановленный рисунок выглядел
+   * законченным: сетка уже собрана, анимация её только качает. Это и есть
+   * ответ на `prefers-reduced-motion` ниже — там анимации гасятся, и гасить их
+   * безопасно.
+   */
+  .auth-drift {
+    animation: auth-drift 34s ease-in-out infinite alternate;
+    transform-origin: center;
+  }
+
+  .auth-drift-slow {
+    animation-duration: 52s;
+    animation-direction: alternate-reverse;
+  }
+
+  .auth-trace {
+    stroke-dasharray: 4 3;
+    animation: auth-trace 24s linear infinite;
+  }
+
+  @keyframes auth-drift {
+    from {
+      transform: translate3d(-1.5%, 1%, 0) scale(1);
+    }
+    to {
+      transform: translate3d(1.5%, -1%, 0) scale(1.04);
+    }
+  }
+
+  @keyframes auth-trace {
+    to {
+      stroke-dashoffset: -70;
+    }
   }
 }
 

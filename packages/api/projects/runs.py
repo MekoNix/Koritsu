@@ -3,6 +3,7 @@ runs — журнал запусков модулей в работе: `/api/pro
 
     POST   /api/projects/{id}/runs           201  записать запуск (editor)
     GET    /api/projects/{id}/runs           200  журнал работы (viewer)
+    PATCH  /api/projects/{id}/runs/{run_id}  200  переименовать запись (editor)
     DELETE /api/projects/{id}/runs/{run_id}  204  убрать запись (editor)
 
 **Зачем журнал.** Работа переживает много запусков разных модулей — отчёт,
@@ -22,7 +23,9 @@ runs — журнал запусков модулей в работе: `/api/pro
 не сочиняет: имя по умолчанию — русское слово («Схема 2 — Курсовая»), а наружу
 служба говорит по-английски, и вторая таблица переводов в ней разошлась бы с
 той, что в интерфейсе. Поэтому пустое `name` — законное значение, и рисует его
-интерфейс сам, из `module` и `n`.
+интерфейс сам, из `module` и `n`. По той же причине пустое имя в правке — не
+отказ, а возврат к имени по умолчанию: стереть своё название и снова увидеть
+«Схема 2 — Курсовая» человек должен уметь тем же полем, которым он его давал.
 
 **Удаление записи не трогает артефакт.** Схема удаляется из работы записью
 журнала: XML на томе адресуется содержимым и может стоять значением тега, а
@@ -76,6 +79,24 @@ class ProjectRunIn(BaseModel):
     artifact_id: str | None = Field(
         default=None,
         description="Artifact this run produced, when it produced one")
+
+
+class ProjectRunPatchIn(BaseModel):
+    """Правка записи. Поле одно — имя: всё остальное в записи не редактируется.
+
+    Модуль, номер и артефакт — это то, что случилось, а случившееся не правят:
+    переписать модуль у записи значило бы сказать, что схему построил отчёт.
+    Имя — единственное, что в записи придумал человек, и единственное, что он
+    может передумать.
+
+    Обязательное поле, а не необязательное: у правки с одним полем «поля нет»
+    означало бы «ничего не делать», то есть запрос, на который незачем ходить.
+    """
+
+    name: str = Field(
+        max_length=NAME_MAX,
+        description=("New name for this run. Empty resets it: the interface "
+                     "draws the default name from the module and n again."))
 
 
 class ProjectRunOut(BaseModel):
@@ -214,6 +235,37 @@ def журнал(проект: ЧитательПроекта, s: SessionDep, mo
     return [карточка(з) for з in s.scalars(запрос.order_by(*порядок))]
 
 
+def запись_работы(s, проект, run_id: str) -> ProjectRun:
+    """Запись журнала этой работы — или `404`.
+
+    Чужая и несуществующая отвечают одинаково: разные ответы рассказывали бы,
+    что запись с таким идентификатором есть у кого-то другого, — тот же довод,
+    что у чужого проекта.
+    """
+    запись = s.get(ProjectRun, check_id(run_id, where="path.run_id"))
+    if запись is None or запись.project_id != проект.id:
+        raise ApiError(NOT_FOUND, "Run not found", 404, where="path.run_id")
+    return запись
+
+
+@router.patch("/{run_id}", operation_id="rename_project_run",
+              response_model=ProjectRunOut,
+              summary="Rename one entry of the run journal",
+              description=(
+                  "Renames a run: this is how a diagram, a report or a "
+                  "solution is renamed. An empty name is not a refusal but a "
+                  "reset: the interface goes back to drawing the default "
+                  "name from the module and n. Editor role. 400 invalid_id, "
+                  "403 forbidden, 404 not_found."))
+def переименовать(run_id: str, тело: ProjectRunPatchIn, проект: РедакторПроекта,
+                  s: SessionDep) -> dict:
+    """Имя записи журнала. Пустое — снова имя по умолчанию."""
+    запись = запись_работы(s, проект, run_id)
+    запись.name = тело.name.strip()
+    s.flush()
+    return карточка(запись)
+
+
 @router.delete("/{run_id}", status_code=204,
                operation_id="delete_project_run",
                summary="Remove one entry from the run journal",
@@ -227,15 +279,11 @@ def журнал(проект: ЧитательПроекта, s: SessionDep, mo
                response_class=Response)
 def убрать(run_id: str, проект: РедакторПроекта, s: SessionDep) -> Response:
     """Убрать запись журнала. Чужая и несуществующая отвечают одинаково."""
-    запись = s.get(ProjectRun, check_id(run_id, where="path.run_id"))
-    if запись is None or запись.project_id != проект.id:
-        # Разные ответы рассказывали бы, что запись с таким идентификатором
-        # есть у кого-то другого, — тот же довод, что у чужого проекта.
-        raise ApiError(NOT_FOUND, "Run not found", 404, where="path.run_id")
-    s.delete(запись)
+    s.delete(запись_работы(s, проект, run_id))
     s.flush()
     return Response(status_code=204)
 
 
-__all__ = ["router", "ProjectRunIn", "ProjectRunOut", "карточка", "завести",
-           "проверить_модуль", "проверить_артефакт", "UNKNOWN_MODULE"]
+__all__ = ["router", "ProjectRunIn", "ProjectRunPatchIn", "ProjectRunOut",
+           "карточка", "завести", "запись_работы", "проверить_модуль",
+           "проверить_артефакт", "UNKNOWN_MODULE"]

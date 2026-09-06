@@ -62,6 +62,7 @@ from ..db import SessionDep
 from ..errors import ApiError
 from ..materials import upload
 from ..materials.deps import РедакторПроекта, ЧитательПроекта
+from ..projects.routes import ОТЧЁТ, отчёт
 from ..workspaces.deps import CurrentUser
 from . import service
 
@@ -243,12 +244,19 @@ def скачать(template_id: str, request: Request, s: SessionDep,
                         "The report templates attached to this project, in the "
                         "order they were attached. A project may carry several: "
                         "a title page, an appendix, a standard. `active` says "
-                        "which one the work is currently built from. Viewer "
-                        "role. 400 invalid_id, 404 not_found."))
+                        "which one the report named by `report` is currently "
+                        "built from; without `report` it is the single "
+                        "document of the work. Viewer role. 400 invalid_id, "
+                        "404 not_found."))
 def шаблоны_работы(проект: ЧитательПроекта, s: SessionDep,
-                   request: Request) -> list[dict]:
-    """Шаблоны работы. Пустой список — законное состояние новой работы."""
-    свой = service.текущий_шаблон(проект)
+                   request: Request, report: str = ОТЧЁТ) -> list[dict]:
+    """Шаблоны работы. Пустой список — законное состояние новой работы.
+
+    `active` — про открытый документ, а не про работу: отчётов в ней несколько,
+    и каждый собирается своим бланком, поэтому «выбран» без указания отчёта
+    отвечало бы на вопрос, которого никто не задавал.
+    """
+    свой = service.текущий_шаблон(проект, report=отчёт(report))
     return [service.карточка(ш, активный=bool(свой) and ш.sha256 == свой)
             for ш in service.шаблоны_проекта(s, проект.id)]
 
@@ -315,11 +323,13 @@ async def приложить_шаблон(request: Request, response: Response,
                          "is built from. Decisions already made about the tags "
                          "(prompts, types, limits) move to the new manifest: a "
                          "tag that is gone is marked as such rather than "
-                         "dropped, and tag values are left alone. Editor role. "
-                         "400 bad_template, 400 invalid_id, 403 forbidden, "
-                         "404 not_found."))
+                         "dropped, and tag values are left alone. `report` "
+                         "says which report of the project changes its "
+                         "template; without it the single document of the "
+                         "work does. Editor role. 400 bad_template, "
+                         "400 invalid_id, 403 forbidden, 404 not_found."))
 def выбрать_шаблон(template_id: str, проект: РедакторПроекта, s: SessionDep,
-                   request: Request) -> dict:
+                   request: Request, report: str = ОТЧЁТ) -> dict:
     """Собирать работу по этому бланку.
 
     Отдельным действием, а не побочным следствием «приложить»: у работы
@@ -332,7 +342,8 @@ def выбрать_шаблон(template_id: str, проект: Редактор
     собрать работу по бланку, которого в ней никто не видел.
     """
     settings = request.app.state.settings
-    шаблон = service.выбрать(s, settings, проект, template_id)
+    шаблон = service.выбрать(s, settings, проект, template_id,
+                             report=отчёт(report))
     return service.карточка(шаблон, активный=True)
 
 

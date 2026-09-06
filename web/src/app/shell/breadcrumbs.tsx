@@ -4,11 +4,17 @@
  * перезагрузки этого одного модуля обошлось бы дороже, чем сама перезагрузка.
  */
 /**
- * breadcrumbs — крошки «модуль / документ».
+ * breadcrumbs — крошки «пространство / модуль / документ».
  *
- * Иерархии «Проекты / … / Отчёт» здесь нет: над модулем
- * ничего нет, и крошки состоят ровно из двух частей — модуль и открытый в нём
- * документ («Отчёты / Лабораторная 4»).
+ * Иерархии «Проекты / … / Отчёт» здесь нет: над модулем ничего нет, и крошки
+ * состоят из модуля и открытого в нём документа («Отчёты / Лабораторная 4»).
+ *
+ * Первым идёт имя пространства — приглушённым, как обстоятельство места, а не
+ * как ступень иерархии. Всё, что показано на экране, относится к одному
+ * пространству, и его имя отвечает на вопрос «где это лежит» до того, как
+ * человек начнёт искать пропавшую работу. Оно берётся у текущего пространства,
+ * а не у открытого документа: документ из соседнего пространства о себе
+ * говорит сам (`features/workspace/WorkspaceCaption`).
  *
  * Модуль оболочка знает сама, по адресу. Документ знает только экран, поэтому
  * он сообщает его хуком `useDocumentCrumb(name)`; ушёл экран — крошка
@@ -20,6 +26,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 
+import { useWorkspaceName } from '@/features/workspace/WorkspaceCaption'
 import { useT } from '@/i18n'
 
 type CrumbCtx = {
@@ -68,8 +75,17 @@ export function useCrumbs(): { module: string; document: string | null } {
 
 export function Breadcrumbs() {
   const { module, document } = useCrumbs()
+  const пространство = useWorkspaceName()
   return (
     <nav className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-sm text-muted">
+      {пространство && (
+        <>
+          <span className="max-w-[14ch] truncate">{пространство}</span>
+          <span aria-hidden="true" className="opacity-50">
+            /
+          </span>
+        </>
+      )}
       <span className={document ? undefined : 'font-medium text-ink-strong'}>{module}</span>
       {document && (
         <>

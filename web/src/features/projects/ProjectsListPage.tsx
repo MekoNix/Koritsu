@@ -18,7 +18,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
-import { ApiError, errorText } from '@/api'
+import { ApiError } from '@/api'
 import { useCurrentWorkspace } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
@@ -35,6 +35,8 @@ import {
   Skeleton,
   useToast,
 } from '@/ui'
+
+import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
 
 import { CreateProjectDialog } from './CreateProjectDialog'
 import { Panel } from './Panel'
@@ -58,7 +60,7 @@ export function ProjectsListPage() {
   const trash = useTrashProject()
   const restore = useRestoreProject()
 
-  const fail = (error: unknown) => toast.error(errorText(error))
+  const fail = (error: unknown) => toast.fail(error)
 
   const error = workspace.error ?? projects.error
   const forbidden = error instanceof ApiError && error.status === 403
@@ -67,6 +69,10 @@ export function ProjectsListPage() {
     <div className="flex flex-col gap-s4">
       <header className="flex flex-wrap items-end justify-between gap-s3">
         <div className="min-w-0">
+          {/* Подпись одна на список, а не строка у каждой работы: список всегда
+              про одно пространство, и повторять его имя в каждой строке значило
+              бы сказать одно и то же двадцать раз. */}
+          <WorkspaceCaption className="mb-1" />
           <h1 className="font-display text-xl font-bold tracking-tight text-ink-strong">
             {t('projects.list.title')}
           </h1>
@@ -98,7 +104,13 @@ export function ProjectsListPage() {
       </div>
 
       {forbidden ? (
-        <ForbiddenState />
+        <ForbiddenState
+          action={
+            <Button variant="secondary" asChild>
+              <Link to="/">{t('common.error.toDashboard')}</Link>
+            </Button>
+          }
+        />
       ) : error ? (
         <ErrorState
           error={error}

@@ -51,12 +51,13 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from ..db import now
 from ..errors import ApiError, NOT_FOUND
 from ..ids import check_id
+from ..projects.models import Project
 from ..settings import Settings
 from ..workspaces.service import EDITOR, iso, require_role
 from . import registry
@@ -162,6 +163,7 @@ def check_status(status: str, *, where: str = "query.status") -> str:
 
 
 def мои(s: Session, user_id: str, *, project_id: str | None = None,
+        workspace_id: str | None = None,
         status: str | None = None, limit: int = 100) -> list[Job]:
     """Задания этого человека, новые сверху.
 
@@ -170,11 +172,22 @@ def мои(s: Session, user_id: str, *, project_id: str | None = None,
     общий. Чужое задание в общем проекте не показывается никому, кроме автора,
     потому что в `payload` лежит то, что он написал (наружу уезжает только
     своё).
+
+    `workspace_id` — отбор для экрана: сайт показывает то, что происходит в
+    пространстве, в котором человек сейчас работает, и задание из соседнего
+    пространства там читается как чужое. Задания **без проекта** отбор
+    пропускает: они ничьего пространства не касаются (проверка ключа модели,
+    например), и спрятать их значило бы потерять их совсем.
     """
     запрос = select(Job).where(Job.user_id == user_id)
     if project_id is not None:
         запрос = запрос.where(Job.project_id == check_id(
             project_id, where="query.project_id"))
+    if workspace_id is not None:
+        свои = select(Project.id).where(Project.workspace_id == check_id(
+            workspace_id, where="query.workspace_id"))
+        запрос = запрос.where(or_(Job.project_id.is_(None),
+                                  Job.project_id.in_(свои)))
     if status is not None:
         запрос = запрос.where(Job.status == check_status(status))
     запрос = запрос.order_by(Job.created_at.desc(), Job.id).limit(int(limit))

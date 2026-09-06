@@ -18,7 +18,12 @@ describe('buildAgentPayload', () => {
   it('складывает пресет, задачу и признак перезаписи', () => {
     expect(
       buildAgentPayload({ endpoint: 'deepseek', task: '  перепиши введение короче  ' }),
-    ).toEqual({ endpoint: 'deepseek', task: 'перепиши введение короче', overwrite: false })
+    ).toEqual({
+      endpoint: 'deepseek',
+      task: 'перепиши введение короче',
+      overwrite: false,
+      report: '',
+    })
   })
 
   it('обрезает задачу по потолку службы, а не отправляет отказ', () => {

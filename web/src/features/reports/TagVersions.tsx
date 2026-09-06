@@ -26,11 +26,14 @@ import { versionEntries, type VersionText } from './versions'
 
 export function TagVersions({
   projectId,
+  report,
   tagKey,
   canEdit,
   currentText,
 }: {
   projectId: string
+  /** Отчёт работы, которому принадлежит история: у каждого она своя. */
+  report: string
   tagKey: string
   canEdit: boolean
   /** Текст, который лежит в теге сейчас: правая сторона сравнения «с текущей». */
@@ -39,8 +42,8 @@ export function TagVersions({
   const t = useT()
   const [open, setOpen] = useState(false)
 
-  const versions = useTagVersions(projectId, open ? tagKey : undefined)
-  const rollback = useRollbackValue(projectId)
+  const versions = useTagVersions(projectId, report, open ? tagKey : undefined)
+  const rollback = useRollbackValue(projectId, report)
 
   /**
    * «Дай текст версии N» — то, чем `VersionHistory` кормит сравнение.
@@ -51,7 +54,7 @@ export function TagVersions({
    * соблюдено.
    */
   const useVersionText = (n: number | null): VersionText => {
-    const запрос = useTagVersion(projectId, open ? tagKey : undefined, n)
+    const запрос = useTagVersion(projectId, report, open ? tagKey : undefined, n)
     return {
       text: запрос.data ? valueText(запрос.data.value) : undefined,
       loading: n !== null && запрос.isPending,

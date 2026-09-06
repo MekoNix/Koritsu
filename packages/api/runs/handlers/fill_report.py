@@ -2,7 +2,8 @@
 fill_report — заполнить весь отчёт. Уровень 2 оркестратора, обёрнутый в задание.
 
     payload   {"endpoint": "deepseek", "keys": ["цель", "выводы"],
-               "overwrite": false, "prompt": "писать в прошедшем времени"}
+               "overwrite": false, "prompt": "писать в прошедшем времени",
+               "report": "<id отчёта>"}
     result    {"filled": ["цель", …], "outcome": "done", "problems": N,
                "key_source": "shared"}
 

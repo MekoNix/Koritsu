@@ -25,7 +25,7 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import { ApiError, errorText } from '@/api'
+import { ApiError } from '@/api'
 import { setCurrentWorkspaceId, useCurrentWorkspaceId, useMe } from '@/api/hooks'
 import { useDocumentCrumb } from '@/app/shell/breadcrumbs'
 import { useT } from '@/i18n'
@@ -128,7 +128,7 @@ export function WorkspacePage() {
         personal={ws.personal}
         createdAt={ws.created_at}
         canEdit={хозяин}
-        onFail={(error) => toast.error(errorText(error))}
+        onFail={(error) => toast.fail(error)}
       />
 
       <MembersCard workspaceId={ws.id} canManage={хозяин} />
@@ -207,7 +207,7 @@ function MembersCard({ workspaceId, canManage }: { workspaceId: string; canManag
   const [inviting, setInviting] = useState(false)
   const [removing, setRemoving] = useState<Member | null>(null)
 
-  const fail = (error: unknown) => toast.error(errorText(error))
+  const fail = (error: unknown) => toast.fail(error)
 
   return (
     <Card
@@ -383,7 +383,7 @@ function DangerCard({ id, name }: { id: string; name: string }) {
               loading={trash.isPending}
               onClick={() =>
                 trash.mutate(id, {
-                  onError: (error) => toast.error(errorText(error)),
+                  onError: (error) => toast.fail(error),
                   onSuccess: () => {
                     // Текущим осталось бы то, чего нет: возвращаем человека в
                     // личное и уводим на его же страницу.
@@ -434,9 +434,7 @@ function TrashCard() {
               variant="secondary"
               size="sm"
               disabled={ws.role !== 'owner'}
-              onClick={() =>
-                restore.mutate(ws.id, { onError: (error) => toast.error(errorText(error)) })
-              }
+              onClick={() => restore.mutate(ws.id, { onError: (error) => toast.fail(error) })}
             >
               <Icon name="restore" size={16} />
               {t('workspace.bin.restore')}

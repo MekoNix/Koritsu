@@ -33,18 +33,21 @@ test('задание: условие текстом, прогон до архи�
   await page.getByRole('link', { name: t('shell.nav.kadai'), exact: true }).click()
   await expect(page.getByRole('heading', { name: t('kadai.home.title') })).toBeVisible()
 
-  // Кнопок «завести» две — в шапке и в пустом состоянии; делают они одно.
+  // Работа и решение заводятся по очереди: работа держит материалы и потолок
+  // расхода, а решений в ней столько, сколько задач задали.
   await page
-    .getByRole('button', { name: t('kadai.home.create') })
+    .getByRole('button', { name: t('kadai.home.newWork') })
     .first()
     .click()
-  await page.getByLabel(t('kadai.new.name')).fill('Сумма ряда')
+  await page.getByLabel(t('kadai.new.workName')).fill('Сумма ряда')
+  await page.getByRole('button', { name: t('kadai.home.newWorkSubmit'), exact: true }).click()
+  await expect(page).toHaveURL(/\/kadai\/[0-9a-f-]{36}\/new$/)
   await page.getByRole('radio', { name: t('kadai.new.byText') }).check()
   await page.getByLabel(t('kadai.new.textLabel')).fill(УСЛОВИЕ)
   await page.getByRole('button', { name: t('kadai.new.submit'), exact: true }).click()
 
   // ── шаг «условие распознано» ───────────────────────────────────────────────
-  await expect(page).toHaveURL(/\/kadai\/[0-9a-f-]{36}$/)
+  await expect(page).toHaveURL(/\/kadai\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/)
   await expect(page.getByText(t('kadai.condition.title'))).toBeVisible()
   // Текст условия приезжает разбором материала, а не прогоном: он уже здесь.
   await expect(page.getByText('сумму чисел от 1 до n', { exact: false })).toBeVisible({
@@ -152,15 +155,19 @@ test('вставшая работа: повторный прогон закры�
   await signUpAndLogin(page, 'kadai-restart')
 
   await page.goto('/kadai')
+  // Работа и решение заводятся по очереди: работа держит материалы и потолок
+  // расхода, а решений в ней столько, сколько задач задали.
   await page
-    .getByRole('button', { name: t('kadai.home.create') })
+    .getByRole('button', { name: t('kadai.home.newWork') })
     .first()
     .click()
-  await page.getByLabel(t('kadai.new.name')).fill('Работа, которая встанет')
+  await page.getByLabel(t('kadai.new.workName')).fill('Работа, которая встанет')
+  await page.getByRole('button', { name: t('kadai.home.newWorkSubmit'), exact: true }).click()
+  await expect(page).toHaveURL(/\/kadai\/[0-9a-f-]{36}\/new$/)
   await page.getByRole('radio', { name: t('kadai.new.byText') }).check()
   await page.getByLabel(t('kadai.new.textLabel')).fill(`${УСЛОВИЕ} [[FAKE:500]]`)
   await page.getByRole('button', { name: t('kadai.new.submit'), exact: true }).click()
-  await expect(page).toHaveURL(/\/kadai\/[0-9a-f-]{36}$/)
+  await expect(page).toHaveURL(/\/kadai\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/)
 
   await expect(page.getByText('сумму чисел от 1 до n', { exact: false })).toBeVisible({
     timeout: 30_000,

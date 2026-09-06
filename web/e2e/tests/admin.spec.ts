@@ -216,8 +216,8 @@ test('блокировка: вход отказан, разблокировка 
   await page.getByLabel(t('auth.field.email')).fill(жертва)
   await page.getByLabel(t('auth.field.password'), { exact: true }).fill(PASSWORD)
   await page.getByRole('button', { name: t('auth.login.submit') }).click()
-  await expect(page.getByText(t('errors.account_blocked'))).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText(t('errors.invalid_credentials'))).toHaveCount(0)
+  await expect(page.getByText(t('errors.account_blocked.what'))).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(t('errors.invalid_credentials.what'))).toHaveCount(0)
   await expect(page).toHaveURL(/\/auth\/login$/)
 
   // ── разблокировать ────────────────────────────────────────────────────────

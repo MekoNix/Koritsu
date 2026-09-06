@@ -14,10 +14,18 @@
  *
  * Тексты сюда приходят готовыми: тост ничего не переводит сам, иначе перевод
  * ошибки оказался бы в двух местах — здесь и в `errorText()`.
+ *
+ * Исключение одно и оно же — главный способ показать отказ: `toast.fail(беда)`.
+ * Отказ службы — это код, а человеку нужны две строки, «что случилось» и «что
+ * делать», плюс номер запроса, когда кода в словаре нет. Собирать эти три
+ * куска на каждом вызове значило бы написать один и тот же разбор в двадцати
+ * обработчиках; поэтому разбор здесь, а `errorWhat`/`errorNext`/`errorDetails`
+ * по-прежнему знают только перевод.
  */
 import * as RadixToast from '@radix-ui/react-toast'
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 
+import { errorDetails, errorNext, errorWhat } from '@/api/errors'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 
@@ -30,14 +38,22 @@ type ToastItem = {
   kind: ToastKind
   title: string
   text?: string
+  /** Мелкая строка под сообщением: номер запроса и текст службы. */
+  note?: string
 }
 
 type ToastApi = {
-  show: (kind: ToastKind, title: string, text?: string) => void
+  show: (kind: ToastKind, title: string, text?: string, note?: string) => void
   success: (title: string, text?: string) => void
   error: (title: string, text?: string) => void
   warn: (title: string, text?: string) => void
   agent: (title: string, text?: string) => void
+  /**
+   * Отказ службы: «что случилось» заголовком, «что делать» под ним, номер
+   * запроса мелким шрифтом. `title` — своё название действия («Схему удалить
+   * не удалось»); без него заголовком встаёт «что случилось».
+   */
+  fail: (беда: unknown, title?: string) => void
 }
 
 const ToastContext = createContext<ToastApi | null>(null)
@@ -67,8 +83,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([])
   const t = useT()
 
-  const show = useCallback((kind: ToastKind, title: string, text?: string) => {
-    setItems((was) => [...was, { id: nextId++, kind, title, text }])
+  const show = useCallback((kind: ToastKind, title: string, text?: string, note?: string) => {
+    setItems((was) => [...was, { id: nextId++, kind, title, text, note }])
   }, [])
 
   const api = useMemo<ToastApi>(
@@ -78,6 +94,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       error: (title, text) => show('err', title, text),
       warn: (title, text) => show('warn', title, text),
       agent: (title, text) => show('agent', title, text),
+      fail: (беда, title) => {
+        // Заголовок своего действия не отменяет «что случилось»: без него
+        // «Схему удалить не удалось» оставляет человека без причины отказа.
+        const что = errorWhat(беда)
+        const дальше = errorNext(беда)
+        const текст = title ? `${что} ${дальше}` : дальше
+        show('err', title ?? что, текст, errorDetails(беда) || undefined)
+      },
     }),
     [show],
   )
@@ -106,6 +130,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               </RadixToast.Title>
               {item.text && (
                 <RadixToast.Description className="text-muted">{item.text}</RadixToast.Description>
+              )}
+              {item.note && (
+                <p className="mt-1 break-all font-mono text-[11px] text-muted opacity-80">
+                  {item.note}
+                </p>
               )}
             </div>
             <RadixToast.Close

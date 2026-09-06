@@ -128,6 +128,8 @@ describe('страница регистрации', () => {
     await user.type(screen.getByLabelText('Пароль'), 'длинный-пароль-1')
     await user.click(screen.getByRole('button', { name: 'Зарегистрироваться' }))
 
-    expect(await screen.findByText('Такой ник уже занят. Придумайте другой.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Такой ник уже занят. Придумайте другой ник.'),
+    ).toBeInTheDocument()
   })
 })

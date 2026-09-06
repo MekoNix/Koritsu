@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { errorText, keys } from '@/api'
+import { keys } from '@/api'
 import { useJobStream, type Job } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { useToast } from '@/ui'
@@ -61,6 +61,7 @@ export function useAgentRun(
   projectId: string | null,
   endpoint: string | null,
   overwrite: boolean,
+  report = '',
 ): AgentRunState {
   const t = useT()
   const toast = useToast()
@@ -99,7 +100,7 @@ export function useAgentRun(
         {
           kind: AGENT,
           projectId,
-          payload: buildAgentPayload({ endpoint, task: текст, overwrite }),
+          payload: buildAgentPayload({ endpoint, task: текст, overwrite, report }),
         },
         {
           onSuccess: (задание) => {
@@ -107,11 +108,11 @@ export function useAgentRun(
             setLastTask(текст)
             setJobId(задание.id)
           },
-          onError: (беда) => toast.error(t('agent.toast.startFailed'), errorText(беда)),
+          onError: (беда) => toast.fail(беда, t('agent.toast.startFailed')),
         },
       )
     },
-    [enqueue, endpoint, overwrite, projectId, toast, t],
+    [enqueue, endpoint, overwrite, projectId, report, toast, t],
   )
 
   const regenerate = useCallback(() => поставить(lastTask), [поставить, lastTask])
@@ -119,7 +120,7 @@ export function useAgentRun(
   const cancel = useCallback(() => {
     if (!jobId) return
     cancelJob.mutate(jobId, {
-      onError: (беда) => toast.error(t('agent.toast.cancelFailed'), errorText(беда)),
+      onError: (беда) => toast.fail(беда, t('agent.toast.cancelFailed')),
     })
   }, [cancelJob, jobId, toast, t])
 

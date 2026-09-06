@@ -5,7 +5,14 @@
  * активные задания. Раньше их спрашивали двое — меню в шапке и статистика на
  * дашборде, — и каждый своим ключом кэша: открытая страница означала четыре
  * ответа службы вместо двух, причём с одинаковым содержимым. Ключ здесь один
- * (`keys.jobs.list('active')`), а кому что из списка нужно, решает `select`.
+ * (`keys.jobs.active`), а кому что из списка нужно, решает `select`.
+ *
+ * **Спрашиваются задания текущего пространства.** Задание принадлежит человеку,
+ * а не пространству, поэтому у службы `workspace_id` — отбор, а не обязательный
+ * параметр; но на экране всё показано про одно пространство, и счётчик очереди,
+ * считающий заодно чужое, отвечал бы не на тот вопрос. Задания, не связанные ни
+ * с одной работой (проверка ключа модели), служба отдаёт при любом отборе — их
+ * этот отбор не теряет.
  *
  * Служба фильтрует по одному состоянию за запрос, поэтому запросов внутри всё
  * же два, а список — их склейка: «в работе» без «в очереди» — половина правды.
@@ -16,6 +23,7 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 
 import { api, unwrap } from '@/api'
+import { useCurrentWorkspace } from '@/api/hooks/useCurrentWorkspace'
 import { keys } from '@/api/queryKeys'
 
 export type JobCard = { id: string; kind: string; status: string; created_at: string }
@@ -23,22 +31,26 @@ export type JobCard = { id: string; kind: string; status: string; created_at: st
 /** Сколько активных заданий показывать. Больше — уже журнал, а его здесь нет. */
 const СКОЛЬКО = 20
 
-async function активные(): Promise<JobCard[]> {
+async function активные(workspaceId: string): Promise<JobCard[]> {
+  const общее = { workspace_id: workspaceId, limit: СКОЛЬКО } as const
   const [running, queued] = await Promise.all([
     unwrap<{ jobs: JobCard[] }>(
-      api.GET('/api/jobs', { params: { query: { status: 'running', limit: СКОЛЬКО } } }),
+      api.GET('/api/jobs', { params: { query: { ...общее, status: 'running' } } }),
     ),
     unwrap<{ jobs: JobCard[] }>(
-      api.GET('/api/jobs', { params: { query: { status: 'queued', limit: СКОЛЬКО } } }),
+      api.GET('/api/jobs', { params: { query: { ...общее, status: 'queued' } } }),
     ),
   ])
   return [...running.jobs, ...queued.jobs]
 }
 
 export function useActiveJobs<T = JobCard[]>(select?: (jobs: JobCard[]) => T): UseQueryResult<T> {
+  const workspace = useCurrentWorkspace()
+  const workspaceId = workspace.data?.id ?? ''
   return useQuery({
-    queryKey: keys.jobs.list('active'),
-    queryFn: активные,
+    queryKey: keys.jobs.active(workspaceId),
+    enabled: !!workspaceId,
+    queryFn: () => активные(workspaceId),
     ...(select ? { select } : {}),
     staleTime: 10_000,
   }) as UseQueryResult<T>

@@ -1,26 +1,40 @@
 /**
- * ReportsHomePage — главная модуля: выбор работы. `/reports`.
+ * ReportsHomePage — главная модуля: `/reports`.
  *
- * Бриф: «главная страница модуля — выбор отчётов для генерации, поиск,
- * небольшое превью каждого». Превью — это набросок первой страницы, а не
- * настоящий рендер: настоящий стоит задания `build` на каждый проект, то есть
- * запуска LibreOffice ради картинки в списке. Набросок рисуется из
- * идентификатора проекта (тот же приём, что у генеративного аватара), поэтому
- * у одной работы он всегда один и тот же, и список не мельтешит.
+ * Выбор идёт в два шага, потому что вещей тоже две: работа (курсовая, отчёт по
+ * практике) и отчёты внутри неё. Отчётов в работе несколько — у каждого свой
+ * бланк и свои значения, — поэтому сначала выбирают работу, а потом её отчёт.
+ * Оба шага живут на одном адресе: выбранная работа стоит в `?project=`, и
+ * второй шаг рисует `ProjectReportsPage`. Двум адресам здесь взяться неоткуда —
+ * это один выбор, а не два экрана.
  *
- * Проекты — те же, что в области проектов: список один на всё приложение, и
- * второго здесь не заводится. Отличается только то, что с ними делают дальше.
+ * Работы — те, что лежат в текущем пространстве: список один на всё приложение
+ * (`useProjects`), и второго здесь не заводится. Отличается только то, что с
+ * ними делают дальше.
+ *
+ * Картинка на карточке работы — набросок (`ReportThumb`): собранной первой
+ * страницы у работы целиком нет, она есть у каждого её отчёта по отдельности.
  */
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { useT } from '@/i18n'
 import { Button, EmptyState, ErrorState, Input, SkeletonLines } from '@/ui'
 import { useCurrentWorkspace } from '@/api/hooks'
 import { useProjects } from '@/features/projects/data'
-import type { Project } from '@/features/projects/types'
+import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
+
+import { ProjectReportsPage } from './ProjectReportsPage'
+import { ReportThumb } from './ReportThumb'
 
 export function ReportsHomePage() {
+  const [params] = useSearchParams()
+  const выбранная = (params.get('project') ?? '').trim()
+  return выбранная ? <ProjectReportsPage projectId={выбранная} /> : <ProjectPicker />
+}
+
+/** Первый шаг: какая работа. Список с поиском, карточками и наброском. */
+function ProjectPicker() {
   const t = useT()
   const workspace = useCurrentWorkspace()
   const projects = useProjects(workspace.data?.id)
@@ -36,6 +50,10 @@ export function ReportsHomePage() {
     <div className="flex flex-col gap-s5">
       <header className="flex flex-wrap items-end justify-between gap-s3">
         <div>
+          {/* Выбор работы — про текущее пространство: подпись отвечает на
+              «где эти работы лежат» до того, как человек полезет искать
+              пропавшую в другом пространстве. */}
+          <WorkspaceCaption className="mb-1" />
           <h1 className="font-display text-2xl font-semibold text-ink-strong">
             {t('reports.home.title')}
           </h1>
@@ -82,10 +100,10 @@ export function ReportsHomePage() {
           {найденные.map((p) => (
             <li key={p.id}>
               <Link
-                to={`/reports/${p.id}`}
+                to={`/reports?project=${encodeURIComponent(p.id)}`}
                 className="flex h-full flex-col overflow-hidden rounded-md border border-line bg-surface shadow-1 transition-colors hover:border-line-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
-                <Thumb project={p} />
+                <ReportThumb seed={p.id} />
                 <div className="flex flex-col gap-1 p-s3">
                   <span className="truncate font-semibold text-ink-strong">{p.name}</span>
                   <span className="text-xs text-muted">
@@ -97,38 +115,6 @@ export function ReportsHomePage() {
           ))}
         </ul>
       )}
-    </div>
-  )
-}
-
-/**
- * Набросок первой страницы: строки-заглушки, разложенные по идентификатору
- * проекта. Не рендер и не притворяется им — это опознавательный знак карточки,
- * такой же, как генеративный аватар у человека.
- */
-function Thumb({ project }: { project: Project }) {
-  const строки = useMemo(() => {
-    let seed = 0
-    for (const знак of project.id) seed = (seed * 31 + знак.charCodeAt(0)) % 100000
-    return Array.from({ length: 7 }, (_, i) => {
-      seed = (seed * 1103515245 + 12345) % 2147483648
-      return 45 + ((seed >> (i + 3)) % 50)
-    })
-  }, [project.id])
-
-  return (
-    <div
-      aria-hidden="true"
-      className="flex aspect-[1/1.05] flex-col gap-[6%] border-b border-line bg-surface-2 p-[14%]"
-    >
-      <span className="mx-auto mb-[4%] h-1.5 w-3/5 rounded-full bg-line-strong opacity-90" />
-      {строки.map((ширина, i) => (
-        <span
-          key={i}
-          className="h-[3px] rounded-full bg-line-strong opacity-60"
-          style={{ width: `${ширина}%` }}
-        />
-      ))}
     </div>
   )
 }

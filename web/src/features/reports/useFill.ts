@@ -30,7 +30,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { errorText, keys } from '@/api'
+import { keys } from '@/api'
 import { useJobStream } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { useToast } from '@/ui'
@@ -67,7 +67,11 @@ export type FillState = {
   startError: unknown
 }
 
-export function useFill(projectId: string, endpoint: string | null): FillState {
+/**
+ * `report` — какой отчёт работы заполняется: у каждого свой бланк и свои
+ * значения, и прогон без этого поля писал бы в документ соседнего отчёта.
+ */
+export function useFill(projectId: string, endpoint: string | null, report = ''): FillState {
   const t = useT()
   const toast = useToast()
   const qc = useQueryClient()
@@ -104,16 +108,16 @@ export function useFill(projectId: string, endpoint: string | null): FillState {
   useEffect(() => {
     if (!running || !stream.done || закрыто.current === running.id) return
     закрыто.current = running.id
-    void qc.invalidateQueries({ queryKey: keys.reports.tags(projectId) })
-    void qc.invalidateQueries({ queryKey: keys.reports.values(projectId) })
+    void qc.invalidateQueries({ queryKey: keys.reports.tags(projectId, report) })
+    void qc.invalidateQueries({ queryKey: keys.reports.values(projectId, report) })
     void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
     for (const ключ of running.keys) {
-      void qc.invalidateQueries({ queryKey: keys.reports.versions(projectId, ключ) })
+      void qc.invalidateQueries({ queryKey: keys.reports.versions(projectId, report, ключ) })
     }
     // Тоста на упавшее задание здесь нет: его показывает оболочка
     // (`useUserEvents`) по коду из уведомления, и второй был бы дублем.
     setRunning(null)
-  }, [running, stream.done, stream.job, projectId, qc])
+  }, [running, stream.done, stream.job, projectId, report, qc])
 
   const поставить = useCallback(
     (kind: string, ключи: string[], подсказка = '') => {
@@ -124,19 +128,19 @@ export function useFill(projectId: string, endpoint: string | null): FillState {
           projectId,
           payload:
             kind === FILL_TAG
-              ? { key: ключи[0], endpoint, overwrite: true }
-              : { endpoint, keys: ключи, overwrite: false, prompt: подсказка },
+              ? { key: ключи[0], endpoint, overwrite: true, report }
+              : { endpoint, keys: ключи, overwrite: false, prompt: подсказка, report },
         },
         {
           onSuccess: (задание) => {
             закрыто.current = null
             setRunning({ id: задание.id, kind, keys: ключи })
           },
-          onError: (беда) => toast.error(t('reports.toast.fillFailed'), errorText(беда)),
+          onError: (беда) => toast.fail(беда, t('reports.toast.fillFailed')),
         },
       )
     },
-    [enqueue, endpoint, projectId, toast, t],
+    [enqueue, endpoint, projectId, report, toast, t],
   )
 
   const fillTag = useCallback((key: string) => поставить(FILL_TAG, [key]), [поставить])

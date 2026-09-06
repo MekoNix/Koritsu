@@ -429,11 +429,18 @@ class ToolBox:
 
     # ── чтение материалов ───────────────────────────────────────────────────
     def _list_materials(self, args: dict) -> dict:
-        """Опись материалов. Не отказывает никогда: пустой проект — пустой список."""
+        """Опись материалов. Не отказывает никогда: пустой проект — пустой список.
+
+        Опись — папки контекста этой работы, а не всего каталога: у решения
+        файлы свои (`Project.context_ids`), и показать модели чужие значило бы
+        дать ей прочитать методичку соседней задачи первым же ходом.
+        """
         store = self.project.store()
+        свои = self.project.context_ids()
         return {"materials": [{"id": m.id, "name": m.name, "kind": m.kind,
                            "unit": m.unit, "count": m.count, "lang": m.lang,
-                           "notes": list(m.notes)} for m in store.list()]}
+                           "notes": list(m.notes)} for m in store.list()
+                          if свои is None or m.id in свои]}
 
     def _read_material(self, args: dict) -> dict:
         """Кусок материала по идентификатору, не длиннее `READ_CHARS`.
@@ -644,13 +651,19 @@ class ToolBox:
                             f"{mid!r} — не идентификатор материала. Пути не "
                             "принимаются: идентификаторы даёт list_materials")
         store = self.project.store()
+        свои = self.project.context_ids()
         try:
-            return store.get(mid)
+            material = store.get(mid)
         except materials.MaterialsError:
-            known = [m.id for m in store.list()]
-            raise ToolError("unknown_id",
-                            f"материала {mid!r} в проекте нет{hint(mid, known)}",
-                            known=known) from None
+            material = None
+        if material is not None and (свои is None or mid in свои):
+            return material
+        # «Чужой файл» и «такого нет» отвечают одинаково: разные ответы
+        # рассказали бы модели, что в работе есть файл, которого ей не дали.
+        known = [m.id for m in store.list() if свои is None or m.id in свои]
+        raise ToolError("unknown_id",
+                        f"материала {mid!r} в проекте нет{hint(mid, known)}",
+                        known=known)
 
     def _source(self, mid):
         """Материал как исходник: текстовый, не пустой, не длиннее потолка."""

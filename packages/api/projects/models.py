@@ -106,6 +106,10 @@ class ProjectRun(Row):
     может стоять значением тега — снести его вслед за строкой журнала значило бы
     выбить картинку из готового документа. Место при этом освобождает уборка
     проекта целиком.
+
+    `preview_artifact_id` — картинка первой страницы, по которой запуск узнают в
+    списке. Пишет её сборка, а хранится она отдельным артефактом, чтобы карточка
+    показывала страницу и назавтра, не запуская LibreOffice заново.
     """
 
     __tablename__ = "project_runs"
@@ -124,6 +128,14 @@ class ProjectRun(Row):
     name: Mapped[str] = mapped_column(String(NAME_MAX), default="")
     n: Mapped[int] = mapped_column(Integer, default=1)
     artifact_id: Mapped[str | None] = mapped_column(
+        String(ARTIFACT_LEN), default=None)
+
+    # Картинка первой страницы собранного документа. Своим полем, а не
+    # `artifact_id`: то говорит, что запуск произвёл (DOCX, XML схемы), а это —
+    # чем его показать в списке, и сложить их в одно поле значило бы выбирать
+    # между «скачать» и «увидеть». Держится после сборки и переживает её: карточка
+    # отчёта показывает страницу, не запуская LibreOffice заново.
+    preview_artifact_id: Mapped[str | None] = mapped_column(
         String(ARTIFACT_LEN), default=None)
 
     # Единственный запрос к таблице — «журнал этой работы, новые сверху»; он же

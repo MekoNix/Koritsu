@@ -71,8 +71,9 @@ describe('разбор отказа', () => {
     const api_error = error as ApiError
     expect(api_error.code).toBe('invalid_credentials')
     expect(api_error.status).toBe(401)
-    // Русский текст берётся по коду, а не из английского сообщения службы.
-    expect(api_error.text).toBe('Неверная почта или пароль.')
+    // Русский текст берётся по коду, а не из английского сообщения службы,
+    // и несёт обе строки отказа: что случилось и что делать.
+    expect(api_error.text).toBe('Неверная почта или пароль. Проверьте раскладку и повторите вход.')
   })
 
   it('обрыв сети — тоже ApiError, с кодом network', async () => {

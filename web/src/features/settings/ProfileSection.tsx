@@ -15,19 +15,27 @@
  * когда её диктуют или сверяют, и заставлять ради этого лезть в письма — это
  * прятка ради прятки.
  *
- * Аватар генеративный и другим быть не может: загрузки картинки служба не
- * умеет, а ходить за ней к постороннему сервису — утечка почты на чужой домен
- * (`ui/Avatar.tsx`). Подписи об этом на экране нет: человек видит свой аватар
- * и не спрашивал, откуда он взялся.
+ * **Аватар — единственная картинка, которую человек может нам дать.** По
+ * умолчанию он генеративный (решётка из идентификатора, `ui/Avatar.tsx`);
+ * своя картинка загружается здесь — кнопкой или перетаскиванием, — и убирается
+ * тут же. Подписи «откуда взялся аватар» на экране нет: человек видит своё
+ * лицо или свою решётку и не спрашивал, как она посчитана.
+ *
+ * Файл выбирается и **сразу уезжает**: промежуточного «выбрано, нажмите
+ * сохранить» нет, потому что решение здесь одно — вот эта картинка, — и
+ * подтверждать его нечем. Пока запрос идёт, показывается выбранный файл
+ * (`blob:`), а не прежний аватар: иначе нажатие выглядит как ничего не
+ * сделавшее.
  */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { errorField, errorText } from '@/api'
 import { useMe, useUpdateProfile } from '@/api/hooks'
 import { t as translate, useT } from '@/i18n'
+import { cn } from '@/lib/cn'
 import { maskEmail } from '@/lib/maskEmail'
 import {
   Avatar,
@@ -42,6 +50,7 @@ import {
   useToast,
 } from '@/ui'
 
+import { useDeleteAvatar, useSetAvatar } from './api'
 import { formatDate } from './format'
 
 /**
@@ -60,12 +69,34 @@ const schema = z.object({
 
 type Values = z.infer<typeof schema>
 
+/**
+ * Что предлагает выбиралка файлов. Те же три типа, что принимает служба
+ * (`accounts/avatar.py`), — и это подсказка, а не заслон: решают в службе
+ * первые байты, а не расширение и не `accept`.
+ */
+const ТИПЫ = ['image/png', 'image/jpeg', 'image/webp'] as const
+
 export function ProfileSection() {
   const t = useT()
   const toast = useToast()
   const me = useMe()
   const save = useUpdateProfile()
+  const setAvatar = useSetAvatar()
+  const dropAvatar = useDeleteAvatar()
   const [shown, setShown] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  // Превью выбранного файла, пока он едет в службу. `blob:` живёт до
+  // `revokeObjectURL`, поэтому адрес и хранится состоянием: без уборки каждая
+  // проба картинки оставляла бы за собой файл в памяти вкладки.
+  const [preview, setPreview] = useState<string | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  useEffect(
+    () => () => {
+      if (preview) URL.revokeObjectURL(preview)
+    },
+    [preview],
+  )
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
@@ -86,6 +117,35 @@ export function ProfileSection() {
 
   const user = me.data
 
+  async function загрузить(file: File | null | undefined) {
+    if (!file) return
+    const адрес = URL.createObjectURL(file)
+    setPreview((прежний) => {
+      if (прежний) URL.revokeObjectURL(прежний)
+      return адрес
+    })
+    try {
+      await setAvatar.mutateAsync(file)
+    } catch (e) {
+      toast.fail(e)
+    } finally {
+      // Превью снимается в любом случае: удачу показывает уже сам профиль
+      // (версия выросла, адрес картинки другой), а неудачу — тост.
+      setPreview((прежний) => {
+        if (прежний) URL.revokeObjectURL(прежний)
+        return null
+      })
+    }
+  }
+
+  async function убрать_аватар() {
+    try {
+      await dropAvatar.mutateAsync()
+    } catch (e) {
+      toast.fail(e)
+    }
+  }
+
   async function submit(values: Values) {
     try {
       await save.mutateAsync({ nickname: values.nickname })
@@ -96,17 +156,79 @@ export function ProfileSection() {
         form.setError('nickname', { type: 'server', message: errorText(e) })
         return
       }
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 
   return (
     <Card title={t('settings.profile.title')}>
-      <div className="flex flex-wrap items-center gap-s4">
-        <Avatar id={user.id} size={72} label={user.nickname} />
+      <div
+        className={cn(
+          'flex flex-wrap items-center gap-s4 rounded-md border border-dashed p-s3 transition-colors',
+          dragging ? 'border-accent bg-accent-bg' : 'border-transparent',
+        )}
+        onDragOver={(event) => {
+          // Без `preventDefault` браузер откроет брошенный файл вкладкой —
+          // то есть уведёт человека с настроек в просмотр картинки.
+          event.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => {
+          event.preventDefault()
+          setDragging(false)
+          void загрузить(event.dataTransfer.files[0])
+        }}
+      >
+        <Avatar
+          id={user.id}
+          size={72}
+          label={user.nickname}
+          version={user.avatar_version}
+          src={preview}
+        />
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="break-all font-display text-lg font-semibold text-ink-strong">
             {user.nickname}
+          </div>
+          <div className="flex flex-wrap items-center gap-s2">
+            <input
+              ref={fileInput}
+              type="file"
+              className="sr-only-text"
+              // Поле спрятано от глаз, но не от скринридера (`sr-only-text`), и
+              // потому обязано называться: выбор файла остаётся в порядке
+              // табуляции, а безымянное поле ввода читается как «файл».
+              aria-label={t('settings.profile.avatarFile')}
+              accept={ТИПЫ.join(',')}
+              onChange={(event) => {
+                void загрузить(event.target.files?.[0])
+                // Поле чистится, иначе повторный выбор того же файла не даёт
+                // события `change` и выглядит как «кнопка не работает».
+                event.target.value = ''
+              }}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={setAvatar.isPending}
+              onClick={() => fileInput.current?.click()}
+            >
+              <Icon name="upload" size={16} />
+              {t('settings.profile.avatarUpload')}
+            </Button>
+            {user.avatar_version > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={dropAvatar.isPending}
+                onClick={() => void убрать_аватар()}
+              >
+                <Icon name="trash" size={16} />
+                {t('settings.profile.avatarRemove')}
+              </Button>
+            )}
+            <span className="text-xs text-muted">{t('settings.profile.avatarHint')}</span>
           </div>
           <div className="flex flex-wrap gap-s2">
             <Chip tone="accent">{user.plan}</Chip>
@@ -158,7 +280,6 @@ export function ProfileSection() {
             <Icon name={shown ? 'eyeOff' : 'eye'} size={16} />
             {shown ? t('settings.profile.emailHide') : t('settings.profile.emailShow')}
           </Button>
-          <span className="ml-s2 text-xs text-muted">{t('settings.profile.emailHint')}</span>
         </Row>
         <Row label={t('settings.profile.plan')}>{user.plan}</Row>
         <Row label={t('settings.profile.id')}>
@@ -166,8 +287,6 @@ export function ProfileSection() {
         </Row>
         <Row label={t('settings.profile.created')}>{formatDate(user.created_at)}</Row>
       </div>
-
-      <p className="text-xs text-muted">{t('settings.profile.readonly')}</p>
     </Card>
   )
 }

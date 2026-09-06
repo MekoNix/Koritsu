@@ -39,13 +39,13 @@ test('упавшее задание — один тост, и он называ�
   await page.goto(`/reports/${projectId}`)
 
   // Маркер — значением соседнего тега: оттуда он уедет в промпт прогона.
-  await page.getByRole('button', { name: new RegExp(`\\{\\{${TAG_TWO}\\}\\}`) }).click()
+  await page.getByRole('button', { name: new RegExp(TAG_TWO) }).click()
   const второе = page.getByRole('textbox', { name: t('reports.editor.field', { tag: TAG_TWO }) })
   await второе.fill('[[FAKE:500]]')
   await page.getByRole('button', { name: t('common.action.save'), exact: true }).click()
   await expect(page.getByText(t('reports.editor.byHand', { n: 1 }))).toBeVisible()
 
-  await page.getByRole('button', { name: new RegExp(`\\{\\{${TAG_ONE}\\}\\}`) }).click()
+  await page.getByRole('button', { name: new RegExp(TAG_ONE) }).click()
   await page.getByRole('button', { name: t('reports.editor.generate'), exact: true }).click()
 
   const тосты = page.getByRole('status')
@@ -60,7 +60,7 @@ test('упавшее задание — один тост, и он называ�
   await expect.poll(посчитать, { timeout: 120_000, intervals: [200] }).toBeGreaterThan(0)
   await expect(тосты.first()).toContainText(t('notifications.jobFailed'))
   // Причина — по коду службы (`run_failed`), а не английским текстом.
-  await expect(тосты.first()).toContainText(t('errors.run_failed'))
+  await expect(тосты.first()).toContainText(t('errors.run_failed.what'))
 
   // …и досматриваем до конца его жизни: второй тост, приехавший следом,
   // попал бы в это же окно наблюдения.

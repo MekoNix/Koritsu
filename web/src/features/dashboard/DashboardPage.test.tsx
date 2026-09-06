@@ -26,6 +26,7 @@ const ПРОСТРАНСТВО = { id: 'ws-1', name: 'Личное', personal: t
 const ПРОЕКТ = {
   id: 'p-1',
   workspace_id: 'ws-1',
+  workspace_name: 'Личное',
   owner_id: 'u-1',
   name: 'Лабораторная 4 — сортировки',
   created_at: '2026-09-02T10:00:00+00:00',

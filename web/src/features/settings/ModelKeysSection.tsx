@@ -85,7 +85,7 @@ export function ModelKeysSection() {
         form.setError(field, { message: errorText(e) })
         return
       }
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 
@@ -95,7 +95,7 @@ export function ModelKeysSection() {
       await revoke.mutateAsync(toRevoke.id)
       setToRevoke(null)
     } catch (e) {
-      toast.error(errorText(e))
+      toast.fail(e)
     }
   }
 
@@ -106,15 +106,12 @@ export function ModelKeysSection() {
         {list.error && <ErrorState error={list.error} onRetry={() => void list.refetch()} />}
 
         {list.data && list.data.length === 0 && (
-          <>
-            <EmptyState
-              compact
-              icon="key"
-              title={t('settings.keys.empty')}
-              text={t('settings.keys.emptyHint')}
-            />
-            <p className="text-xs text-muted">{t('settings.keys.sharedHint')}</p>
-          </>
+          <EmptyState
+            compact
+            icon="key"
+            title={t('settings.keys.empty')}
+            text={t('settings.keys.emptyHint')}
+          />
         )}
 
         {list.data && list.data.length > 0 && (

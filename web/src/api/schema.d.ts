@@ -128,6 +128,30 @@ export interface paths {
         patch: operations["update_profile"];
         trace?: never;
     };
+    "/api/auth/me/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload the signed-in user's avatar
+         * @description Takes a multipart form with a single 'file' field: a PNG, JPEG or WebP image of at most 1 MB. The format is decided by the leading bytes, never by the file name, and the picture is re-encoded into a 256x256 PNG cropped to its centre, so only pixels survive the upload. The name sent by the client is not used at all. Returns the whole profile, with avatar_version raised by one. 400 unsupported_type, 400 no_file, 401 unauthenticated, 413 file_too_large.
+         */
+        post: operations["set_avatar"];
+        /**
+         * Remove the signed-in user's avatar
+         * @description Deletes the uploaded picture and goes back to the avatar generated from the account id. Answers the same whether or not a picture was there. Returns the whole profile, with avatar_version back to zero. 401 unauthenticated.
+         */
+        delete: operations["delete_avatar"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/password/forgot": {
         parameters: {
             query?: never;
@@ -162,6 +186,26 @@ export interface paths {
          * @description Sets a new password by the token from the letter, revokes every session and confirms the address. 400 invalid_token, 400 token_expired, 422 validation_failed.
          */
         post: operations["reset_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/{user_id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The avatar picture of a user
+         * @description The PNG uploaded by that user, 256x256. Any signed-in caller may ask: avatars are shown next to nicknames in shared workspaces. A user without an uploaded picture answers 404 - the interface draws the generated avatar itself. Pass the avatar_version from the profile as v to get a long-lived cached answer. 400 invalid_id, 401 unauthenticated, 404 not_found.
+         */
+        get: operations["get_user_avatar"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -357,7 +401,7 @@ export interface paths {
         };
         /**
          * List projects of a workspace
-         * @description Lists the projects of one workspace; `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found.
+         * @description Lists the projects of one workspace; `workspace_id` is required, so a list of everything the caller can reach is not a request this route answers. `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found, 422 validation_failed.
          */
         get: operations["list_projects"];
         put?: never;
@@ -381,7 +425,7 @@ export interface paths {
         };
         /**
          * One project
-         * @description One project: name, workspace, the tag keys of its manifest and the size of its directory. Paths are never returned. 400 invalid_id, 404 not_found, 409 in_trash.
+         * @description One project: name, workspace (`workspace_id` and `workspace_name`), the tag keys of its manifest and the size of its directory. Paths are never returned. 400 invalid_id, 404 not_found, 409 in_trash.
          */
         get: operations["get_project"];
         put?: never;
@@ -541,6 +585,54 @@ export interface paths {
         delete: operations["delete_project_run"];
         options?: never;
         head?: never;
+        /**
+         * Rename one entry of the run journal
+         * @description Renames a run: this is how a diagram, a report or a solution is renamed. An empty name is not a refusal but a reset: the interface goes back to drawing the default name from the module and n. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        patch: operations["rename_project_run"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reports of this project
+         * @description Every report of the project, oldest first: what it is called, which report of this project it is, which template it is built from and the first page of what it built last. A project carries several reports, each with its own template and its own tag values; the id of a report is what the other routes take as `report`. Viewer role. 400 invalid_id, 404 not_found, 409 in_trash.
+         */
+        get: operations["list_project_reports"];
+        put?: never;
+        /**
+         * Start a new report in this project
+         * @description Starts a report: a journal entry and its own document on the volume, with its own manifest and its own tag values. `template_id` names one of the templates attached to the project; without it the report starts from a blank document. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found, 409 in_trash.
+         */
+        post: operations["create_project_report"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/reports/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete one report of this project
+         * @description Removes a report: its journal entry, its tag values, their version history and its build directory. The template it was built from stays attached to the project, and artifacts stay on the volume: an artifact is addressed by its content and may be the value of a tag in another report. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 409 in_trash.
+         */
+        delete: operations["delete_project_report"];
+        options?: never;
+        head?: never;
         patch?: never;
         trace?: never;
     };
@@ -617,7 +709,7 @@ export interface paths {
         };
         /**
          * List project materials
-         * @description Cards of every parsed material of the project, in upload order. Files still being parsed are in `GET ./materials/pending`. 400 invalid_id, 404 not_found.
+         * @description Cards of every parsed material of the project, in upload order. `run` narrows the list to the context folder of one solution. Files still being parsed are in `GET ./materials/pending`. 400 invalid_id, 404 not_found.
          */
         get: operations["list_materials"];
         put?: never;
@@ -725,7 +817,7 @@ export interface paths {
         };
         /**
          * List your jobs
-         * @description Your own jobs, newest first. Jobs of other people are never listed, not even in a shared project. 400 invalid_id, 400 unknown_job_status.
+         * @description Your own jobs, newest first. Jobs of other people are never listed, not even in a shared project. `workspace_id` narrows the list down to the jobs of that workspace's projects, plus the ones that belong to no project at all. 400 invalid_id, 400 unknown_job_status.
          */
         get: operations["jobs_list"];
         put?: never;
@@ -1316,8 +1408,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Find a project or a material by name
-         * @description Searches the names of every project the caller can reach (both the workspaces they own and the ones they were invited to) and the names of the materials inside those projects. Matching is case-insensitive and by substring, and the trash is not searched. Answers two lists, at most 20 entries each; an empty query answers two empty lists rather than everything. Each project carries the module its work belongs to, so the caller knows which screen to open.
+         * Find a project or a material in one workspace
+         * @description Searches the names of the projects of one workspace and the names of the materials inside them. `workspace_id` is required: the search answers about the workspace the caller works in, never about all of them at once. Matching is case-insensitive and by substring, and the trash is not searched. Answers two lists, at most 20 entries each; an empty query answers two empty lists rather than everything. Each project carries the module its work belongs to, so the caller knows which screen to open. 400 invalid_id, 404 not_found, 422 validation_failed.
          */
         get: operations["search"];
         put?: never;
@@ -1401,7 +1493,7 @@ export interface paths {
         };
         /**
          * Templates attached to this project
-         * @description The report templates attached to this project, in the order they were attached. A project may carry several: a title page, an appendix, a standard. `active` says which one the work is currently built from. Viewer role. 400 invalid_id, 404 not_found.
+         * @description The report templates attached to this project, in the order they were attached. A project may carry several: a title page, an appendix, a standard. `active` says which one the report named by `report` is currently built from; without `report` it is the single document of the work. Viewer role. 400 invalid_id, 404 not_found.
          */
         get: operations["list_project_templates"];
         put?: never;
@@ -1427,7 +1519,7 @@ export interface paths {
         put?: never;
         /**
          * Build this project from this template
-         * @description Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. `report` says which report of the project changes its template; without it the single document of the work does. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.
          */
         post: operations["use_project_template"];
         delete?: never;
@@ -1516,6 +1608,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/kadai/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Solutions of this project
+         * @description Every solution of the project, oldest first: what it is called, which solution of this project it is, how far its work has got and which file holds its assignment. A project carries several solutions, each with its own assignment, its own wishes, its own list of blocks and its own context files; the id of a solution is what the other routes take as `run`. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["kadai_runs"];
+        put?: never;
+        /**
+         * Start a new solution in this project
+         * @description Starts a solution: a journal entry and its own directory on the volume, with its own assignment, wishes, block list and context files. Nothing is run and nothing is charged here: the run itself is started later by a `kadai_run` job, once the assignment has been confirmed. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        post: operations["kadai_create_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/kadai/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete one solution of this project
+         * @description Removes a solution: its journal entry, the state of its work, its assignment, its wishes and its block list with the version history. Its context files are unbound from it; files attached to the project as a whole are left alone, and so are artifacts: an artifact is addressed by its content and may be part of another document. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        delete: operations["kadai_delete_run"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/kadai/stages": {
         parameters: {
             query?: never;
@@ -1545,7 +1681,7 @@ export interface paths {
         };
         /**
          * How far the work in this project has got
-         * @description A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. 400 invalid_id, 404 not_found.
+         * @description A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.
          */
         get: operations["kadai_status"];
         put?: never;
@@ -1566,7 +1702,7 @@ export interface paths {
         get?: never;
         /**
          * Name the material that holds the assignment
-         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_condition"];
         post?: never;
@@ -1585,12 +1721,12 @@ export interface paths {
         };
         /**
          * What the person asked of this work
-         * @description The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. 400 invalid_id, 404 not_found.
+         * @description The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. `run` names the solution they belong to. 400 invalid_id, 404 not_found.
          */
         get: operations["kadai_wishes"];
         /**
          * Store the wishes for this work
-         * @description Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. `run` names the solution they belong to. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_wishes"];
         post?: never;
@@ -1611,7 +1747,7 @@ export interface paths {
         put?: never;
         /**
          * Start a stage over on a work that has stopped
-         * @description Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed.
+         * @description Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed. `run` names the solution.
          */
         post: operations["kadai_restart"];
         delete?: never;
@@ -1881,7 +2017,7 @@ export interface paths {
         };
         /**
          * List projects of a workspace
-         * @description Lists the projects of one workspace; `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found.
+         * @description Lists the projects of one workspace; `workspace_id` is required, so a list of everything the caller can reach is not a request this route answers. `trash=true` lists the ones in the trash instead, `module` narrows the list down to the works done with one module. 400 invalid_id, 400 unknown_module, 404 not_found, 422 validation_failed.
          */
         get: operations["list_projects_v1"];
         put?: never;
@@ -1905,7 +2041,7 @@ export interface paths {
         };
         /**
          * One project
-         * @description One project: name, workspace, the tag keys of its manifest and the size of its directory. Paths are never returned. 400 invalid_id, 404 not_found, 409 in_trash.
+         * @description One project: name, workspace (`workspace_id` and `workspace_name`), the tag keys of its manifest and the size of its directory. Paths are never returned. 400 invalid_id, 404 not_found, 409 in_trash.
          */
         get: operations["get_project_v1"];
         put?: never;
@@ -2065,7 +2201,11 @@ export interface paths {
         delete: operations["delete_project_run_v1"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Rename one entry of the run journal
+         * @description Renames a run: this is how a diagram, a report or a solution is renamed. An empty name is not a refusal but a reset: the interface goes back to drawing the default name from the module and n. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        patch: operations["rename_project_run_v1"];
         trace?: never;
     };
     "/api/v1/projects/{project_id}/materials": {
@@ -2077,7 +2217,7 @@ export interface paths {
         };
         /**
          * List project materials
-         * @description Cards of every parsed material of the project, in upload order. Files still being parsed are in `GET ./materials/pending`. 400 invalid_id, 404 not_found.
+         * @description Cards of every parsed material of the project, in upload order. `run` narrows the list to the context folder of one solution. Files still being parsed are in `GET ./materials/pending`. 400 invalid_id, 404 not_found.
          */
         get: operations["list_materials_v1"];
         put?: never;
@@ -2185,7 +2325,7 @@ export interface paths {
         };
         /**
          * List your jobs
-         * @description Your own jobs, newest first. Jobs of other people are never listed, not even in a shared project. 400 invalid_id, 400 unknown_job_status.
+         * @description Your own jobs, newest first. Jobs of other people are never listed, not even in a shared project. `workspace_id` narrows the list down to the jobs of that workspace's projects, plus the ones that belong to no project at all. 400 invalid_id, 400 unknown_job_status.
          */
         get: operations["jobs_list_v1"];
         put?: never;
@@ -2380,6 +2520,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/kadai/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Solutions of this project
+         * @description Every solution of the project, oldest first: what it is called, which solution of this project it is, how far its work has got and which file holds its assignment. A project carries several solutions, each with its own assignment, its own wishes, its own list of blocks and its own context files; the id of a solution is what the other routes take as `run`. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["kadai_runs_v1"];
+        put?: never;
+        /**
+         * Start a new solution in this project
+         * @description Starts a solution: a journal entry and its own directory on the volume, with its own assignment, wishes, block list and context files. Nothing is run and nothing is charged here: the run itself is started later by a `kadai_run` job, once the assignment has been confirmed. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        post: operations["kadai_create_run_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/kadai/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete one solution of this project
+         * @description Removes a solution: its journal entry, the state of its work, its assignment, its wishes and its block list with the version history. Its context files are unbound from it; files attached to the project as a whole are left alone, and so are artifacts: an artifact is addressed by its content and may be part of another document. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        delete: operations["kadai_delete_run_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/kadai/stages": {
         parameters: {
             query?: never;
@@ -2409,7 +2593,7 @@ export interface paths {
         };
         /**
          * How far the work in this project has got
-         * @description A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. 400 invalid_id, 404 not_found.
+         * @description A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.
          */
         get: operations["kadai_status_v1"];
         put?: never;
@@ -2430,7 +2614,7 @@ export interface paths {
         get?: never;
         /**
          * Name the material that holds the assignment
-         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_condition_v1"];
         post?: never;
@@ -2449,12 +2633,12 @@ export interface paths {
         };
         /**
          * What the person asked of this work
-         * @description The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. 400 invalid_id, 404 not_found.
+         * @description The wishes stored with the project: the prose request and the two stop points. A `kadai_run` job reads them when its payload carries none, which is what happens on the first run: the person writes them when the work is created, and the run only starts once the assignment has been confirmed. Empty is not an error; it means nothing was written. `run` names the solution they belong to. 400 invalid_id, 404 not_found.
          */
         get: operations["kadai_wishes_v1"];
         /**
          * Store the wishes for this work
-         * @description Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Writes the wishes into the project, replacing what was there: wishes are one text and two flags, and half of them is not a state. They reach the model on the first run, and only there: the scenario reads its wishes once, when the work is created. `run` names the solution they belong to. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_wishes_v1"];
         post?: never;
@@ -2475,7 +2659,7 @@ export interface paths {
         put?: never;
         /**
          * Start a stage over on a work that has stopped
-         * @description Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed.
+         * @description Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed. `run` names the solution.
          */
         post: operations["kadai_restart_v1"];
         delete?: never;
@@ -3420,6 +3604,25 @@ export interface components {
             created_at?: string | null;
         };
         /**
+         * ProjectRunPatchIn
+         * @description Правка записи. Поле одно — имя: всё остальное в записи не редактируется.
+         *
+         *     Модуль, номер и артефакт — это то, что случилось, а случившееся не правят:
+         *     переписать модуль у записи значило бы сказать, что схему построил отчёт.
+         *     Имя — единственное, что в записи придумал человек, и единственное, что он
+         *     может передумать.
+         *
+         *     Обязательное поле, а не необязательное: у правки с одним полем «поля нет»
+         *     означало бы «ничего не делать», то есть запрос, на который незачем ходить.
+         */
+        ProjectRunPatchIn: {
+            /**
+             * Name
+             * @description New name for this run. Empty resets it: the interface draws the default name from the module and n again.
+             */
+            name: string;
+        };
+        /**
          * RegisterIn
          * @description Регистрация. Длина пароля проверяется формой, а не обработчиком: беда
          *     формы уезжает клиенту с адресом поля (`where: body.password`).
@@ -3438,6 +3641,67 @@ export interface components {
             password: string;
             /** Nickname */
             nickname: string;
+        };
+        /**
+         * ReportIn
+         * @description Тело создания отчёта: по какому бланку и как его звать.
+         */
+        ReportIn: {
+            /**
+             * Template Id
+             * @description One of the templates attached to this project (GET /api/projects/{id}/templates). Without it the report is started from a blank document.
+             */
+            template_id?: string | null;
+            /**
+             * Name
+             * @description What to call this report. Empty is fine: the interface names it itself, from the module and n.
+             * @default
+             */
+            name: string;
+        };
+        /**
+         * ReportOut
+         * @description Отчёт наружу: запись журнала плюс то, что видно на его карточке.
+         */
+        ReportOut: {
+            /**
+             * Id
+             * @description Run id of this report: the value of ?report=
+             */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * N
+             * @description Which report of this project, from 1
+             */
+            n: number;
+            /** User Id */
+            user_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Preview Artifact Id
+             * @description First page of the built document, as a PNG artifact
+             */
+            preview_artifact_id?: string | null;
+            /**
+             * Template Name
+             * @description Name of the template this report is built from, if known
+             * @default
+             */
+            template_name: string;
+            /**
+             * Tags
+             * @description How many tags its template has
+             * @default 0
+             */
+            tags: number;
         };
         /** ResetIn */
         ResetIn: {
@@ -3472,6 +3736,61 @@ export interface components {
              * @description Version number to bring back
              */
             n: number;
+        };
+        /**
+         * SolutionIn
+         * @description Тело заведения решения. Поле одно: как его звать.
+         */
+        SolutionIn: {
+            /**
+             * Name
+             * @description What to call this solution. Empty is fine: the interface names it itself, from the module and n.
+             * @default
+             */
+            name: string;
+        };
+        /**
+         * SolutionOut
+         * @description Решение наружу: запись журнала плюс то, что видно на его карточке.
+         */
+        SolutionOut: {
+            /**
+             * Id
+             * @description Run id of this solution: the value of ?run=
+             */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * N
+             * @description Which solution of this project, from 1
+             */
+            n: number;
+            /** User Id */
+            user_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * State
+             * @description State of the work: running, waiting_user, done, failed
+             */
+            state?: string | null;
+            /**
+             * Stage
+             * @description Stage it has got to, in Russian
+             */
+            stage?: string | null;
+            /**
+             * Condition Name
+             * @description File name of the assignment, when one is named
+             * @default
+             */
+            condition_name: string;
         };
         /**
          * TagPromptIn
@@ -3926,6 +4245,75 @@ export interface operations {
             };
         };
     };
+    set_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    delete_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     forgot_password: {
         parameters: {
             query?: never;
@@ -3984,6 +4372,38 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    get_user_avatar: {
+        parameters: {
+            query?: {
+                /** @description avatar_version from the profile */
+                v?: string | null;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Any refusal: one shape, machine-readable code */
             default: {
@@ -4649,7 +5069,10 @@ export interface operations {
     };
     list_project_tags: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -4682,7 +5105,10 @@ export interface operations {
     };
     set_tag_prompt: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -4720,7 +5146,10 @@ export interface operations {
     };
     get_project_values: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -4753,7 +5182,10 @@ export interface operations {
     };
     set_project_value: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -4867,6 +5299,138 @@ export interface operations {
             path: {
                 run_id: string;
                 project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    rename_project_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectRunPatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRunOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_project_reports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    create_project_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    delete_project_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
             };
             cookie?: never;
         };
@@ -5018,7 +5582,10 @@ export interface operations {
     };
     list_materials: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Show only the files of this solution, by its run id (GET /api/projects/{id}/kadai/runs). Empty means every material of the project. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -5063,6 +5630,8 @@ export interface operations {
                 "multipart/form-data": {
                     /** Format: binary */
                     file: string;
+                    /** @description Solution this file belongs to, by its run id. Empty means the project as a whole. */
+                    run_id?: string;
                 };
             };
         };
@@ -5264,6 +5833,8 @@ export interface operations {
             query?: {
                 /** @description Only jobs of this project */
                 project_id?: string | null;
+                /** @description Only jobs of this workspace's projects */
+                workspace_id?: string | null;
                 /** @description Only jobs in this state: queued, running, done, failed, cancelled */
                 status?: string | null;
                 limit?: number;
@@ -5667,7 +6238,10 @@ export interface operations {
     };
     list_value_versions: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -5701,7 +6275,10 @@ export interface operations {
     };
     get_value_version: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -5736,7 +6313,10 @@ export interface operations {
     };
     rollback_value: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -5774,7 +6354,10 @@ export interface operations {
     };
     get_project_blocks: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -5807,7 +6390,10 @@ export interface operations {
     };
     list_block_versions: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -5840,7 +6426,10 @@ export interface operations {
     };
     get_block_version: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -5874,7 +6463,10 @@ export interface operations {
     };
     rollback_blocks: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -6336,7 +6928,9 @@ export interface operations {
     };
     search: {
         parameters: {
-            query?: {
+            query: {
+                /** @description Workspace to search in; required */
+                workspace_id: string;
                 /** @description What to look for, a substring of a name */
                 q?: string;
                 /** @description Max entries in each list */
@@ -6505,7 +7099,10 @@ export interface operations {
     };
     list_project_templates: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -6585,7 +7182,10 @@ export interface operations {
     };
     use_project_template: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 template_id: string;
@@ -6742,6 +7342,102 @@ export interface operations {
             };
         };
     };
+    kadai_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SolutionOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_create_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SolutionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SolutionOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_delete_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     kadai_stages: {
         parameters: {
             query?: never;
@@ -6775,7 +7471,10 @@ export interface operations {
     };
     kadai_status: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -6808,7 +7507,10 @@ export interface operations {
     };
     kadai_set_condition: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -6845,7 +7547,10 @@ export interface operations {
     };
     kadai_wishes: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -6878,7 +7583,10 @@ export interface operations {
     };
     kadai_set_wishes: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -6915,7 +7623,10 @@ export interface operations {
     };
     kadai_restart: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -7657,7 +8368,10 @@ export interface operations {
     };
     list_project_tags_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -7690,7 +8404,10 @@ export interface operations {
     };
     set_tag_prompt_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -7728,7 +8445,10 @@ export interface operations {
     };
     get_project_values_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -7761,7 +8481,10 @@ export interface operations {
     };
     set_project_value_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which report of this project to work with, by its run id (GET /api/projects/{id}/reports). A project carries several reports, each with its own template and its own tag values. Empty means the single document of the work. */
+                report?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -7898,9 +8621,48 @@ export interface operations {
             };
         };
     };
-    list_materials_v1: {
+    rename_project_run_v1: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectRunPatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRunOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_materials_v1: {
+        parameters: {
+            query?: {
+                /** @description Show only the files of this solution, by its run id (GET /api/projects/{id}/kadai/runs). Empty means every material of the project. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -7945,6 +8707,8 @@ export interface operations {
                 "multipart/form-data": {
                     /** Format: binary */
                     file: string;
+                    /** @description Solution this file belongs to, by its run id. Empty means the project as a whole. */
+                    run_id?: string;
                 };
             };
         };
@@ -8146,6 +8910,8 @@ export interface operations {
             query?: {
                 /** @description Only jobs of this project */
                 project_id?: string | null;
+                /** @description Only jobs of this workspace's projects */
+                workspace_id?: string | null;
                 /** @description Only jobs in this state: queued, running, done, failed, cancelled */
                 status?: string | null;
                 limit?: number;
@@ -8514,6 +9280,102 @@ export interface operations {
             };
         };
     };
+    kadai_runs_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SolutionOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_create_run_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SolutionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SolutionOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_delete_run_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     kadai_stages_v1: {
         parameters: {
             query?: never;
@@ -8547,7 +9409,10 @@ export interface operations {
     };
     kadai_status_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -8580,7 +9445,10 @@ export interface operations {
     };
     kadai_set_condition_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -8617,7 +9485,10 @@ export interface operations {
     };
     kadai_wishes_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -8650,7 +9521,10 @@ export interface operations {
     };
     kadai_set_wishes_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -8687,7 +9561,10 @@ export interface operations {
     };
     kadai_restart_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
             header?: never;
             path: {
                 project_id: string;
