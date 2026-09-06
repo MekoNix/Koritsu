@@ -75,16 +75,17 @@ test('путь человека: от регистрации до выхода',
     .getByRole('link', { name: t('shell.nav.reports') })
     .click()
   await expect(page.getByRole('heading', { name: t('reports.home.title') })).toBeVisible()
-  await page.getByRole('link', { name: ПРОЕКТ }).click()
-  // Главная отчётов в два шага: сначала работа, потом её отчёты. Отчётов в
-  // работе бывает несколько, и первый из них заводится здесь же — он забирает
-  // собственный документ работы вместе с её бланком и тегами.
-  await expect(page).toHaveURL(new RegExp(`/reports\\?project=${projectId}$`))
+  // Главная показывает отчёты сразу: своих ещё нет, поэтому здесь пустое
+  // состояние с той же кнопкой. Отчётов в работе бывает несколько, и первый из
+  // них забирает собственный документ работы вместе с её бланком и тегами.
+  await expect(page.getByText(t('reports.list.emptyTitle'))).toBeVisible({ timeout: 30_000 })
   await page
     .getByRole('button', { name: t('reports.list.create') })
     .first()
     .click()
   const окно_отчёта = page.getByRole('dialog')
+  // Работа в окне одна и выбрана сама — переспрашивать не о чем.
+  await expect(окно_отчёта.getByLabel(t('reports.list.projectLabel'))).toHaveValue(projectId)
   await окно_отчёта.getByLabel(t('reports.list.nameLabel')).fill('Отчёт по работе')
   await окно_отчёта.getByRole('button', { name: t('reports.list.createAction') }).click()
   await expect(page).toHaveURL(new RegExp(`/reports/${projectId}/[0-9a-f-]{36}`), {

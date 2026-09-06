@@ -2073,6 +2073,53 @@
     }
    }
   },
+  "/api/reports": {
+   "get": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Reports of every project in a workspace",
+    "description": "Every report of every project of one workspace, newest first, each named together with the project it belongs to. `workspace_id` is required: a list of everything the caller can reach would show the reports of one workspace while another one is open. Projects in the trash are left out, and so are projects with no reports at all. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
+    "operationId": "list_workspace_reports",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/WorkspaceReportOut"
+         },
+         "title": "Response List Workspace Reports"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/keys": {
    "get": {
     "tags": [
@@ -11244,6 +11291,90 @@
     ],
     "title": "WorkspaceNameIn",
     "description": "Тело создания и переименования. Имя обрезается по краям и не бывает пустым."
+   },
+   "WorkspaceReportOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Run id of this report: the value of ?report="
+     },
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Which report of this project, from 1"
+     },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "preview_artifact_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Preview Artifact Id",
+      "description": "First page of the built document, as a PNG artifact"
+     },
+     "template_name": {
+      "type": "string",
+      "title": "Template Name",
+      "description": "Name of the template this report is built from, if known",
+      "default": ""
+     },
+     "tags": {
+      "type": "integer",
+      "title": "Tags",
+      "description": "How many tags its template has",
+      "default": 0
+     },
+     "project_name": {
+      "type": "string",
+      "title": "Project Name",
+      "description": "Name of the project this report belongs to",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "project_id",
+     "name",
+     "n"
+    ],
+    "title": "WorkspaceReportOut",
+    "description": "Тот же отчёт, но названный вместе со своей работой.\n\nСписок пространства смешивает отчёты разных работ в одну ленту, и без имени\nработы две «Главы 1» из разных курсовых на экране неразличимы. Имя\nприезжает вместе с отчётом, а не спрашивается по `project_id` отдельным\nзапросом на карточку: это и был бы тот самый N+1, ради ухода от которого\nсписок собран одним маршрутом."
    }
   }
  },

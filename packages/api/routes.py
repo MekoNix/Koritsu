@@ -122,6 +122,7 @@ def collect() -> list[APIRouter]:
     from .accounts.routes import users_router as users      # Аватар человека
     from .projects.routes import router as projects        # Проекты, корзина
     from .projects.reports import router as project_reports  # Отчёты работы
+    from .projects.reports import workspace_router as reports_home  # Лента отчётов
     from .projects.runs import router as project_runs      # Журнал запусков
     from .workspaces.routes import router as workspaces    # Workspace, роли
     from .workspaces.service import register_hooks         # Личное при регистрации
@@ -137,6 +138,7 @@ def collect() -> list[APIRouter]:
     site.include_router(projects)
     site.include_router(project_runs)
     site.include_router(project_reports)
+    site.include_router(reports_home)
 
     from .keys.routes import router as keys                 # Ключи моделей
     from .materials.routes import router as project_files   # Материалы проекта

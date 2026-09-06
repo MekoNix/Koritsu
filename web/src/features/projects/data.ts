@@ -262,8 +262,10 @@ export function useRenameProjectRun() {
       void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
       // Схемы — те же записи журнала, только показанные модулем: списки схем
       // обязаны узнать новое имя тем же действием, иначе оно появится в них
-      // только после перезагрузки страницы.
+      // только после перезагрузки страницы. Отчёты — такие же записи, и их
+      // лента по пространству лежит своим ключом.
       void qc.invalidateQueries({ queryKey: keys.diagrams.all })
+      void qc.invalidateQueries({ queryKey: keys.projects.workspaceReportsAll })
     },
   })
 }

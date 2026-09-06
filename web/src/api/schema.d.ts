@@ -636,6 +636,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reports of every project in a workspace
+         * @description Every report of every project of one workspace, newest first, each named together with the project it belongs to. `workspace_id` is required: a list of everything the caller can reach would show the reports of one workspace while another one is open. Projects in the trash are left out, and so are projects with no reports at all. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
+         */
+        get: operations["list_workspace_reports"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/keys": {
         parameters: {
             query?: never;
@@ -4100,6 +4120,62 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * WorkspaceReportOut
+         * @description Тот же отчёт, но названный вместе со своей работой.
+         *
+         *     Список пространства смешивает отчёты разных работ в одну ленту, и без имени
+         *     работы две «Главы 1» из разных курсовых на экране неразличимы. Имя
+         *     приезжает вместе с отчётом, а не спрашивается по `project_id` отдельным
+         *     запросом на карточку: это и был бы тот самый N+1, ради ухода от которого
+         *     список собран одним маршрутом.
+         */
+        WorkspaceReportOut: {
+            /**
+             * Id
+             * @description Run id of this report: the value of ?report=
+             */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * N
+             * @description Which report of this project, from 1
+             */
+            n: number;
+            /** User Id */
+            user_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Preview Artifact Id
+             * @description First page of the built document, as a PNG artifact
+             */
+            preview_artifact_id?: string | null;
+            /**
+             * Template Name
+             * @description Name of the template this report is built from, if known
+             * @default
+             */
+            template_name: string;
+            /**
+             * Tags
+             * @description How many tags its template has
+             * @default 0
+             */
+            tags: number;
+            /**
+             * Project Name
+             * @description Name of the project this report belongs to
+             * @default
+             */
+            project_name: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -5539,6 +5615,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_workspace_reports: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceReportOut"][];
+                };
             };
             /** @description Any refusal: one shape, machine-readable code */
             default: {

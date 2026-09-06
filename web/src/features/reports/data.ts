@@ -28,6 +28,7 @@ import type {
   VersionBody,
   VersionHead,
   VersionsBody,
+  WorkspaceReport,
 } from './types'
 
 // ── отчёты работы ────────────────────────────────────────────────────────────
@@ -52,6 +53,29 @@ export function useProjectReports(projectId: string | undefined): UseQueryResult
 }
 
 /**
+ * Отчёты всех работ пространства одной лентой, новые сверху.
+ *
+ * Маршрутом службы, а не запросом на каждую работу: главная модуля показывает
+ * написанное человеком сразу, без выбора работы, и собирать эту ленту из
+ * списка работ плюс запроса на каждую значило бы ответ, время которого растёт
+ * вместе с числом работ.
+ */
+export function useWorkspaceReports(
+  workspaceId: string | undefined,
+): UseQueryResult<WorkspaceReport[]> {
+  return useQuery({
+    queryKey: keys.projects.workspaceReports(workspaceId ?? ''),
+    enabled: !!workspaceId,
+    queryFn: () =>
+      unwrap<WorkspaceReport[]>(
+        api.GET('/api/reports', {
+          params: { query: { workspace_id: workspaceId as string } },
+        }),
+      ),
+  })
+}
+
+/**
  * Завести отчёт: запись журнала и документ под ней.
  *
  * `templateId` — один из приложенных к работе бланков. Имя не передаётся, когда
@@ -67,26 +91,32 @@ export function useProjectReports(projectId: string | undefined): UseQueryResult
  * решать вопрос «первый ли» по списку, который в эту минуту мог быть ещё не
  * загружен, — и заводить второй отчёт как первый.
  */
-export function useCreateProjectReport(projectId: string | undefined) {
+export function useCreateProjectReport() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({
+      projectId,
       templateId,
       name,
     }: {
+      projectId: string
       templateId?: string | null
       name?: string
     }): Promise<ProjectReport> =>
       unwrap<ProjectReport>(
         api.POST('/api/projects/{project_id}/reports', {
-          params: { path: { project_id: projectId as string } },
+          params: { path: { project_id: projectId } },
           body: { template_id: templateId || null, name: name ?? '' },
         }),
       ),
     // Гасится вся работа: отчёт есть и в списке отчётов, и в журнале запусков
     // на её карточке, а два разных ключа на одно событие расходятся на первой
-    // же правке.
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.projects.one(projectId ?? '') }),
+    // же правке. Лента пространства — отдельной строкой: под ключом работы её
+    // нет, а новый отчёт обязан появиться в ней тем же действием.
+    onSuccess: (_отчёт, { projectId }) => {
+      void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
+      void qc.invalidateQueries({ queryKey: keys.projects.workspaceReportsAll })
+    },
   })
 }
 
@@ -95,17 +125,24 @@ export function useCreateProjectReport(projectId: string | undefined) {
  *
  * Бланк при этом остаётся приложенным к работе, а артефакты — на томе: артефакт
  * адресуется содержимым и может стоять значением тега в соседнем отчёте.
+ *
+ * Работа называется вызовом, а не хуком: на главной модуля лежат отчёты всех
+ * работ пространства сразу, и хук, знающий одну работу, снёс бы отчёт не из
+ * той.
  */
-export function useDeleteProjectReport(projectId: string | undefined) {
+export function useDeleteProjectReport() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ runId }: { runId: string }) =>
+    mutationFn: ({ projectId, runId }: { projectId: string; runId: string }) =>
       unwrap<void>(
         api.DELETE('/api/projects/{project_id}/reports/{run_id}', {
-          params: { path: { project_id: projectId as string, run_id: runId } },
+          params: { path: { project_id: projectId, run_id: runId } },
         }),
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.projects.one(projectId ?? '') }),
+    onSuccess: (_ничего, { projectId }) => {
+      void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
+      void qc.invalidateQueries({ queryKey: keys.projects.workspaceReportsAll })
+    },
   })
 }
 
@@ -370,8 +407,10 @@ export function useUseProjectTemplate(projectId: string | undefined, report = ''
       void qc.invalidateQueries({ queryKey: keys.reports.tags(projectId ?? '', report) })
       void qc.invalidateQueries({ queryKey: keys.reports.values(projectId ?? '', report) })
       // Карточка отчёта в списке называет бланк и число тегов — после смены
-      // бланка это другие слова, и список обязан узнать их тем же действием.
+      // бланка это другие слова, и оба списка обязаны узнать их тем же
+      // действием.
       void qc.invalidateQueries({ queryKey: keys.projects.reports(projectId ?? '') })
+      void qc.invalidateQueries({ queryKey: keys.projects.workspaceReportsAll })
     },
   })
 }

@@ -77,10 +77,16 @@ test('в другом пространстве чужих работ не вид
   // экрана, где шапки с подписью уже нет.
   await expect(page.getByRole('listitem').filter({ hasText: КАФЕДРАЛЬНАЯ })).toContainText(КАФЕДРА)
 
-  // ── главная отчётов: выбор работы — из текущего пространства ──────────────
+  // ── главная отчётов: отбор по работе — из текущего пространства ───────────
+  // Отчётов здесь ещё нет, и работы видны только отбором над сеткой — по нему
+  // и проверяется, что чужое пространство сюда не попало. Спрашивается состав
+  // списка, а не видимость: свёрнутый родной `<select>` своих строк не
+  // показывает.
   await перейти(page, '/reports')
-  await expect(page.getByText(КАФЕДРАЛЬНАЯ).first()).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText(ЛИЧНАЯ)).toHaveCount(0)
+  const отбор = page.getByLabel(t('reports.home.filterProject'))
+  await expect(отбор).toBeVisible({ timeout: 30_000 })
+  await expect(отбор.locator('option', { hasText: КАФЕДРАЛЬНАЯ })).toHaveCount(1)
+  await expect(отбор.locator('option', { hasText: ЛИЧНАЯ })).toHaveCount(0)
 
   // ── главная блок-схем: работа в пространстве одна, и выбирать не из чего ──
   await перейти(page, '/flowcharts')

@@ -77,7 +77,7 @@ CSRF.
                             auth        вход, регистрация, подтверждение, сброс
                             dashboard   лента виджетов, `/`
                             projects    работы и материалы, `/projects`
-                            reports     экран отчёта, `/reports/:projectId`
+                            reports     отчёты работ, `/reports`
                             diagrams    блок-схемы и UML, `/flowcharts`, `/uml`
                             settings    профиль, оформление, ключи, `/settings/*`
                             admin       люди, очередь, события, `/admin/*`

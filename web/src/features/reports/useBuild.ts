@@ -83,8 +83,10 @@ export function useBuild(projectId: string, report = ''): BuildState {
     закрыто.current = jobId
     void qc.invalidateQueries({ queryKey: keys.usage })
     // Картинка первой страницы записана у запуска — карточка отчёта обязана
-    // узнать о ней тем же действием, а не после перезагрузки страницы.
+    // узнать о ней тем же действием, а не после перезагрузки страницы. Карточка
+    // эта стоит в двух списках: отчёты работы и лента пространства.
     void qc.invalidateQueries({ queryKey: keys.projects.reports(projectId) })
+    void qc.invalidateQueries({ queryKey: keys.projects.workspaceReportsAll })
     const статус = stream.job?.status
     if (статус === 'done') {
       const итог = (stream.job?.result ?? {}) as BuildResult

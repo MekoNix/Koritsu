@@ -4,6 +4,12 @@ reports — отчёты работы: `/api/projects/{id}/reports`.
     GET    /api/projects/{id}/reports            200  отчёты работы (viewer)
     POST   /api/projects/{id}/reports            201  завести отчёт  (editor)
     DELETE /api/projects/{id}/reports/{run_id}   204  снести отчёт   (editor)
+    GET    /api/reports?workspace_id=<ws>        200  отчёты пространства (viewer)
+
+Последний маршрут — лента всех отчётов пространства, из которой сделан главный
+экран отчётов: человек видит написанное им сразу, без выбора работы. Он живёт
+здесь же, а не в отдельном модуле, потому что отвечает на тот же вопрос — «что
+такое отчёт и что показано на его карточке», — только сразу по всем работам.
 
 **Отчётов в работе много.** У каждого свой бланк, свои значения тегов с
 историей версий и свои сборки: титульный лист по одному ГОСТу, приложение по
@@ -61,12 +67,18 @@ from ..ids import check_id
 from ..log import беды
 from ..settings import Settings
 from ..workspaces.deps import CurrentUser
-from ..workspaces.service import EDITOR, VIEWER, iso
-from .models import NAME_MAX, ProjectRun
+from ..workspaces.service import EDITOR, VIEWER, iso, require_role
+from .models import NAME_MAX, Project, ProjectRun
 from .routes import BAD_TEMPLATE, доступный, настройки, открыть
 from .runs import завести
 
 router = APIRouter(prefix="/projects/{project_id}/reports", tags=["projects"])
+
+# Отчёты всего пространства лежат под своим путём (`/api/reports`), а не под
+# работой: работы в этом запросе нет вовсе. Роутер поэтому второй, а модуль
+# тот же самый — правило «что такое отчёт» одно, и разносить его по двум
+# файлам значило бы завести второе.
+workspace_router = APIRouter(prefix="/reports", tags=["projects"])
 
 # Модуль, записями которого журнал держит отчёты. Слово берётся у журнала, а не
 # пишется здесь второй раз: разойтись им нельзя (`runs.проверить_модуль`).
@@ -105,6 +117,20 @@ class ReportOut(BaseModel):
         default="",
         description="Name of the template this report is built from, if known")
     tags: int = Field(default=0, description="How many tags its template has")
+
+
+class WorkspaceReportOut(ReportOut):
+    """Тот же отчёт, но названный вместе со своей работой.
+
+    Список пространства смешивает отчёты разных работ в одну ленту, и без имени
+    работы две «Главы 1» из разных курсовых на экране неразличимы. Имя
+    приезжает вместе с отчётом, а не спрашивается по `project_id` отдельным
+    запросом на карточку: это и был бы тот самый N+1, ради ухода от которого
+    список собран одним маршрутом.
+    """
+
+    project_name: str = Field(
+        default="", description="Name of the project this report belongs to")
 
 
 def карточка(запись: ProjectRun, *, бланк: str = "", тегов: int = 0) -> dict:
@@ -335,5 +361,70 @@ def снести(project_id: str, run_id: str, request: Request, s: SessionDep,
     return Response(status_code=204)
 
 
-__all__ = ["router", "ReportIn", "ReportOut", "карточка", "записи", "найти",
-           "развести", "МОДУЛЬ"]
+@workspace_router.get("", operation_id="list_workspace_reports",
+                     response_model=list[WorkspaceReportOut],
+                     summary="Reports of every project in a workspace",
+                     description=(
+                         "Every report of every project of one workspace, "
+                         "newest first, each named together with the project "
+                         "it belongs to. `workspace_id` is required: a list of "
+                         "everything the caller can reach would show the "
+                         "reports of one workspace while another one is open. "
+                         "Projects in the trash are left out, and so are "
+                         "projects with no reports at all. Viewer role. "
+                         "400 invalid_id, 404 not_found, "
+                         "422 validation_failed."))
+def список_пространства(request: Request, workspace_id: str, s: SessionDep,
+                        user: CurrentUser) -> list[dict]:
+    """Отчёты всех работ пространства одной лентой, новые сверху.
+
+    **Один запрос, а не по запросу на работу.** Экран отчётов показывает всё
+    написанное человеком сразу, без предварительного выбора работы, и собирать
+    эту ленту на стороне клиента значило бы список работ плюс запрос на каждую
+    из них — то есть ответ, время которого растёт вместе с числом работ.
+
+    Работы корзины пропущены: их не показывает и список работ, и отчёт из
+    корзины на общем экране означал бы предложение открыть то, что удалено.
+
+    Работа, каталога которой на томе нет, пропускается со строкой в журнале, а
+    не роняет весь ответ отказом: одна испорченная работа не должна уносить с
+    экрана отчёты всех остальных. У списка одной работы такого выбора нет —
+    там эта работа и есть весь ответ.
+    """
+    settings: Settings = настройки(request)
+    ws = require_role(s, user.id,
+                      check_id(workspace_id, where="query.workspace_id"),
+                      VIEWER, where="query.workspace_id")
+    работы = s.scalars(
+        select(Project)
+        .where(Project.workspace_id == ws.id, Project.deleted_at.is_(None))
+        .order_by(Project.created_at)).all()
+
+    итог: list[dict] = []
+    for p in работы:
+        строки = записи(s, p.id)
+        if not строки:
+            # Каталог на томе не трогаем вовсе: у работы без отчётов ни читать,
+            # ни чинить нечего.
+            continue
+        try:
+            проект = открыть(p, settings)
+        except ApiError:
+            беды.exception("работа %s: каталога нет, отчёты пропущены", p.id)
+            continue
+        развести(проект, строки)
+        for запись in строки:
+            бланк, тегов = бланк_отчёта(s, проект, p.id, запись.id)
+            итог.append({**карточка(запись, бланк=бланк, тегов=тегов),
+                         "project_name": p.name})
+
+    # Новые сверху: лента без выбора работы читается как «что я делал
+    # последним», а не как история работы по порядку. Внутри одной секунды
+    # порядок решает номер отчёта.
+    итог.sort(key=lambda к: (к["created_at"] or "", к["n"]), reverse=True)
+    return итог
+
+
+__all__ = ["router", "workspace_router", "ReportIn", "ReportOut",
+           "WorkspaceReportOut", "карточка", "записи", "найти", "развести",
+           "МОДУЛЬ"]

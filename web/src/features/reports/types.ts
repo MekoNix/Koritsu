@@ -34,6 +34,19 @@ export type ProjectReport = {
   tags: number
 }
 
+/**
+ * `packages/api/projects/reports.py: список_пространства()` — строка
+ * `GET /api/reports?workspace_id=`.
+ *
+ * Тот же отчёт, но названный вместе со своей работой: лента главной смешивает
+ * отчёты разных работ, и без имени работы две «Главы 1» из разных курсовых на
+ * экране неразличимы.
+ */
+export type WorkspaceReport = ProjectReport & {
+  /** Как зовётся работа, которой принадлежит отчёт. */
+  project_name: string
+}
+
 /** `packages/api/projects/routes.py: теги_проекта()` — строка `GET …/tags`. */
 export type ProjectTag = {
   /** Ключ тега в шаблоне: `{{цель}}` → `цель`. */
