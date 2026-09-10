@@ -268,3 +268,46 @@ export function blockText(block: BlockRecord | undefined): string {
 export function blocksText(blocks: BlockRecord[] | undefined): string {
   return (blocks ?? []).map((b) => `${b.label || b.key}\n${blockText(b)}`.trim()).join('\n\n')
 }
+
+/**
+ * Пометка черновика — та же строка, что и у движка отчётов
+ * (`hokoku.live.DRAFT_MARK`). Признака «это ещё не написано» отдельным полем у
+ * блока нет намеренно: флаг пришлось бы нести через запись на томе, ответ
+ * службы и сборку, и в первом же месте, где его забыли переложить, черновик
+ * уехал бы в документ молчаливым абзацем. Строка едет вместе со значением.
+ */
+const ЧЕРНОВИК = 'черновик:'
+
+/** Виды блоков, у которых пустое значение — это тоже «ещё не написано». */
+const ТЕКСТОВЫЕ = ['markdown', 'text']
+
+/**
+ * Не написан ли блок ещё: пометка черновика или пустой текст у текстового.
+ *
+ * Спрашивают про это в двух местах — в карточке списка и в подписи области на
+ * странице собранного документа: черновик и там и там выглядит обычным текстом,
+ * и без пометки его не отличить.
+ */
+export function черновик(kind: string, текст: string): boolean {
+  const это = текст.trim()
+  if (это.toLowerCase().startsWith(ЧЕРНОВИК)) return true
+  return !это && ТЕКСТОВЫЕ.includes(kind)
+}
+
+/**
+ * Ключ перевода вида блока; нет своего слова — показываем код как есть.
+ *
+ * Вид приходит от движка отчётов (`hokoku.live.KINDS`), а называется человеку в
+ * двух местах сразу — в карточке списка и в подписи области на странице.
+ */
+export const ВИД: Record<string, string> = {
+  heading: 'kadai.blocks.kind.heading',
+  markdown: 'kadai.blocks.kind.markdown',
+  text: 'kadai.blocks.kind.markdown',
+  code: 'kadai.blocks.kind.code',
+  table: 'kadai.blocks.kind.table',
+  diagram: 'kadai.blocks.kind.diagram',
+  image: 'kadai.blocks.kind.image',
+  formula: 'kadai.blocks.kind.formula',
+  toc: 'kadai.blocks.kind.toc',
+}

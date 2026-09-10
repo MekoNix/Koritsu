@@ -580,6 +580,32 @@ def add_picture(doc, ref_elem, parent_proxy, data: bytes, w_cm: float, h_cm: flo
     return p
 
 
+# С какого номера считаются закладки, обрамляющие куски документа (`mark_range`).
+# Подписи нумеруют свои закладки с сотни (`_next_bookmark_id`), и обе нумерации живут
+# в одном документе: подписи расставляет рендер, куски — тот, кто готовил шаблон.
+# Разные начала дешевле общего счётчика, которого у них всё равно быть не может —
+# шаблон и его отрендеренная копия это два разных объекта документа.
+RANGE_BOOKMARK_ID = 9000
+
+
+def mark_range(elem, name: str, bm_id: int, *, end=None) -> None:
+    """Закладка вокруг куска документа: bookmarkStart перед `elem`, bookmarkEnd после
+    `end` (по умолчанию — после самого `elem`).
+
+    Метки кладутся **рядом с абзацами, а не внутрь них**: OOXML разрешает
+    bookmarkStart/bookmarkEnd прямо в теле документа, и только так закладка переживает
+    подстановку значения — абзац с тегом рендер выбрасывает и ставит на его место свои,
+    а метка вне абзаца остаётся стоять там же, то есть в начале куска.
+    """
+    bs = OxmlElement("w:bookmarkStart")
+    bs.set(qn("w:id"), str(bm_id))
+    bs.set(qn("w:name"), name)
+    elem.addprevious(bs)
+    be = OxmlElement("w:bookmarkEnd")
+    be.set(qn("w:id"), str(bm_id))
+    (end if end is not None else elem).addnext(be)
+
+
 def _next_bookmark_id(doc) -> int:
     """Номер закладки свой у каждого документа: общий на процесс счётчик делал вывод
     невоспроизводимым (два рендера подряд давали разные w:id) и мог разорвать пару

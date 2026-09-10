@@ -1,8 +1,7 @@
 /**
- * BlockList — работа карточками блоков в порядке документа.
+ * BlockList — оглавление работы: блоки в порядке документа.
  *
- * Это и есть «превью живого режима»: список
- * блоков рисует сам сайт — заголовок, текст, код, таблица, схема, — с именем и
+ * Список рисует сам сайт — заголовок, текст, код, таблица, схема, — с именем и
  * меткой источника. Быстро и без сборки. Настоящая вёрстка (поля, переносы,
  * номера рисунков) считается только Word/LibreOffice, поэтому рядом на экране
  * всегда есть «как будет в Word»; здесь её нет и притворяться ею нельзя.
@@ -12,12 +11,17 @@
  * этот блок (написанное человеком не переписывается). Спрятать метку значило
  * бы спрятать причину, по которой блок остался прежним.
  *
- * **Клик по блоку — замечание.** Поле «что переделать» и три кнопки:
- * переделать, убрать, переставить. Всё три уезжают в
- * `kadai_rework`; «убрать» и «переставить» — это правка строения, поэтому у
- * них вид `структура`, а само действие сказано словами в замечании: своего
- * вида «убери блок» у службы нет, и выдумывать его на стороне сайта значило бы
- * гадать, что сделает сценарий.
+ * **Выбранный блок — общий с вёрсткой.** Какой блок выбран, знает экран
+ * решения, а не карточка: тот же блок обведён рамкой на странице собранного
+ * документа, и два своих «выбрано» — в списке и в вёрстке — разъехались бы на
+ * первом же клике.
+ *
+ * **Форма замечания — там, где блок выбирают.** Блок, попавший в вёрстку,
+ * выбирают прямо на странице, и форма стоит под ней (`PdfBlocks`); в карточке
+ * её тогда нет — две одинаковые формы на одном экране это вопрос «в какую
+ * писать», а не выбор. Блок, которого в вёрстке нет (работа ещё не собиралась,
+ * заготовку пропустили при сборке), выбрать негде, кроме списка, — и форма
+ * остаётся в карточке.
  *
  * **Черновик отличается от написанного.** Место под содержимое хранится не
  * пустым, а строкой с пометкой «черновик:» (`hokoku.live.DRAFT_MARK`): пустое
@@ -26,13 +30,13 @@
  * Поэтому у него своя метка и приглушённая карточка: «здесь ещё ничего нет» —
  * это то, ради чего на список и смотрят.
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { Button, EmptyState, Icon, SkeletonLines, Textarea, type IconName } from '@/ui'
 
-import { blockText, type ReworkKind } from './stages'
+import { blockText, черновик, ВИД, type ReworkKind } from './stages'
 import type { BlockRecordBody } from './types'
 
 /**
@@ -55,54 +59,37 @@ const ЗНАЧОК: Record<string, IconName> = {
   toc: 'tasks',
 }
 
-/** Ключ перевода вида блока; нет своего слова — показываем код как есть. */
-const ВИД: Record<string, string> = {
-  heading: 'kadai.blocks.kind.heading',
-  markdown: 'kadai.blocks.kind.markdown',
-  text: 'kadai.blocks.kind.markdown',
-  code: 'kadai.blocks.kind.code',
-  table: 'kadai.blocks.kind.table',
-  diagram: 'kadai.blocks.kind.diagram',
-  image: 'kadai.blocks.kind.image',
-  formula: 'kadai.blocks.kind.formula',
-  toc: 'kadai.blocks.kind.toc',
-}
-
-/**
- * Пометка черновика — та же строка, что и у движка отчётов
- * (`hokoku.live.DRAFT_MARK`). Признака «это ещё не написано» отдельным полем у
- * блока нет намеренно: флаг пришлось бы нести через запись на томе, ответ
- * службы и сборку, и в первом же месте, где его забыли переложить, черновик
- * уехал бы в документ молчаливым абзацем. Строка едет вместе со значением.
- */
-const ЧЕРНОВИК = 'черновик:'
-
-/** Виды блоков, у которых пустое значение — это тоже «ещё не написано». */
-const ТЕКСТОВЫЕ = ['markdown', 'text']
-
-/** Не написан ли блок ещё: пометка черновика или пустой текст у текстового. */
-function черновик(kind: string, текст: string): boolean {
-  const это = текст.trim()
-  if (это.toLowerCase().startsWith(ЧЕРНОВИК)) return true
-  return !это && ТЕКСТОВЫЕ.includes(kind)
-}
-
 export type ReworkRequest = { block: string; kind: ReworkKind; note: string }
 
 export function BlockList({
   blocks,
   loading,
   disabled,
+  selected,
+  onSelect,
+  pickable,
   onRework,
 }: {
   blocks: BlockRecordBody[] | undefined
   loading: boolean
   /** Идёт прогон: поле замечания заблокировано. */
   disabled: boolean
+  /** Выбранный блок — общий с вёрсткой. */
+  selected: string | null
+  onSelect: (ключ: string | null) => void
+  /** Ключи блоков, которые можно выбрать прямо на странице вёрстки. */
+  pickable: ReadonlySet<string>
   onRework: (запрос: ReworkRequest) => void
 }) {
   const t = useT()
-  const [открыт, setОткрыт] = useState<string | null>(null)
+  const карточки = useRef(new Map<string, HTMLLIElement>())
+
+  // Выбор на странице вёрстки виден и в списке: в длинном списке подсвеченная
+  // карточка легко оказывается за краем экрана, и выбор читается как «ничего не
+  // произошло». `nearest` — чтобы клик по видимой карточке не дёргал список.
+  useEffect(() => {
+    if (selected) карточки.current.get(selected)?.scrollIntoView({ block: 'nearest' })
+  }, [selected])
 
   if (loading) return <SkeletonLines count={8} />
   if (!blocks || blocks.length === 0) {
@@ -118,12 +105,19 @@ export function BlockList({
   return (
     <ol className="flex flex-col gap-s2">
       {blocks.map((блок, i) => (
-        <li key={блок.key}>
+        <li
+          key={блок.key}
+          ref={(это) => {
+            if (это) карточки.current.set(блок.key, это)
+            else карточки.current.delete(блок.key)
+          }}
+        >
           <BlockCard
             block={блок}
             n={i + 1}
-            open={открыт === блок.key}
-            onToggle={() => setОткрыт((было) => (было === блок.key ? null : блок.key))}
+            open={selected === блок.key}
+            onToggle={() => onSelect(selected === блок.key ? null : блок.key)}
+            onPage={pickable.has(блок.key)}
             disabled={disabled}
             onRework={onRework}
           />
@@ -138,6 +132,7 @@ function BlockCard({
   n,
   open,
   onToggle,
+  onPage,
   disabled,
   onRework,
 }: {
@@ -145,11 +140,12 @@ function BlockCard({
   n: number
   open: boolean
   onToggle: () => void
+  /** Блок есть в вёрстке: замечание пишут там, под страницей. */
+  onPage: boolean
   disabled: boolean
   onRework: (запрос: ReworkRequest) => void
 }) {
   const t = useT()
-  const [note, setNote] = useState('')
   const вид = String(block.kind ?? '')
   const текст = blockText(block)
   const заголовок = вид === 'heading'
@@ -237,56 +233,98 @@ function BlockCard({
             </pre>
           )}
           {не_написан && <p className="text-xs text-warn">{t('kadai.blocks.draftHint')}</p>}
-          <Textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={2}
-            disabled={disabled}
-            placeholder={t('kadai.blocks.notePlaceholder')}
-            aria-label={t('kadai.blocks.note')}
-          />
-          <div className="flex flex-wrap items-center gap-s2">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={disabled || !note.trim()}
-              onClick={() => onRework({ block: block.key, kind: вид_замечания(вид), note })}
-            >
-              {t('kadai.blocks.redo')}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={disabled}
-              onClick={() =>
-                onRework({
-                  block: block.key,
-                  kind: 'структура',
-                  note: `${t('kadai.blocks.removeNote')}: ${block.label || block.key}${note.trim() ? `. ${note.trim()}` : ''}`,
-                })
-              }
-            >
-              {t('kadai.blocks.remove')}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={disabled || !note.trim()}
-              onClick={() =>
-                onRework({
-                  block: block.key,
-                  kind: 'структура',
-                  note: `${t('kadai.blocks.moveNote')}: ${block.label || block.key}. ${note.trim()}`,
-                })
-              }
-            >
-              {t('kadai.blocks.move')}
-            </Button>
-            <span className="text-xs text-muted">{t('kadai.blocks.noteHint')}</span>
-          </div>
+          {onPage ? (
+            <p className="text-xs text-muted">{t('kadai.blocks.onPage')}</p>
+          ) : (
+            <ReworkForm block={block} disabled={disabled} onRework={onRework} />
+          )}
         </div>
       )}
     </article>
+  )
+}
+
+/**
+ * Форма замечания к блоку: поле «что переделать» и три действия.
+ *
+ * Отдельным куском, потому что блок выбирают в двух местах — в списке и прямо
+ * на странице собранного документа, — а форма у них одна и та же. Разъехавшись,
+ * две формы отправили бы одно и то же замечание по-разному, и разницу человек
+ * увидел бы только по итогу переигранной работы.
+ *
+ * **Три действия уезжают одним `kadai_rework`.** «Убрать» и «переставить» — это
+ * правка строения, поэтому у них вид `структура`, а само действие сказано
+ * словами в замечании: своего вида «убери блок» у службы нет, и выдумывать его
+ * на стороне сайта значило бы гадать, что сделает сценарий.
+ *
+ * Поле сбрасывается при смене блока: недописанная фраза про один блок, оставшаяся
+ * в форме другого, — это замечание не по адресу, отправленное не глядя.
+ */
+export function ReworkForm({
+  block,
+  disabled,
+  onRework,
+}: {
+  block: BlockRecordBody
+  disabled: boolean
+  onRework: (запрос: ReworkRequest) => void
+}) {
+  const t = useT()
+  const [note, setNote] = useState('')
+  const вид = String(block.kind ?? '')
+
+  useEffect(() => setNote(''), [block.key])
+
+  return (
+    <div className="flex flex-col gap-s2">
+      <Textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={2}
+        disabled={disabled}
+        placeholder={t('kadai.blocks.notePlaceholder')}
+        aria-label={t('kadai.blocks.note')}
+      />
+      <div className="flex flex-wrap items-center gap-s2">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={disabled || !note.trim()}
+          onClick={() => onRework({ block: block.key, kind: вид_замечания(вид), note })}
+        >
+          {t('kadai.blocks.redo')}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={disabled}
+          onClick={() =>
+            onRework({
+              block: block.key,
+              kind: 'структура',
+              note: `${t('kadai.blocks.removeNote')}: ${block.label || block.key}${note.trim() ? `. ${note.trim()}` : ''}`,
+            })
+          }
+        >
+          {t('kadai.blocks.remove')}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={disabled || !note.trim()}
+          onClick={() =>
+            onRework({
+              block: block.key,
+              kind: 'структура',
+              note: `${t('kadai.blocks.moveNote')}: ${block.label || block.key}. ${note.trim()}`,
+            })
+          }
+        >
+          {t('kadai.blocks.move')}
+        </Button>
+        <span className="text-xs text-muted">{t('kadai.blocks.noteHint')}</span>
+      </div>
+    </div>
   )
 }
 

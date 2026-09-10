@@ -23,6 +23,10 @@ hokoku (報告 — «отчёт») — отчёты из DOCX-шаблонов �
   validate_work(work)                    → [Problem] до сборки: дубли ключей, лимиты, {ref:} в никуда
   live_tools() / call_tool(work, имя, …) → инструменты агента над списком (модель зовёт оркестратор)
   text_slots / texts_schema / fill_texts → связный текст одним проходом по готовому списку
+  bookmark_name(key) / key_of_bookmark(name) → имя закладки блока в документе и обратно;
+                                         сборка ставит её на каждый блок, PDF несёт её
+                                         именованным назначением — по нему превью
+                                         показывает, где на странице какой блок
 Общие слова (insert, replace, remove, move, block, heading, outline, draft) наверх не
 подняты намеренно: `hokoku.insert` не говорит, куда и что, а `hokoku.live.insert` говорит.
 
@@ -52,9 +56,9 @@ from .template import (A4_GOST, BodyText, PageSetup, STYLE_SPECS, blank_document
                        check_template, document_bytes, ensure_style, ensure_styles)
 from . import live
 from .live import (Block, KINDS, LiveError, LiveTool, TEXT_KINDS, Work, any_block_value_schema,
-                   assemble, call_tool, list_blocks, live_tools, render_work, text_slots,
-                   strip_refs, texts_schema, fill_texts, unresolved_refs, validate_work,
-                   work_template, work_values)
+                   assemble, bookmark_name, call_tool, key_of_bookmark, list_blocks, live_tools,
+                   render_work, text_slots, strip_refs, texts_schema, fill_texts,
+                   unresolved_refs, validate_work, work_template, work_values)
 from .sample import (HeadingLook, SampleError, StyleProfile, apply_heading_numbering,
                      apply_style, document_from_sample, outline_from_sample,
                      style_from_sample)
@@ -78,4 +82,5 @@ __all__ = [
     "validate_work", "unresolved_refs", "strip_refs",
     "live_tools", "call_tool", "list_blocks", "any_block_value_schema",
     "text_slots", "texts_schema", "fill_texts",
+    "bookmark_name", "key_of_bookmark",
 ]

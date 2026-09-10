@@ -38,6 +38,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field, replace as _replace
 
+from . import docx_ops as ops
 from .markdown import REF_RE
 from .model import (Blocks, Code, Diagram, Formula, HokokuError, Image, Markdown, Problem,
                     RenderResult, Table, Text, Toc)
@@ -210,6 +211,75 @@ def check_key(key) -> str:
                                    "латиницей, например b-07 или alg1; название блока "
                                    "живёт отдельно, в метке")
     return key
+
+
+# Приставка имени закладки блока. Своя, чтобы закладки блоков не путались с закладками
+# подписей (`_Ref_…`), которые рендер ставит вокруг номеров рисунков и таблиц.
+BOOKMARK_PREFIX = "blk"
+
+# Знак, с которого начинается escape в имени закладки (см. `bookmark_name`). Латинская
+# буква, а не подчёркивание или процент: имя обязано состоять из букв и цифр целиком.
+BOOKMARK_ESC = "X"
+
+
+def bookmark_name(key) -> str:
+    """Ключ блока → имя закладки Word. Обратимо: ключ возвращает `key_of_bookmark`.
+
+    Форма: `blk`, затем ключ, в котором латинские буквы и цифры стоят как есть, а
+    каждый прочий знак (и сама буква `X`) записан как `X` плюс два шестнадцатеричных
+    знака заглавными — по паре на каждый байт UTF-8. Одиночной `X` в имени не бывает,
+    поэтому разбор однозначен. `b-01` → `blkbX2D01`, `X` → `blkX58`.
+
+    Имя выходит из букв и цифр и начинается с буквы — и это не вкусовщина, а два
+    ограничения подряд. Имя закладки Word состоит из букв, цифр и подчёркиваний и
+    начинается с буквы, а ключ блока — короткий адрес вида `b-01`, где дефис обычен;
+    имя без кодирования Word выбросил бы вместе с закладкой. Дальше закладка едет в
+    PDF именованным назначением, а туда имя попадает не буква в букву: всё, кроме букв
+    и цифр, заменяется кодом знака, и `_` из имени превратился бы в `5F`. Имя из одних
+    букв и цифр переживает обе поездки без изменений, поэтому на превью назначение
+    зовут ровно тем именем, которое дала эта функция.
+
+    Длина имени закладки в Word — до 40 знаков; на ключ остаётся 37 знаков после
+    кодирования. Более длинный ключ имя всё равно получает: потерять закладку значит
+    потерять блок на превью, а документ от длинного имени не портится — обрезать его
+    Word стал бы только при собственном сохранении.
+    """
+    out = [BOOKMARK_PREFIX]
+    for ch in norm_key(str(key)):
+        if ch.isascii() and ch.isalnum() and ch != BOOKMARK_ESC:
+            out.append(ch)
+        else:
+            out.extend(BOOKMARK_ESC + "%02X" % b for b in ch.encode("utf-8"))
+    return "".join(out)
+
+
+def key_of_bookmark(name) -> str | None:
+    """Имя закладки (или именованного назначения PDF) → ключ блока.
+
+    → None, если имя не наше или испорчено: в списке назначений PDF лежат и чужие
+    имена — закладки подписей, оглавление, ссылки внутри документа.
+    """
+    if not isinstance(name, str) or not name.startswith(BOOKMARK_PREFIX):
+        return None
+    body, raw, i = name[len(BOOKMARK_PREFIX):], bytearray(), 0
+    while i < len(body):
+        ch = body[i]
+        if ch == BOOKMARK_ESC:
+            pair = body[i + 1:i + 3]
+            if len(pair) != 2 or any(c not in "0123456789abcdefABCDEF" for c in pair):
+                return None
+            raw.append(int(pair, 16))
+            i += 3
+        elif ch.isascii() and ch.isalnum():
+            raw.append(ord(ch))
+            i += 1
+        else:
+            return None
+    try:
+        key = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    return norm_key(key) or None
 
 
 def new_key(work: Work, *, prefix: str = "b") -> str:
@@ -467,13 +537,19 @@ def _document(work: Work, *, profile, page, body, page_numbers):
     if profile is not None:
         apply_style(doc, profile)
     seen = set()
-    for b in work.blocks:
+    for n, b in enumerate(work.blocks):
         key = norm_key(b.key)
         if key in seen:
             raise LiveError("duplicate_key", f"ключ {key!r} в списке дважды: собрать такой "
                                              "список нельзя, второй блок затрёт первый")
         seen.add(key)
-        doc.add_paragraph("{{" + key + "}}")
+        para = doc.add_paragraph("{{" + key + "}}")
+        # Закладка вокруг блока. Она едет дальше сама: сборка в PDF выгружает закладки
+        # именованными назначениями, и превью по ним знает, где на странице начинается
+        # каждый блок, — замечание человека адресуется прямо с вёрстки, а не по списку.
+        # Читателю документа закладка не мешает: ни Word, ни LibreOffice её не рисуют,
+        # поэтому второй сборки «для превью» не нужно — файл один и тот же.
+        ops.mark_range(para._p, bookmark_name(key), ops.RANGE_BOOKMARK_ID + n)
     return doc
 
 

@@ -12,6 +12,12 @@
  * потом смотреть на блоки, и только потом — на вёрстку. Вёрстки до сборки не
  * существует, поэтому и вкладки с ней до неё нет.
  *
+ * **Блок выбирают на вёрстке, а список — оглавление к ней.** Собранная
+ * страница показывает блоки там, где они на самом деле стоят, и замечание
+ * пишется прямо по ним (`PdfBlocks`); список слева ведёт к блоку и показывает
+ * то, чего в вёрстке не видно, — черновики и заготовки, пропущенные сборкой.
+ * Выбранный блок у них общий, поэтому он и живёт здесь, а не в каждом своим.
+ *
  *     Три вещи, которые здесь неочевидны
  *     ----------------------------------
  *
@@ -56,7 +62,6 @@ import {
   useProject,
 } from '@/features/projects/data'
 import { useDefaultEndpoint, useProviders } from '@/features/reports/data'
-import { PdfPreview } from '@/features/reports/PdfPreview'
 import type { BuildState } from '@/features/reports/useBuild'
 import { ModelPicker } from '@/features/reports/runControls'
 
@@ -64,6 +69,7 @@ import { BlockList, type ReworkRequest } from './BlockList'
 import { BlockVersions } from './BlockVersions'
 import { ConditionStep } from './ConditionStep'
 import { ContextFiles } from './ContextFiles'
+import { PdfBlocks } from './PdfBlocks'
 import { StageStrip } from './StageStrip'
 import { WishesBox } from './WishesBox'
 import {
@@ -132,6 +138,16 @@ export function KadaiWorkPage() {
   // вёрстку по колонке в четверть страницы нельзя: поля и переносы — это как
   // раз то, что в узком столбце не видно.
   const [развёрнуто, setРазвёрнуто] = useState(false)
+  // Выбранный блок один на весь экран: карточка списка и область на странице
+  // вёрстки — два вида одного и того же выбора, и своё «выбрано» у каждого
+  // разъехалось бы на первом же клике. Отсюда же счётчик просьб прокрутить
+  // вёрстку: клик по карточке ведёт к блоку на странице, а не только красит её.
+  const [выбран, setВыбран] = useState<string | null>(null)
+  const [к_блоку, setКБлоку] = useState(0)
+  // Какие блоки нашлись в собранной вёрстке. У них форма замечания стоит под
+  // страницей, а не в карточке; у остальных (работа ещё не собиралась,
+  // заготовку пропустили) — по-прежнему в карточке.
+  const [в_вёрстке, setВВёрстке] = useState<ReadonlySet<string>>(() => new Set())
   const пресет = endpoint ?? запомненный(runId) ?? умолчание
 
   const run = useKadaiRun(projectId, пресет, runId)
@@ -216,6 +232,13 @@ export function KadaiWorkPage() {
     run.rework({ block, kind, note })
   }
 
+  // Выбор в списке ведёт вёрстку к блоку; выбор на странице только красит
+  // карточку (страница уже там, где на неё смотрят).
+  function выбрать_в_списке(ключ: string | null) {
+    setВыбран(ключ)
+    if (ключ) setКБлоку((было) => было + 1)
+  }
+
   // «Начать заново»: сброс стадии ничего не стоит и модель не зовёт, а вот
   // прогон после него — обычное платное задание. Оба шага делаются одним
   // нажатием намеренно: разорванные, они оставили бы работу в состоянии
@@ -234,7 +257,7 @@ export function KadaiWorkPage() {
     artifacts: { docx: собрано.docx, pdf: собрано.pdf },
     pdfUrl: собрано.pdf ? artifactUrl(projectId, собрано.pdf) : null,
     // Просмотрщику нужен тот же адрес с `?inline=1`: без него служба отдаёт
-    // файл вложением, и `<embed>` не рисует его, а скачивает (`PdfPreview`).
+    // файл вложением, и браузер его скачивает вместо показа (`PdfBlocks`).
     pdfInlineUrl: собрано.pdf ? artifactUrl(projectId, собрано.pdf, { inline: true }) : null,
     docxUrl: собрано.docx ? artifactUrl(projectId, собрано.docx) : null,
     error: run.error,
@@ -486,6 +509,9 @@ export function KadaiWorkPage() {
             blocks={blocks.data}
             loading={blocks.isPending}
             disabled={run.running}
+            selected={выбран}
+            onSelect={выбрать_в_списке}
+            pickable={в_вёрстке}
             onRework={замечание}
           />
         </div>
@@ -516,9 +542,16 @@ export function KadaiWorkPage() {
                 развёрнуто ? 'min-h-[85vh]' : 'min-h-[75vh]',
               )}
             >
-              <PdfPreview
+              <PdfBlocks
                 build={build}
                 canBuild={!!пресет && !!условие && confirmed}
+                blocks={blocks.data}
+                selected={выбран}
+                scrollAt={к_блоку}
+                onSelect={setВыбран}
+                onPickable={setВВёрстке}
+                onRework={замечание}
+                disabled={run.running}
                 extra={
                   <Button
                     variant="ghost"
