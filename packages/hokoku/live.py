@@ -77,6 +77,16 @@ PREVIEW_CHARS = 120
 # проекта), от которой зависит, можно ли его переписывать.
 DRAFT_MARK = "черновик:"
 
+# Заготовка раздела, который заполняет **инструмент**, а не проход текста, несёт
+# в самой пометке вид ожидаемого содержимого: «черновик diagram: схема
+# алгоритма». Без него заготовка схемы неотличима от места под текст, и проход
+# текста заливает её прозой: раздел выглядит написанным, а схемы в работе нет,
+# и обнаруживает это человек в готовом отчёте. Вид стоит строкой в значении по
+# той же причине, что и сама пометка (см. выше): отдельное поле пришлось бы
+# перекладывать через запись, `wire` и сборку, и первый же забытый
+# перекладыватель вернул бы прозу вместо схемы.
+_DRAFT_RE = re.compile(r"\Aчерновик(?:[ \t]+([a-z_]+))?:[ \t]*", re.I)
+
 _HEADING_RE = re.compile(r"\A(#{1,6})[ \t]+(\S.*)\Z")
 
 # Класс значения → вид. Таблица одна на проект: `validate._TYPE_OF` уже связывает
@@ -196,7 +206,9 @@ def check_key(key) -> str:
         raise LiveError("bad_key", "ключ блока пустой")
     if parse_tag("{{" + key + "}}") != (key, key):
         raise LiveError("bad_key", f"ключ {key!r} нельзя поставить тегом: в нём пробел "
-                                   "или один из знаков «{}:|#/»")
+                                   "или один из знаков «{}:|#/». Ключ — короткий адрес "
+                                   "латиницей, например b-07 или alg1; название блока "
+                                   "живёт отдельно, в метке")
     return key
 
 
@@ -282,7 +294,9 @@ def insert(work: Work, b: Block, *, after: str | None = None,
     if after is not None and before is not None:
         raise LiveError("bad_place", "место задают одним из «after» и «before», а не обоими")
     if work.get(b.key) is not None:
-        raise LiveError("duplicate_key", f"блок {b.key!r} в списке уже есть")
+        raise LiveError("duplicate_key",
+                        f"блок {b.key!r} в списке уже есть: переписать его — "
+                        "replace_block, а новый блок вставляется и без ключа")
     if after is not None:
         at = work.index(after) + 1
     elif before is not None:
@@ -632,6 +646,10 @@ _BEFORE = {"type": ["string", "null"],
            "description": "ключ блока, перед которым вставить; задают одно из after и before"}
 _LABEL = {"type": ["string", "null"],
           "description": "короткая метка для человека, например «Постановка задачи»"}
+_KEY = {"type": ["string", "null"],
+        "description": "ключ нового блока — короткий адрес латиницей без пробелов "
+                       "(b-07, alg1); null — служба выдаст сама и назовёт в ответе. "
+                       "Название блока сюда не пишут, для него есть label"}
 
 
 def live_tools() -> list[LiveTool]:
@@ -661,8 +679,12 @@ def live_tools() -> list[LiveTool]:
             "принимаются: они сдвигаются при первой же вставке выше. Значение — объект "
             "с полем type (text, markdown, code, image, table, diagram, formula, toc, "
             "page_break); заголовок раздела — это markdown из одной строки «## Название». "
+            "Ключ не обязателен: не назовёшь — служба выдаст его сама и напишет в "
+            "ответе. Ключ — это короткий адрес латиницей без пробелов (b-07), а "
+            "название блока идёт в label; названный ключ, который адресом быть не "
+            "может, служба заменит своим и скажет об этом. "
             "Возвращает ключ созданного блока — им и адресуй то, что сделал."),
-            schema=_obj({"after": _AFTER, "before": _BEFORE, "value": value,
+            schema=_obj({"key": _KEY, "after": _AFTER, "before": _BEFORE, "value": value,
                          "label": _LABEL}, required=["value"])),
         LiveTool(name="replace_block", description=(
             "Заменить значение блока, не трогая его место в работе. Это «переделай этот "
@@ -742,9 +764,44 @@ def _value_arg(args: dict, resolve_artifact):
 
 def _t_insert(work: Work, args: dict, resolve_artifact):
     value = _value_arg(args, resolve_artifact)
-    b = block(new_key(work), value, label=args.get("label") or "")
+    key, label, note = _insert_key(work, args.get("key"), args.get("label") or "")
+    b = block(key, value, label=label)
     out = insert(work, b, **_place(args))
-    return out, {"key": b.key, "kind": b.kind, "blocks": len(out)}
+    answer = {"key": b.key, "kind": b.kind, "blocks": len(out)}
+    return out, ({**answer, "note": note} if note else answer)
+
+
+def _insert_key(work: Work, raw, label: str) -> tuple[str, str, str]:
+    """Ключ нового блока: названный, если он годен тегом, иначе свой.
+
+    → `(ключ, метка, что сказать в ответе)`.
+
+    Отказать за форму ключа при вставке нельзя, и это решение, а не послабление.
+    Ключ вставляющему не нужен вовсе — он приходит ему в ответе, — а вставка,
+    отклонённая из-за пробела в придуманном имени, стоит хода и часто стоит
+    самого блока: написанное бросают и идут дальше, а раздел работы остаётся
+    пустым. Поэтому негодный ключ заменяется своим, и в ответе прямо сказано,
+    под каким адресом блок встал: молча подменённый адрес хуже отказа — по нему
+    потом ставят `{ref:}`.
+
+    Негодный ключ — это почти всегда название («Схема 1: сортировка»). Если
+    метки не дали, оно ею и становится: выбрасывать единственное, чем человек
+    узнаёт блок, ради формы адреса незачем.
+
+    Годный, но уже занятый ключ здесь не разбирается: «блок с таким адресом
+    есть» — это или опечатка, или попытка переписать чужой блок вставкой, и
+    отвечает на неё `insert` отказом с именем нужного инструмента.
+    """
+    key = str(raw or "").strip()
+    if not key:
+        свой = new_key(work)
+        return свой, label, f"ключ выдан службой: {свой} — им и адресуй этот блок"
+    try:
+        return check_key(key), label, ""
+    except LiveError as exc:
+        свой = new_key(work)
+        return свой, (label or key), (f"{exc}. Блок вставлен под ключом {свой} — "
+                                      "им и адресуй его")
 
 
 def _t_replace(work: Work, args: dict, resolve_artifact):
@@ -823,6 +880,11 @@ def text_slots(work: Work) -> list[dict]:
     с пометки «черновик:». Пустым буквально его оставить нельзя: пустое значение `render`
     считает ошибкой, и список не собрался бы даже для показа человеку.
 
+    Заготовка, ждущая инструмента («черновик diagram: …»), местом под текст **не**
+    считается: схему прозой не напишешь, а написанная поверх неё проза выглядит
+    готовым разделом, и человек узнаёт о пропаже схемы из готового отчёта.
+    Такие заготовки отдаёт `tool_slots`.
+
     `before` и `after` — соседи одной строкой: это и есть «видя соседей», в схеме ответа
     они уезжают в `description` каждого ключа.
     """
@@ -833,8 +895,32 @@ def text_slots(work: Work) -> list[dict]:
         before = work.blocks[i - 1] if i else None
         after = work.blocks[i + 1] if i + 1 < len(work.blocks) else None
         out.append({"key": b.key, "kind": b.kind, "label": b.label,
-                    "hint": _draft_hint(b),
+                    "hint": draft_hint(b.text),
                     "before": _describe(before), "after": _describe(after)})
+    return out
+
+
+def tool_slots(work: Work) -> list[dict]:
+    """Заготовки, которых ждёт инструмент. → `[{key, kind, label, hint, section}]`.
+
+    То же место в списке, что и `text_slots`, но с другой стороны черты: здесь
+    разделы, где должны стоять схема, код, таблица, картинка или формула, а
+    стоит пока черновик с названным видом. Спрашивают об этом после петли: что
+    осталось заготовкой, то либо доделывается ещё одним заданием, либо честно
+    называется человеку — «схемы в разделе нет».
+
+    `section` — заголовок раздела, в котором заготовка стоит: человеку она
+    называется разделом, а не ключом блока.
+    """
+    out, section = [], ""
+    for b in work.blocks:
+        if b.kind == "heading":
+            section = b.text.lstrip("# ").strip()
+            continue
+        kind = draft_kind(b.text) if b.kind in TEXT_KINDS else ""
+        if kind:
+            out.append({"key": b.key, "kind": kind, "label": b.label,
+                        "hint": draft_hint(b.text), "section": section})
     return out
 
 
@@ -842,13 +928,43 @@ def _is_slot(b: Block) -> bool:
     if b.kind not in TEXT_KINDS:
         return False
     text = b.text.strip()
-    return not text or text.lower().startswith(DRAFT_MARK)
+    return (not text or is_draft_text(text)) and not draft_kind(text)
 
 
-def _draft_hint(b: Block) -> str:
+def draft_mark(kind: str = "") -> str:
+    """Пометка черновика: «черновик:» под текст, «черновик diagram:» под инструмент."""
+    kind = str(kind or "").strip().lower()
+    # Заголовок и текст пометки вида не получают: заголовок ставит скелет, а
+    # текст пишет проход текста — обоим вид в пометке сказал бы, что раздел ждёт
+    # инструмента, которого для них нет.
+    return (DRAFT_MARK if not kind or kind in TEXT_KINDS or kind == "heading"
+            else f"черновик {kind}:")
+
+
+def is_draft_text(text) -> bool:
+    """Не написан ли ещё блок: пусто или пометка черновика — с видом или без."""
+    text = str(text or "").strip()
+    return not text or _DRAFT_RE.match(text) is not None
+
+
+def draft_kind(text) -> str:
+    """Вид содержимого, которого ждёт заготовка («diagram»), или пусто для текста.
+
+    Не догадка по словам подсказки, а то, что записал автор скелета
+    (`draft(hint, kind=…)`). Слово, которого нет среди видов, видом не
+    считается: приняв за вид опечатку, мы вынули бы раздел из прохода текста, и
+    он остался бы черновиком в готовой работе.
+    """
+    m = _DRAFT_RE.match(str(text or "").strip())
+    kind = (m.group(1) or "").lower() if m else ""
+    return kind if kind in KINDS and kind not in TEXT_KINDS and kind != "heading" else ""
+
+
+def draft_hint(text) -> str:
     """Что автор скелета написал в черновике: «черновик: сравнить два способа»."""
-    text = b.text.strip()
-    return text[len(DRAFT_MARK):].strip() if text.lower().startswith(DRAFT_MARK) else ""
+    text = str(text or "").strip()
+    m = _DRAFT_RE.match(text)
+    return text[m.end():].strip() if m else ""
 
 
 def _describe(b: Block | None) -> str:
@@ -861,13 +977,21 @@ def _describe(b: Block | None) -> str:
     return f"{what}: {preview}" if preview else what
 
 
-def draft(hint: str = "", *, markdown: bool = True):
-    """Место под связный текст: черновик с пометкой, что в нём должно быть.
+def draft(hint: str = "", *, kind: str = "", markdown: bool = True):
+    """Заготовка раздела: черновик с пометкой, что в нём должно быть.
 
     Пометка не украшение — она едет в промпт текстового прохода (`text_slots`→`hint`),
     и без неё модель, пишущая весь текст разом, знает про блок только имя соседей.
+
+    `kind` — вид содержимого, если раздел заполняет инструмент, а не текст
+    (`diagram`, `code`, `table`, `image`, `formula`). Он встаёт в саму пометку, и
+    по нему такая заготовка выпадает из мест под текст: проза, написанная поверх
+    места под схему, выглядит готовым разделом, а схемы в работе нет.
     """
-    text = DRAFT_MARK + ((" " + hint.strip()) if hint.strip() else " написать")
+    mark = draft_mark(kind)
+    hint = str(hint).strip() or ("написать" if mark == DRAFT_MARK
+                                 else f"поставить сюда: {kind}")
+    text = f"{mark} {hint}"
     return Markdown(text) if markdown else Text(text)
 
 
@@ -1065,9 +1189,10 @@ __all__ = [
     "Block", "Work", "LiveTool", "LiveError", "KINDS", "TEXT_KINDS", "DRAFT_MARK",
     "PREVIEW_CHARS", "TOOL_NAMES",
     "block", "check_key", "new_key", "heading", "heading_level", "kind_of", "draft",
+    "draft_mark", "draft_kind", "draft_hint", "is_draft_text",
     "insert", "replace", "remove", "move", "rename", "outline",
     "work_values", "work_template", "render_work", "assemble",
     "validate_work", "unresolved_refs", "strip_refs",
     "live_tools", "call_tool", "list_blocks", "any_block_value_schema",
-    "text_slots", "texts_schema", "fill_texts",
+    "text_slots", "tool_slots", "texts_schema", "fill_texts",
 ]

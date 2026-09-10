@@ -8,6 +8,7 @@ export {
   errorNext,
   errorDetails,
   errorField,
+  errorSaid,
   NETWORK,
   UNKNOWN,
 } from './errors'

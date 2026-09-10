@@ -47,7 +47,7 @@ import kyotsu
 import llm
 
 from . import fill as fill_mod, live as live_mod, prompt as prompt_mod
-from .errors import OrchestratorError
+from .errors import OrchestratorError, trouble_words
 
 # Схема сочинённого строения работы. Полей ровно столько, сколько нужно, чтобы
 # из ответа собрались заготовки блоков: заголовок раздела, как он называется
@@ -193,7 +193,8 @@ def _ask_text(project, run, parts, *, endpoint, limit, meta, max_tokens, effort,
         error = exc
     out.text = "".join(pieces)
     if error is not None:
-        out.problems.append(fill_mod._problem("stream_failed", None, str(error)))
+        out.problems.append(fill_mod._problem("stream_failed", None,
+                                              trouble_words(error)))
     out.ok = bool(out.text.strip()) and error is None
     if not out.ok and error is None:
         out.problems.append(fill_mod._problem("model_failed", None,
@@ -289,6 +290,11 @@ def blocks_of(sections, *, taken=()) -> hokoku.Work:
     пометкой, потому что пустое значение движок отчётов считает ошибкой. Оба
     правила принадлежат движку, и знать их здесь вторично значило бы разойтись
     с ним молча.
+
+    Заготовка раздела, который заполняет инструмент (схема, код, таблица,
+    картинка, формула), несёт вид в самой пометке — `draft(…, kind=type)`. По
+    нему проход текста такую заготовку не берёт, а стадия решения знает, чего в
+    работе ещё нет.
 
     Ключи блоков придумывает служба (`hokoku.live.new_key`), а не сценарий и не
     модель: ключ — адрес, и два блока с одним адресом означают потерянный блок.
@@ -459,16 +465,18 @@ def _drop_slot(work: hokoku.Work, заголовок: str, хвост: str):
 
 
 def _slot(kind: str, hint: str):
-    """Место под содержимое раздела: черновик для текста, пусто-значение для прочих.
+    """Место под содержимое раздела: черновик, названный видом того, чего он ждёт.
 
     Для текста это `hokoku.live.draft` — блок, который проход текста узнаёт по
     пометке. Для таблицы, кода и схемы места под содержимое не бывает вовсе:
     пустая таблица — битое значение, и завести её значило бы сделать работу
-    полной ошибок ещё до первого хода. Поэтому там встаёт черновик текстом: его
-    заменит петля, вставив на это место настоящую таблицу или схему.
+    полной ошибок ещё до первого хода. Поэтому там тоже встаёт черновик, но
+    **с видом в пометке** («черновик diagram: …»): его заменит петля, вставив
+    настоящую схему, а проход текста такую заготовку не берёт вовсе. Иначе
+    место под схему заполняется прозой, раздел выглядит готовым, и пропажу
+    схемы человек находит в собранном отчёте.
     """
-    return hokoku.live.draft(hint if kind in hokoku.live.TEXT_KINDS
-                             else f"{hint} (здесь будет {kind})")
+    return hokoku.live.draft(hint, kind=kind)
 
 
 def _structure_request(task: str, default) -> str:
@@ -593,13 +601,48 @@ def _code_notice(node, grammar: str, where: str | None) -> "kyotsu.Notice":
 
 # ── сборка дверей для сценария ───────────────────────────────────────────────
 
-def kadai_services(project, *, endpoint: str, **defaults):
+class Остановлено(OrchestratorError):
+    """Работу остановил человек посреди стадии.
+
+    Своим типом, а не общей бедой, ровно затем, чтобы остановку не приняли за
+    поломку. Стадия, которую прервали, ничего не сделала неправильно: у неё
+    просто отняли модель на середине, и объявить её `споткнувшейся` значило бы
+    навсегда закрыть работу, за которую уже заплачено (`kadai.stages.stumble`:
+    `failed` — конечное состояние). Ловит её тот, кто стадии заводит
+    (`orchestrator.kadai`), и возвращает стадию в «ждёт», а работу — в
+    «остановлена».
+
+    `stopped` — признак для тех, кто ловит `Exception` целиком и не имеет права
+    импортировать этот модуль (`kadai` ловит отказ двери при починке ссылки):
+    по нему остановку пропускают наверх, а не глотают вместе с чужими бедами.
+    """
+
+    stopped = True
+
+
+def kadai_services(project, *, endpoint: str, cancel=None, on_step=None, **defaults):
     """Все двери сценария одним объектом: `kadai.seams.Services`.
 
     Двери приходят функциями от одного проекта и одного endpoint'а — сценарию
     не из чего собрать второй набор и нечем узнать, откуда взялся первый. Это и
     есть весь разрез: `kadai` держит порядок стадий, служба — состояние, модель
     и файлы.
+
+    `cancel()` — «человек просил остановиться». Уезжает в каждую дверь, которая
+    зовёт модель (`ask`, `solve`, `write_texts`), потому что стадия бывает
+    длиной в десять минут, а между стадиями остановку и без того спрашивают.
+    Слой моделей спрашивает его перед каждым куском потока и перед каждым ходом
+    петли, то есть отмена доходит за секунду, а не за стадию. Сразу после
+    вызова дверь спрашивает его ещё раз и бросает `Остановлено`: вернуть
+    оборванный ответ значило бы отдать сценарию «модель не ответила» — а он
+    честно объявит стадию споткнувшейся, и работа окажется `failed` из-за
+    нажатой человеком кнопки.
+
+    `on_step(ход)` — рассказ о ходе прогона наружу: словарь
+    `{tool, ok, note, n, total}` (`tools.ToolBox`). Он уезжает в петлю решения и
+    ложится дверью `extra["on_step"]`, откуда его зовёт сам сценарий на ходах
+    без инструментов. Одна дверь на оба случая намеренно: показывает их человеку
+    одна строка, и второй формой она разошлась бы с первой.
 
     `defaults` — умолчания, которые сценарий не называет сам (например
     `max_steps`): они дописываются в вызов дверей, и менять их сценарию не
@@ -612,8 +655,23 @@ def kadai_services(project, *, endpoint: str, **defaults):
     """
     from kadai.seams import Services
 
+    def остановлены(что: str) -> None:
+        """Отказ по просьбе человека. Зовётся до и после каждого вызова модели.
+
+        До — чтобы не начинать оплаченный вызов, который всё равно оборвут;
+        после — потому что слой моделей отмену не бросает, а возвращает обычным
+        результатом с пустым ответом, и отличить её от «модель промолчала»
+        снаружи нечем.
+        """
+        if cancel is not None and cancel():
+            raise Остановлено(f"остановлено человеком: {что}")
+
     def ask_door(*args, **kwargs):
-        return ask(project, *args, endpoint=kwargs.pop("endpoint", endpoint), **kwargs)
+        остановлены("обращение к модели")
+        kwargs.setdefault("cancel", cancel)
+        out = ask(project, *args, endpoint=kwargs.pop("endpoint", endpoint), **kwargs)
+        остановлены("обращение к модели")
+        return out
 
     def template_door(*args, **kwargs):
         # `before` подставляется дверью, а не сценарием: список блоков —
@@ -627,20 +685,37 @@ def kadai_services(project, *, endpoint: str, **defaults):
     def solve_door(*args, **kwargs):
         for name, value in defaults.items():
             kwargs.setdefault(name, value)
-        return live_mod.solve(project, *args, endpoint=kwargs.pop("endpoint", endpoint),
-                              **kwargs)
+        kwargs.setdefault("cancel", cancel)
+        kwargs.setdefault("on_step", on_step)
+        остановлены("решение задачи")
+        out = live_mod.solve(project, *args, endpoint=kwargs.pop("endpoint", endpoint),
+                             **kwargs)
+        # Вставленное петлёй уже записано версиями списка в момент вставки —
+        # отказ здесь ничего из сделанного не отменяет.
+        остановлены("решение задачи")
+        return out
 
     def texts_door(**kwargs):
-        return live_mod.write_texts(project, endpoint=kwargs.pop("endpoint", endpoint),
-                                    **kwargs)
+        kwargs.setdefault("cancel", cancel)
+        остановлены("проход текста")
+        out = live_mod.write_texts(project, endpoint=kwargs.pop("endpoint", endpoint),
+                                   **kwargs)
+        остановлены("проход текста")
+        return out
 
     # `check_code` приходит функцией как есть: ни проекта, ни endpoint'а ей не
     # нужно — она разбирает текст tree-sitter'ом и ничего не пишет. Обёртка ради
     # единообразия была бы обёрткой, которая ничего не делает.
+    extra = {"write_texts": texts_door, "check_code": check_code}
+    if on_step is not None:
+        # Дверь доклада о ходе кладётся, только когда её дали: сценарий
+        # спрашивает её по имени и молча обходится без неё. Обязательной ей быть
+        # нельзя — командная строка никому не докладывает.
+        extra["on_step"] = on_step
     return Services(project=project, ask=ask_door, make_template=template_door,
-                    solve=solve_door,
-                    extra={"write_texts": texts_door, "check_code": check_code})
+                    solve=solve_door, extra=extra)
 
 
 __all__ = ["Answer", "STRUCTURE_SCHEMA", "ask", "make_template", "blocks_of",
-           "check_code", "CODE_GRAMMARS", "HUMAN_SOURCES", "kadai_services"]
+           "check_code", "CODE_GRAMMARS", "HUMAN_SOURCES", "kadai_services",
+           "Остановлено"]

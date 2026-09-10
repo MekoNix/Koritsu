@@ -31,6 +31,12 @@
  * `сборка` кладёт DOCX и PDF артефактами; идентификаторы их приезжают в снимке
  * полем `made`.
  *
+ * **Действие на экране всегда одно.** Прогон идёт — «Остановить»; работа ждёт
+ * слова человека — «Продолжить» в плашке ожидания; работа встала — «Начать
+ * заново» в строке беды. Две кнопки с одинаковой подписью в разных углах — это
+ * не выбор, а вопрос «какая из них та», и отвечать на него человек будет
+ * нажатием наугад, стоящим цены задания.
+ *
  * Тостов здесь нет: провал задания тостит оболочка по коду из уведомления, а
  * беда остаётся на экране строкой.
  */
@@ -38,9 +44,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 
-import { errorText, keys } from '@/api'
+import { errorSaid, keys } from '@/api'
 import { useDocumentCrumb } from '@/app/shell/breadcrumbs'
 import { useT } from '@/i18n'
+import { cn } from '@/lib/cn'
 import { Button, ErrorState, Icon, Segmented, SkeletonLines } from '@/ui'
 import {
   artifactUrl,
@@ -66,7 +73,6 @@ import {
   useKadaiStatus,
   useKadaiWishes,
   useRestartKadai,
-  useSetCondition,
   useSetKadaiWishes,
   useStageNames,
 } from './data'
@@ -98,14 +104,13 @@ export function KadaiWorkPage() {
   const status = useKadaiStatus(развели ? projectId : undefined, runId)
   const stageNames = useStageNames()
   const blocks = useBlocks(развели ? projectId : undefined, runId)
-  // Опись папки контекста решения, а не всей работы: условие лежит в ней, и
-  // искать его среди общих файлов работы значило бы принять за условие чужой
-  // файл.
+  // Опись папки контекста решения, а не всей работы: в ней лежит условие и всё,
+  // что человек приложил к этой задаче, и из неё же условие выбирают, пока оно
+  // не названо.
   const свои = useContextMaterials(projectId, runId)
   const materials = useMaterials(projectId)
   const ждущие = usePendingMaterials(projectId)
   const providers = useProviders()
-  const setCondition = useSetCondition()
   const wishes = useKadaiWishes(projectId, runId)
   const saveWishes = useSetKadaiWishes()
   const restart = useRestartKadai(projectId, runId)
@@ -122,6 +127,11 @@ export function KadaiWorkPage() {
   const умолчание = useDefaultEndpoint()
   const [confirmed, setConfirmed] = useState(false)
   const [вкладка, setВкладка] = useState<'preview' | 'versions'>('preview')
+  // Развёрнутое превью: вёрстка во всю ширину экрана, список блоков — под ней.
+  // Правая колонка узка по делу (слева работают, справа сверяют), но сверять
+  // вёрстку по колонке в четверть страницы нельзя: поля и переносы — это как
+  // раз то, что в узком столбце не видно.
+  const [развёрнуто, setРазвёрнуто] = useState(false)
   const пресет = endpoint ?? запомненный(runId) ?? умолчание
 
   const run = useKadaiRun(projectId, пресет, runId)
@@ -130,15 +140,21 @@ export function KadaiWorkPage() {
     [stageNames.data, status.data?.stages, run.stageEvents],
   )
 
-  // Материал-условие: назван проектом (снимок) или, пока не назван, первый в
-  // описи — его же и назовёт кнопка «всё верно».
+  // Материал-условие — ровно тот, который назван условием у службы
+  // (`Project.condition`): снимок знает его и до первого прогона, и сразу после
+  // правки. Первый файл папки за условие не сходит — «первым» там оказывается
+  // то скан, то методичка, то прежняя версия условия, и человек платил бы за
+  // решение задачи, которую не выбирал. Не названо — шаг условия предложит
+  // выбрать файл из папки.
+  //
+  // Ищется он в папке решения, а потом в описи работы: условием бывает назван и
+  // общий файл работы, и в папке решения его тогда нет.
   const ид_условия = status.data?.condition?.material
+  const прежние_условия = status.data?.condition_past
   const условие = useMemo(() => {
     const папка = свои.data ?? []
     const опись = materials.data ?? []
-    return (
-      папка.find((m) => m.id === ид_условия) ?? опись.find((m) => m.id === ид_условия) ?? папка[0]
-    )
+    return папка.find((m) => m.id === ид_условия) ?? опись.find((m) => m.id === ид_условия)
   }, [свои.data, materials.data, ид_условия])
 
   // Работа, у которой уже есть стадии, условие переживает перезагрузку: спорить
@@ -182,22 +198,18 @@ export function KadaiWorkPage() {
   // (`POST …/kadai/restart`) — бесплатно и без модели.
   const встала = споткнулась || status.data?.state === 'failed'
 
+  // Условие к этой минуте уже названо: без него прогон не запускается вовсе
+  // (кнопка выключена, а сценарий отказал бы «условие задачи не приложено»).
+  // Называть его отсюда, за человека, экран не берётся — какой файл считать
+  // условием, решает он на своём шаге.
   function запустить(until: string | null) {
     if (!условие) return
-    const пуск = () =>
-      run.start({
-        until,
-        stages: stageNames.data ?? [],
-        wishes: wishes.data ?? ПУСТЫЕ_ПОЖЕЛАНИЯ,
-        first: !работа_заведена,
-      })
-    // Условие называется прямо перед прогоном, если проект ещё не знает своего:
-    // до этого прогон отказал бы «условие задачи не приложено».
-    if (ид_условия) {
-      пуск()
-      return
-    }
-    setCondition.mutate({ projectId, materialId: условие.id, runId }, { onSuccess: пуск })
+    run.start({
+      until,
+      stages: stageNames.data ?? [],
+      wishes: wishes.data ?? ПУСТЫЕ_ПОЖЕЛАНИЯ,
+      first: !работа_заведена,
+    })
   }
 
   function замечание({ block, kind, note }: ReworkRequest) {
@@ -252,7 +264,13 @@ export function KadaiWorkPage() {
       {stageNames.isPending || status.isPending ? (
         <SkeletonLines count={3} />
       ) : (
-        <StageStrip stages={стадии} running={run.running} note={run.note} />
+        <StageStrip
+          stages={стадии}
+          running={run.running}
+          note={run.note}
+          moves={run.moves}
+          hold={остановка?.stage ?? null}
+        />
       )}
 
       {/* Архив стадии «архив». Кнопка появляется только когда он есть: стадия
@@ -271,20 +289,42 @@ export function KadaiWorkPage() {
         </p>
       )}
 
+      {/* Работа ждёт человека. Плашка заметная и с одной крупной кнопкой
+          намеренно: сценарий останавливается там, где ошибка дороже всего
+          (понял ли он задание, то ли строение), и остановка эта неотличима от
+          «ничего не происходит», если про неё сказано мелкой строкой. Пока
+          работа ждёт, кнопки пуска в панели пресета нет вовсе: две одинаковые
+          кнопки «продолжить» на одном экране — это вопрос «а какая из них
+          та?», а не выбор. */}
       {остановка && (
-        <p className="flex flex-wrap items-center gap-s2 rounded-md border border-warn bg-warn-bg px-s3 py-s2 text-sm text-ink">
-          <Icon name="info" size={15} className="text-warn" />
-          {t('kadai.run.holdFor', { what: остановка.show })}
-          {остановка.note ? ` — ${остановка.note}` : ''}
-          <Button
-            variant="secondary"
-            size="sm"
-            className="ml-auto"
-            disabled={run.running || встала}
-            onClick={() => запустить(null)}
-          >
-            {t('kadai.run.continue')}
-          </Button>
+        <section className="flex flex-col gap-s2 rounded-md border border-warn bg-warn-bg p-s3">
+          <p className="flex items-center gap-s2 text-sm font-semibold text-ink-strong">
+            <Icon name="info" size={16} className="shrink-0 text-warn" />
+            {t('kadai.run.holdFor', { what: остановка.show })}
+          </p>
+          <p className="text-sm text-ink">{остановка.note || t('kadai.run.holdWhat')}</p>
+          <div className="flex flex-wrap items-center gap-s3">
+            <Button
+              variant="primary"
+              disabled={run.running || встала || !пресет || !условие}
+              loading={run.running}
+              onClick={() => запустить(null)}
+            >
+              {t('kadai.run.continue')}
+            </Button>
+            <span className="text-xs text-ink">{t('kadai.run.holdHint')}</span>
+          </div>
+        </section>
+      )}
+
+      {/* Прогон остановлен человеком. Не беда и не итог: работа стоит там, где
+          её застали, всё сделанное до этого хода лежит на томе, и следующий
+          прогон продолжит с той же стадии. Сказать это надо словами — иначе
+          замерший экран читается как поломка. */}
+      {run.stopped && !run.running && (
+        <p className="flex flex-wrap items-center gap-s2 rounded-md border border-line bg-surface-2 px-s3 py-s2 text-sm text-ink">
+          <Icon name="info" size={15} className="shrink-0 text-muted" />
+          {t('kadai.run.stopped')}
         </p>
       )}
 
@@ -293,6 +333,21 @@ export function KadaiWorkPage() {
           <p className="text-err">
             {run.error ?? заметка_споткнувшейся(стадии) ?? t('kadai.run.stumbled')}
           </p>
+          {/* Сырьё от службы — под раскрывашкой, а не строкой. Приезжает оно
+              редко и означает, что беду не успели назвать словами: `repr`
+              исключения, JSON поставщика, вывод чужой программы. Выбросить его
+              нельзя (в жалобе это единственная зацепка), а поставить на экран
+              строкой — значит занять место тем, с чем человеку нечего делать. */}
+          {run.errorRaw && (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-muted focus-visible:outline focus-visible:-outline-offset-2 focus-visible:outline-accent">
+                {t('kadai.run.details')}
+              </summary>
+              <pre className="mt-s2 max-h-[180px] overflow-auto whitespace-pre-wrap rounded-sm border border-line bg-surface-2 p-s2 font-mono text-ink">
+                {run.errorRaw}
+              </pre>
+            </details>
+          )}
           {встала && (
             <>
               <p className="text-xs text-ink">{t('kadai.run.restartHint')}</p>
@@ -308,18 +363,37 @@ export function KadaiWorkPage() {
                   {t('kadai.run.restart')}
                 </Button>
               </div>
-              {restart.isError && <p className="text-xs text-err">{errorText(restart.error)}</p>}
+              {/* `errorSaid`, а не `errorText`: сброс стадии отказывает тем же
+                  кодом, что и прогон, и причину («стадии такой нет», «работа
+                  ещё не заведена») служба пишет по-русски сама. */}
+              {restart.isError && (
+                <p className="text-xs text-err">{errorSaid(restart.error).text}</p>
+              )}
             </>
           )}
         </section>
       )}
 
-      <div className="grid min-h-0 gap-s4 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.85fr)]">
-        <div className="flex min-w-0 flex-col gap-s3">
+      {/* Две колонки: слева работают, справа сверяют. Разворот выключает
+          вторую колонку и ставит вёрстку первой во всю ширину — список блоков
+          уходит под неё. Порядком, а не отдельной страницей: работа со списком
+          и сверка вёрстки — это один и тот же разговор с одной работой, и
+          переход между ними не должен стоить перезагрузки экрана.
+
+          Узкий экран колонок не разводит вовсе (`xl:`), и там вёрстка стоит под
+          списком всегда: колонка в половину телефона — не превью. */}
+      <div
+        className={cn(
+          'grid min-h-0 gap-s4',
+          !развёрнуто && 'xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.9fr)]',
+        )}
+      >
+        <div className={cn('flex min-w-0 flex-col gap-s3', развёрнуто && 'order-2')}>
           <ConditionStep
             projectId={projectId}
             runId={runId}
             material={условие}
+            named={!!ид_условия}
             ocr={!!status.data?.condition?.ocr}
             confirmed={confirmed}
             onConfirm={() => setConfirmed(true)}
@@ -334,18 +408,41 @@ export function KadaiWorkPage() {
                 onChange={setEndpoint}
                 disabled={run.running}
               />
-              <Button
-                variant="primary"
-                size="sm"
-                className="ml-auto"
-                disabled={!confirmed || !условие || !пресет || встала}
-                loading={run.running}
-                onClick={() => запустить(null)}
-              >
-                {работа_заведена ? t('kadai.run.again') : t('kadai.run.start')}
-              </Button>
+              {/* Пока работа ждёт человека, крупная кнопка «Продолжить» стоит
+                  в плашке ожидания и она одна на экране: вторая, такая же, но
+                  здесь, — это не выбор, а загадка. */}
+              {!остановка && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="ml-auto"
+                  disabled={!confirmed || !условие || !пресет || встала}
+                  loading={run.running}
+                  onClick={() => запустить(null)}
+                >
+                  {работа_заведена ? t('kadai.run.again') : t('kadai.run.start')}
+                </Button>
+              )}
+              {/* Остановка — просьба, а не выключатель: ждущее задание служба
+                  снимает сразу, идущее останавливается на ближайшей проверке, и
+                  всё, что успело лечь на том, там и останется. */}
+              {run.running && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className={остановка ? 'ml-auto' : undefined}
+                  loading={run.stopping}
+                  onClick={run.stop}
+                >
+                  <Icon name="close" size={14} />
+                  {t('kadai.run.stop')}
+                </Button>
+              )}
             </div>
             {!confirmed && <p className="text-xs text-muted">{t('kadai.run.confirmFirst')}</p>}
+            {остановка && !run.running && (
+              <p className="text-xs text-warn">{t('kadai.run.holdAbove')}</p>
+            )}
             {run.running && currentStage(стадии) && (
               <p className="text-xs text-muted">
                 {t('kadai.run.now', { stage: currentStage(стадии) ?? '' })}
@@ -364,17 +461,27 @@ export function KadaiWorkPage() {
           />
 
           {/* Папка контекста этого решения и общие файлы работы с галочками.
-              В промпт уезжают файлы папки, условие и те общие файлы, с которых
-              галочку не сняли: файл соседней задачи сбивает модель так же, как
-              чужое условие, а методичка работы нужна каждой её задаче. */}
+              В промпт уезжают файлы папки, условие и те общие файлы работы,
+              которые к решению подключили: файл соседней задачи сбивает модель
+              так же, как чужое условие, и платит за это человек. Прежние
+              версии условия помечены и модели не показываются. */}
           <ContextFiles
             projectId={projectId}
             runId={runId}
             conditionId={ид_условия}
+            pastIds={прежние_условия}
             disabled={run.running}
           />
 
-          <h2 className="text-sm font-semibold text-ink-strong">{t('kadai.blocks.title')}</h2>
+          {/* Пояснение над списком, а не подсказкой по наведению: «блок» — это
+              слово продукта, и человек, впервые открывший решение, видит
+              двадцать карточек, про которые непонятно ни что это, ни что с
+              ними делать. Три строки отвечают ровно на три вопроса: что это,
+              кто это написал, что будет от нажатия. */}
+          <div className="flex flex-col gap-1">
+            <h2 className="text-sm font-semibold text-ink-strong">{t('kadai.blocks.title')}</h2>
+            <p className="text-xs text-muted">{t('kadai.blocks.about')}</p>
+          </div>
           <BlockList
             blocks={blocks.data}
             loading={blocks.isPending}
@@ -383,7 +490,7 @@ export function KadaiWorkPage() {
           />
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-col gap-s2">
+        <div className={cn('flex min-h-0 min-w-0 flex-col gap-s2', развёрнуто && 'order-1')}>
           {/* Превью «как будет в Word» появляется только после первой сборки.
               До неё показывать нечего: работа собирается стадией «Сборка», и
               пустая рамка с кнопкой выглядела как ожидание того, чего в проекте
@@ -399,8 +506,31 @@ export function KadaiWorkPage() {
             />
           )}
           {собиралась && вкладка === 'preview' ? (
-            <div className="min-h-[520px] overflow-hidden rounded-md border border-line">
-              <PdfPreview build={build} canBuild={!!пресет && !!условие && confirmed} />
+            // Высота — в долях экрана, а не в пикселях: страница A4 в рамке
+            // высотой в треть экрана показывает не вёрстку, а её кусок, и
+            // ошибку переноса в такой рамке не увидеть. Развёрнутая рамка выше
+            // ещё на десятую: колонки рядом уже нет, и место есть.
+            <div
+              className={cn(
+                'overflow-hidden rounded-md border border-line',
+                развёрнуто ? 'min-h-[85vh]' : 'min-h-[75vh]',
+              )}
+            >
+              <PdfPreview
+                build={build}
+                canBuild={!!пресет && !!условие && confirmed}
+                extra={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setРазвёрнуто((было) => !было)}
+                    aria-pressed={развёрнуто}
+                  >
+                    <Icon name={развёрнуто ? 'panelOpen' : 'panelClose'} size={14} />
+                    {t(развёрнуто ? 'kadai.preview.collapse' : 'kadai.preview.expand')}
+                  </Button>
+                }
+              />
             </div>
           ) : (
             <div className="rounded-md border border-line bg-surface p-s3">

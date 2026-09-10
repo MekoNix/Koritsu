@@ -8,7 +8,7 @@ routes — решения: `/api/kadai` и `/api/projects/{id}/kadai`.
     GET    /api/projects/{id}/kadai?run=         200  ход решения: стадии, файлы
     PUT    /api/projects/{id}/kadai/condition    200  назвать материал условием (editor)
     GET    /api/projects/{id}/kadai/context      200  общие файлы работы у решения
-    PUT    /api/projects/{id}/kadai/context      200  какие общие файлы снять (editor)
+    PUT    /api/projects/{id}/kadai/context      200  какие общие файлы подключить (editor)
     GET    /api/projects/{id}/kadai/wishes       200  пожелания к решению
     PUT    /api/projects/{id}/kadai/wishes       200  записать пожелания (editor)
     POST   /api/projects/{id}/kadai/restart      200  начать стадию заново (editor)
@@ -70,19 +70,28 @@ routes — решения: `/api/kadai` и `/api/projects/{id}/kadai`.
 распознанного имени не дают — файла с таким именем человек не приносил
 (`use_file_name` в теле).
 
-**Общие файлы работы решение по умолчанию показывает модели.** Методичка
-кафедры и требования к оформлению кладутся один раз на работу, а нужны в каждой
-задаче, и заставлять прикладывать их к каждому решению значило бы хранить один
-файл столько раз, сколько в работе задач. Снять их можно поштучно
-(`PUT …/kadai/context`), и хранится при этом **снятое**, а не выбранное: файл,
-который положат в работу завтра, доедет до модели сам, без подтверждения
-выбора после каждой загрузки.
+**Общие файлы работы решение по умолчанию модели не показывает.** Файл,
+приложенный ко всей работе, к отдельной её задаче отношения может не иметь
+вовсе, а промпт, в который он уехал сам, человек оплачивает, не увидев его там.
+Подключаются такие файлы поштучно (`PUT …/kadai/context`), и хранится при этом
+**подключённое**, а не снятое. Решения, заведённые до этого правила, помнят
+снятое, и читаются обе формы записи: выбор, сделанный однажды, задним числом не
+меняется.
 
 **Условие — отдельный маршрут, а не флаг загрузки.** Человек подтверждает
 распознанное **после** приёма файла: до подтверждения условие — обычный
 материал. Поэтому «назвать условием» это
 действие над проектом, и `PUT`: назвать дважды тот же материал — то же
 состояние, а не второе условие.
+
+**Условие в снимке — то, что названо на томе, а не то, с которым шла работа.**
+Ход стадий помнит условие таким, каким его прочитала стадия «приём», и после
+правки помнит **прежнее**: поправленный текст ложится новым материалом, а
+стадию с тех пор не проходили. Показывать это на экране значило бы отвечать
+человеку прежним текстом на его же правку, поэтому карточка условия в ответе
+берётся с тома (`Project.condition`) — она есть и до первого прогона. Прежние
+условия приезжают отдельным полем (`condition_past`): файлы остаются в папке
+решения, но модели не показываются, и экран помечает их.
 
 Коды отказа: `400 invalid_id` — форма идентификатора; `403 forbidden` — роли
 мало; `404 not_found` — нет проекта, спрашивающий не участник или нет такого
@@ -143,7 +152,8 @@ class ContextFileOut(BaseModel):
     name: str
     kind: str = Field(default="", description="What the parser made of it")
     selected: bool = Field(
-        description="Whether this file reaches the model of this solution")
+        description=("Whether this file reaches the model of this solution. "
+                     "False unless it was attached to the solution by hand"))
 
 
 class ContextOut(BaseModel):
@@ -151,17 +161,20 @@ class ContextOut(BaseModel):
 
     common: list[ContextFileOut] = Field(
         default_factory=list,
-        description="Files attached to the project as a whole, in upload order")
+        description=("Files attached to the project as a whole, in upload "
+                     "order; `selected` says which of them this solution "
+                     "shows the model"))
 
 
 class ContextIn(BaseModel):
-    """Какие общие файлы работы с этого решения сняты. Список целиком."""
+    """Какие общие файлы работы подключены к этому решению. Список целиком."""
 
-    excluded: list[str] = Field(
+    included: list[str] = Field(
         default_factory=list,
-        description=("Ids of the project-wide files this solution must not "
-                     "show the model. Everything else, including files "
-                     "uploaded later, reaches it."))
+        description=("Ids of the project-wide files this solution shows the "
+                     "model. What is stored is the chosen list, not the "
+                     "excluded one: nothing else reaches the model, including "
+                     "files uploaded later."))
 
 
 class WishesIn(BaseModel):
@@ -259,38 +272,76 @@ def карточка_решения(запись, вид=None) -> dict:
     `вид` — проект глазами этого решения; без него карточка одна запись журнала
     (так отвечает заведение: состояния у только что заведённого ещё нет).
 
-    Имя файла с условием берётся из снимка хода работы, а нет снимка — с тома
-    (`Project.condition`). Второй источник не запасной, а основной для решения,
-    которое ещё не запускали: условие называют ДО прогона, и карточка,
-    молчащая о нём до первой стадии, не отличала бы одну задачу от другой ровно
-    там, где человек выбирает между ними.
+    Имя файла с условием берётся с тома (`Project.condition`), а не из снимка
+    хода работы: условие называют ДО первого прогона, и карточка, молчащая о
+    нём до первой стадии, не отличала бы одну задачу от другой ровно там, где
+    человек выбирает между ними. После правки условия том знает поправленное, а
+    снимок — прежнее, и в списке задач это была бы уже неправда.
     """
     снимок = сценарий.status(вид) if вид is not None else {}
-    условие = dict(снимок.get("condition") or {})
-    имя_условия = str(условие.get("name") or "")
-    if not имя_условия and вид is not None:
-        имя_условия = _имя_условия(вид)
     return {"id": запись.id, "project_id": запись.project_id,
             "name": запись.name, "n": int(запись.n), "user_id": запись.user_id,
             "created_at": iso(запись.created_at),
             "state": снимок.get("state"), "stage": снимок.get("stage"),
-            "condition_name": имя_условия}
+            "condition_name": _имя_условия(вид) if вид is not None else ""}
 
 
-def _имя_условия(вид) -> str:
-    """Как зовётся файл с условием этого решения. Не назван — пустая строка.
+def условие_решения(вид) -> dict:
+    """Карточка материала-условия этого решения так, как её знает том.
 
-    Материала может уже не быть на томе (его унесли отдельным действием), и
-    падать из-за этого списку решений нельзя: он открывается именно тогда,
-    когда с работой что-то не так.
+    Пустой словарь — условие не названо. Угадывать его первым файлом папки
+    нельзя: «первый» там оказывается прежний файл, и человек, поправивший
+    условие, платит за решение по тому тексту, который он и исправлял.
+
+    Материала может уже не быть на томе (его унесли отдельным действием) — тогда
+    остаётся один идентификатор. Падать из-за этого показу хода работы нельзя:
+    смотрят его именно тогда, когда с работой что-то не так.
+
+    Читано ли условие распознаванием, здесь не решается: это знает прогон,
+    прочитавший файл (`kadai.run`, стадия «приём»), и второе мнение о том же
+    расходилось бы с первым.
     """
     ид = вид.condition()
     if not ид:
-        return ""
+        return {}
+    карточка = {"material": str(ид)}
     try:
-        return str(вид.store().get(ид).name)
+        материал = вид.store().get(ид)
     except Exception:                                        # noqa: BLE001
-        return ""
+        return карточка
+    карточка["name"] = str(материал.name)
+    карточка["unit"] = str(getattr(материал, "unit", "") or "")
+    return карточка
+
+
+def с_условием(вид, снимок: dict) -> dict:
+    """Дописать в снимок условие, названное на томе. → тот же словарь.
+
+    Ход стадий помнит условие таким, каким его прочитала стадия «приём». После
+    правки условия том знает новый материал, а ход стадий — прежний, и экран,
+    читающий только снимок, отвечал бы человеку старым текстом на его же
+    правку. Поэтому карточка условия берётся с тома; она же есть и до первого
+    прогона, когда снимка нет вовсе.
+
+    Карточка прогона сохраняется, пока речь об одном и том же материале: она
+    знает про него больше — читан ли он распознаванием, — и терять это незачем.
+    Разошлись — прежний текст условия из ответа убирается: он принадлежит
+    другому файлу.
+    """
+    названо = условие_решения(вид)
+    прочитано = dict(снимок.get("condition") or {})
+    if названо and названо.get("material") == прочитано.get("material"):
+        названо = прочитано
+    else:
+        снимок["condition_text"] = ""
+    снимок["condition"] = названо
+    снимок["condition_past"] = list(вид.past_conditions())
+    return снимок
+
+
+def _имя_условия(вид) -> str:
+    """Как зовётся файл с условием этого решения. Не назван — пустая строка."""
+    return str(условие_решения(вид).get("name") or "")
 
 
 def назвать_по_условию(s, project_id: str, run_id: str, вид) -> None:
@@ -319,14 +370,15 @@ def общие_файлы(вид) -> dict:
     """Общие файлы работы и галочки этого решения — тело `…/kadai/context`.
 
     Общий — это файл, не приписанный ни одному решению: методичка кафедры и
-    требования к оформлению кладутся один раз на всю работу. Порядок — тот же,
-    что у описи материалов (порядок загрузки), чтобы список на экране не
-    прыгал между двумя ответами.
+    требования к оформлению кладутся один раз на всю работу. Галочка стоит
+    только у подключённых к этому решению — общий файл не обязан иметь
+    отношение к каждой задаче. Порядок — тот же, что у описи материалов
+    (порядок загрузки), чтобы список на экране не прыгал между двумя ответами.
     """
-    снятые = set(вид.excluded_common())
+    подключённые = set(вид.included_common())
     общие = set(вид.common_materials())
     return {"common": [{"id": m.id, "name": m.name, "kind": m.kind,
-                        "selected": m.id not in снятые}
+                        "selected": m.id in подключённые}
                        for m in вид.store().list() if m.id in общие]}
 
 
@@ -431,9 +483,16 @@ def стадии() -> dict:
             summary="How far the work in this project has got",
             description=(
                 "A snapshot of the work: stage states, what it is waiting for, "
-                "the condition as it was read, problems, and the artifacts of "
+                "the assignment, problems, and the artifacts of "
                 "everything already built. Empty `work` means no run has been "
-                "started for this project yet, which is not an error. Reading "
+                "started for this project yet, which is not an error. "
+                "`condition` is the material named as the assignment right "
+                "now, which the solution has before its first run and after "
+                "the person has corrected it; `condition_text` is that text as "
+                "the run read it, and is empty until a run has read it. "
+                "`condition_past` lists materials that used to be the "
+                "assignment: they stay in the solution's folder and are not "
+                "shown to the model. Reading "
                 "it costs nothing: no model call and no stage is run. `run` "
                 "names the solution to read; without it the project is read as "
                 "a whole, the way it looked while it carried one solution. "
@@ -442,13 +501,17 @@ def ход(проект: ЧитательПроекта, s: SessionDep, run: str
     """Снимок хода решения. Пусто — прогона ещё не было.
 
     Пустой снимок отдаётся `200`, а не `404`: страница решения открывается до
-    первого прогона, и отказ на ней читался бы как «проекта нет».
+    первого прогона, и отказ на ней читался бы как «проекта нет». Условие в нём
+    всё равно названо, если его называли: подтверждают его до прогона, и экран
+    показывает именно названное, а не первый попавшийся файл папки.
     """
-    снимок = сценарий.status(решение(проект, s, run))
-    return снимок or {"work": None, "state": None, "stage": None, "stages": [],
-                      "current": "", "hold": None, "condition": {},
-                      "condition_text": "", "problems": [], "outputs": {},
-                      "made": {}, "requirement": {}, "wishes": {}, "since": 0}
+    вид = решение(проект, s, run)
+    снимок = сценарий.status(вид) or {
+        "work": None, "state": None, "stage": None, "stages": [],
+        "current": "", "hold": None, "condition": {},
+        "condition_text": "", "problems": [], "outputs": {},
+        "made": {}, "requirement": {}, "wishes": {}, "since": 0}
+    return с_условием(вид, снимок)
 
 
 @router.put("/projects/{project_id}/kadai/condition",
@@ -461,8 +524,11 @@ def ход(проект: ЧитательПроекта, s: SessionDep, run: str
                 "twice is the same state, which is why this is a PUT. Every "
                 "solution has an assignment of its own: `run` says which. A "
                 "solution the person has not named takes the name of this "
-                "file, without its extension. Editor role. 400 invalid_id, "
-                "403 forbidden, 404 not_found."))
+                "file, without its extension. The material named before this "
+                "one stays in the solution's folder and stops being shown to "
+                "the model: two assignments at once, the old one and the "
+                "corrected one, would be solved as the old one. Editor role. "
+                "400 invalid_id, 403 forbidden, 404 not_found."))
 def назначить_условие(тело: ConditionIn, проект: РедакторПроекта,
                       s: SessionDep, run: str = РЕШЕНИЕ) -> dict:
     """Назвать материал условием задачи. Материал обязан быть разобран."""
@@ -488,9 +554,10 @@ def назначить_условие(тело: ConditionIn, проект: Ре�
             description=(
                 "The files attached to the project as a whole (the ones that "
                 "belong to no single solution) and whether this solution "
-                "shows them to the model. All of them are shown by default, "
-                "including files uploaded later: a course handbook is attached "
-                "to the project once and is wanted in every task. Files of the "
+                "shows them to the model. None of them is shown until it is "
+                "attached to this solution by hand: a file that belongs to the "
+                "project as a whole need not belong to every task in it, and "
+                "the prompt it reaches is paid for by the person. Files of the "
                 "solution's own context folder are not listed here; they are "
                 "in `GET ./materials?run=`. `run` is required: the project as a "
                 "whole sees all of its files. Viewer role. 400 invalid_id, "
@@ -506,27 +573,30 @@ def контекст(проект: ЧитательПроекта, s: SessionDep
             operation_id="kadai_set_context", response_model=ContextOut,
             summary="Choose which project-wide files this solution uses",
             description=(
-                "Replaces the list of project-wide files this solution hides "
-                "from the model. What is stored is the excluded list, not the "
-                "chosen one, on purpose: a file uploaded to the project "
-                "tomorrow reaches the solution by itself, and the choice does "
-                "not have to be confirmed after every upload. `run` is "
+                "Replaces the list of project-wide files this solution shows "
+                "the model. What is stored is the chosen list, not the "
+                "excluded one, on purpose: a file uploaded to the project "
+                "tomorrow is not sent to a task nobody attached it to, and a "
+                "prompt the person has not seen is one they still pay for. "
+                "Solutions created before this rule remember the excluded "
+                "list, and it is still honoured: a choice once made is not "
+                "changed behind the person's back. `run` is "
                 "required. Editor role. 400 invalid_id, 403 forbidden, "
                 "404 not_found."))
 def выбрать_контекст(тело: ContextIn, проект: РедакторПроекта, s: SessionDep,
                      run: str = РЕШЕНИЕ) -> dict:
-    """Записать, какие общие файлы работы с решения сняты."""
+    """Записать, какие общие файлы работы подключены к решению."""
     найти_решение(s, проект.id, run, where="query.run")
-    for mid in тело.excluded:
+    for mid in тело.included:
         # Форма проверяется до тома: из идентификатора складывается путь внутри
         # хранилища, и мусор обязан умереть отказом клиенту, а не пятисоткой из
         # недр. Своей проверкой, а не `проверить_ид`: та говорит про путь
         # запроса, а идентификаторы здесь приехали телом.
         if not MATERIAL_ID_RE.match(str(mid or "")):
             raise ApiError(INVALID_ID, "Material id must be 16 hex characters",
-                           400, where="body.excluded")
+                           400, where="body.included")
     вид = открыть(проект, solution=run.strip())
-    вид.set_excluded_common(тело.excluded)
+    вид.set_included_common(тело.included)
     return общие_файлы(вид)
 
 
@@ -593,4 +663,5 @@ __all__ = ["router", "ConditionIn", "WishesIn", "RestartIn", "SolutionIn",
            "SolutionOut", "ContextIn", "ContextOut", "ContextFileOut",
            "KADAI_FAILED", "МОДУЛЬ", "записи_решений", "найти_решение",
            "развести_решения", "решение", "карточка_решения",
-           "назвать_по_условию", "общие_файлы"]
+           "назвать_по_условию", "общие_файлы", "условие_решения",
+           "с_условием"]

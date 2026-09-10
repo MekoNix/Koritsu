@@ -97,12 +97,41 @@ REQUIREMENT_REQUEST = (
 SOLVE_TASK = (
     "Собери работу по этому строению: реши задачу и поставь на место всё, чего "
     "нельзя написать текстом.\n"
-    "Замени черновики нетекстовых блоков настоящим содержимым: код — блоком "
-    "code с языком, таблицы — блоком table, схемы — блоком diagram, построенным "
-    "инструментом (make_flowchart, make_class_diagram, make_object_diagram).\n"
+    "Заготовка раздела названа видом того, чего он ждёт: «черновик diagram: …», "
+    "«черновик code: …», «черновик table: …». Каждую такую заготовку замени "
+    "настоящим содержимым через replace_block по её ключу — оставленная "
+    "заготовка уедет в готовую работу заглушкой, текстом её никто не заполнит.\n"
+    "Раздел diagram строится инструментом, а не рисуется словами: сначала "
+    "put_source с исходником, потом make_flowchart (или make_class_diagram, "
+    "make_object_diagram) по возвращённому идентификатору, потом replace_block "
+    "блоком diagram. Схема, «описанная» текстом, — это отсутствующая схема.\n"
+    "Раздел code — это блок code с языком, и тот же исходник обязательно "
+    "положить put_source: без файла в архиве работа выглядит как решение без "
+    "программы.\n"
+    "Пожелания человека про схемы и код — не пожелания, а часть задания: "
+    "попросили блок-схему — она должна быть построена инструментом.\n"
     "Связный текст сейчас НЕ пиши: его напишут одним проходом после тебя, и "
     "написанное тобой по одному абзацу было бы выброшено. Черновики текстовых "
-    "блоков оставь как есть — можешь уточнить в них пометку, о чём писать.")
+    "блоков («черновик: …», без вида) оставь как есть — можешь уточнить в них "
+    "пометку, о чём писать.")
+
+# Задание добавочного хода: что осталось заготовкой и что с этим сделать.
+# Отдельным текстом, а не повтором `SOLVE_TASK`: повторённое целиком задание
+# начинает работу заново, а нужен точечный проход по названным разделам.
+REDO_TASK = (
+    "В работе остались заготовки разделов, которых текстом не написать. "
+    "Сделай их и ничего больше:\n{разделы}\n"
+    "Каждую заменяй через replace_block по её ключу. Схема строится "
+    "инструментом: put_source → make_flowchart (или make_class_diagram, "
+    "make_object_diagram) → replace_block блоком diagram. Код — блок code с "
+    "языком плюс put_source с тем же исходником.\n"
+    "Связный текст не пиши и других блоков не трогай.")
+
+# Сколько ходов давать добавочному проходу на один незакрытый раздел: исходник,
+# построение схемы, замена блока и один ход про запас. Своё число, потому что
+# полный потолок стадии здесь означал бы второй полный прогон за то, что
+# осталось от первого.
+STEPS_PER_SLOT = 4
 
 # Имя записи о задании в проекте — рядом с записью о ходе работы (`status.STATE_KEY`).
 TASK_KEY = status.TASK_KEY
@@ -236,6 +265,53 @@ def snapshot(session: Session, *, since: int = 0) -> dict:
     return status.snapshot(session.work, spent=spent, since=since)
 
 
+# ── ход стадии наружу ────────────────────────────────────────────────────────
+#
+# `begin` и `step` пишут ход в саму работу (`stages`), и этого хватает тому, кто
+# смотрит статус потом. Тому, кто ждёт сейчас, не хватает: события работы
+# ложатся на том после стадии, а стадия идёт минутами, и всё это время человек
+# видит неподвижную полоску. Поэтому те же слова уезжают наружу в момент, когда
+# они написаны, — дверью `extra["on_step"]`, если её дали.
+#
+# Дверь необязательна: командной строке докладывать некому, и её отсутствие —
+# законное состояние, а не отказ шва. Импорта службы здесь по-прежнему нет
+# ни одного: дверь пришла аргументом, как и все остальные.
+
+def _begin(session: Session, name: str, *, current: str = "") -> None:
+    """Стадия началась — и об этом сказано наружу."""
+    begin(session.work, name, current=current)
+    _telling(session, name)
+
+
+def _step(session: Session, name: str, **kwargs) -> None:
+    """Ход внутри стадии — и то же наружу."""
+    step(session.work, name, **kwargs)
+    _telling(session, name)
+
+
+def _telling(session: Session, name: str) -> None:
+    """Что делается сейчас: стадия, фраза для человека и счётчик, если он есть.
+
+    Форма словаря та же, что у хода петли (`orchestrator.tools`): `tool` пуст —
+    инструмента на этом ходу не было, — а `note` берётся из `work.current`,
+    который для того и написан словами («сочиняю строение работы»), а не именем
+    стадии.
+
+    Счётчик ставится только со знаменателем: то же правило, что в `stages.step`.
+    Беды двери не ловятся: сломанный приёмник хода — это сломанный показ работы,
+    и молча платить дальше в пустоту хуже, чем остановиться.
+    """
+    дверь = (session.services.extra or {}).get("on_step")
+    if дверь is None:
+        return
+    st = session.work.stage(name)
+    ход = {"stage": name, "tool": "", "ok": True,
+           "note": session.work.current or st.note}
+    if st.done is not None and st.total:
+        ход["n"], ход["total"] = int(st.done), int(st.total)
+    дверь(ход)
+
+
 # ── стадия 1: приём ──────────────────────────────────────────────────────────
 
 def stage_receive(session: Session) -> None:
@@ -248,11 +324,11 @@ def stage_receive(session: Session) -> None:
     человека, — второго механизма паузы нет.
     """
     work = session.work
-    begin(work, "приём", current="разбираю материалы")
+    _begin(session, "приём", current="разбираю материалы")
     store = method(session.project, "store", "разбор условия")()
     материалы = list(store.list())
-    step(work, "приём", done=len(материалы), total=len(материалы),
-         current="читаю условие", note=f"материалов: {len(материалы)}")
+    _step(session, "приём", done=len(материалы), total=len(материалы),
+          current="читаю условие", note=f"материалов: {len(материалы)}")
 
     condition = method(session.project, "condition", "разбор условия")()
     if not condition:
@@ -303,7 +379,7 @@ def stage_task(session: Session) -> None:
     умолчанию нельзя — решает тот, кто платит.
     """
     work = session.work
-    begin(work, "разбор задания", current="разбираю условие")
+    _begin(session, "разбор задания", current="разбираю условие")
     answer = _ask(session, "разбор задания", REQUIREMENT_REQUEST,
                   schema=REQUIREMENT_SCHEMA, data=_data(session))
     требование = dict(answer.value or {})
@@ -344,7 +420,7 @@ def stage_structure(session: Session) -> None:
     «решение». Ни файла-образца, ни умолчания у этого решения нет.
     """
     work = session.work
-    begin(work, "шаблон", current="сочиняю строение работы")
+    _begin(session, "шаблон", current="сочиняю строение работы")
     answer = _ask(session, "шаблон",
                   profile_mod.structure_request(wishes=session.wishes.text),
                   schema=profile_mod.structure_schema(), data=_data(session))
@@ -363,7 +439,7 @@ def stage_structure(session: Session) -> None:
         _stumble(session, "шаблон", жёсткие[0], rest=жёсткие[1:])
     sections = sections_of(profile, строение)
 
-    step(work, "шаблон", current=f"собираю скелет: разделов {len(sections)}")
+    _step(session, "шаблон", current=f"собираю скелет: разделов {len(sections)}")
     # Строение уже сочинено и просеяно ситами — дверь его только раскладывает
     # блоками. `task` и `default` ей не передаются намеренно: они нужны, только
     # когда строение сочиняет она сама, а второй вызов модели за то же самое —
@@ -420,20 +496,28 @@ def stage_solve(session: Session) -> None:
     прогон шёл бы по умолчанию того слоя, который завтра его сменит. Снять
     потолок вызывающий по-прежнему может (`limits={"max_steps": None}`) — тогда
     решает служба, и полоска честно называет действие, а не долю.
+
+    **Заглушка вместо схемы стадию не заканчивает.** Раздел, объявленный схемой
+    или кодом, петля обязана заполнить инструментом, и заготовка, оставшаяся на
+    его месте, — это не «почти готово»: текстовый проход её не тронет (она не
+    место под текст), и в собранной работе человек найдёт на месте блок-схемы
+    строку «черновик diagram: …». Поэтому оставшиеся заготовки пересчитываются
+    и на них даётся **один** добавочный ход с точным заданием. Один, а не «пока
+    не выйдет»: второй стоил бы столько же и имел бы тот же шанс кончиться тем
+    же — модель уже видела и строение, и свои инструменты. Что осталось после
+    него, честно называется замечанием: незакрытый раздел, о котором сказано,
+    человек доделает замечанием или руками, а необъявленный он найдёт на защите.
     """
     work = session.work
-    begin(work, "решение",
-          current="переделываю по замечанию" if session.task else "решаю задачу инструментами")
-    solve = door(session.services, "solve", "решение")
-    kwargs = {"data": _data(session)}
-    if session.limits.get("max_steps"):
-        kwargs["max_steps"] = int(session.limits["max_steps"])
-    result = solve(session.task or SOLVE_TASK, **kwargs)
+    _begin(session, "решение",
+           current="переделываю по замечанию" if session.task
+           else "решаю задачу инструментами")
+    result = _solve(session, session.task or SOLVE_TASK)
     сделано = len(getattr(result, "changed", ()) or ())
     if session.limits.get("max_steps"):
-        step(work, "решение", done=int(getattr(result, "steps", 0) or 0),
-             total=int(session.limits["max_steps"]),
-             current=f"правок в работе: {сделано}")
+        _step(session, "решение", done=int(getattr(result, "steps", 0) or 0),
+              total=int(session.limits["max_steps"]),
+              current=f"правок в работе: {сделано}")
     work.problems.extend(blocks_mod.problem_dict(p)
                          for p in getattr(result, "problems", ()) or ())
     if not getattr(result, "ok", False):
@@ -441,8 +525,88 @@ def stage_solve(session: Session) -> None:
             "петля_не_дошла", "прогон решения не дошёл до конца: "
             f"{getattr(result, 'outcome', '') or 'без итога'}. Сделанное сохранено, "
             "остальное придётся доделать замечанием", level="warning"))
+
+    осталось = _finish_drafts(session)
     finish(work, "решение",
-           note=f"правок в работе: {сделано}, ходов: {getattr(result, 'steps', 0)}")
+           note=f"правок в работе: {сделано}, ходов: {getattr(result, 'steps', 0)}"
+                + (f"; осталось заготовкой разделов: {len(осталось)}" if осталось else ""))
+
+
+def _solve(session: Session, task: str, *, max_steps: int | None = None):
+    """Один прогон петли решения. Потолок ходов — свой у стадии, свой у добавки."""
+    solve = door(session.services, "solve", "решение")
+    kwargs = {"data": _data(session)}
+    потолок = max_steps or session.limits.get("max_steps")
+    if потолок:
+        kwargs["max_steps"] = int(потолок)
+    return solve(task, **kwargs)
+
+
+def _tool_drafts(session: Session) -> list:
+    """Разделы, которых ждёт инструмент, а стоит в них пока заготовка.
+
+    Спрашивается у движка отчётов (`tool_slots`): вид заготовки записан в ней
+    самой автором скелета, и угадывать его здесь по словам подсказки значило бы
+    завести в сценарии второе мнение о том, чем раздел заполнен.
+    """
+    записи = method(session.project, "blocks", "список блоков")()
+    список = blocks_mod.work_of(записи, resolve_artifact=_resolver(session))
+    return blocks_mod.tool_slots(список)
+
+
+def _finish_drafts(session: Session) -> list:
+    """Добавочный ход по оставшимся заготовкам. → что осталось и после него.
+
+    Задание точное и короткое (`REDO_TASK`): названы ключи, виды и разделы, и
+    сказано, каким инструментом делается каждый. Повторить `SOLVE_TASK` было бы
+    дешевле по коду и дороже по деньгам — оно начинает работу заново, а нужно
+    закрыть три раздела.
+
+    Потолок ходов добавке свой, по числу незакрытых разделов: полный потолок
+    стадии здесь означал бы второй полный прогон за остаток первого.
+    """
+    work = session.work
+    заготовки = _tool_drafts(session)
+    if not заготовки:
+        return []
+    _step(session, "решение",
+          current=f"доделываю то, что строится инструментом: разделов {len(заготовки)}")
+    потолок = min(int(session.limits.get("max_steps") or MAX_STEPS),
+                  STEPS_PER_SLOT * len(заготовки))
+    try:
+        result = _solve(session, REDO_TASK.format(разделы=_draft_list(заготовки)),
+                        max_steps=потолок)
+    except KadaiError:
+        # Добавочный ход — попытка, а не обязанность стадии: уронить решение на
+        # починке того, что уже сохранено, значило бы потерять весь прогон ради
+        # одной схемы. Что не вышло, будет названо замечанием ниже.
+        result = None
+    if result is not None:
+        work.problems.extend(blocks_mod.problem_dict(p)
+                             for p in getattr(result, "problems", ()) or ())
+    осталось = _tool_drafts(session)
+    for s in осталось:
+        work.problems.append(problem(
+            "заготовка_осталась",
+            f"{_section_of(s)}: раздел объявлен как «{s['kind']}», но остался "
+            "заготовкой — его строит инструмент, а не текст. Попросите замечанием "
+            "построить его или поставьте содержимое сами",
+            key=s["key"], level="warning"))
+    return осталось
+
+
+def _draft_list(заготовки) -> str:
+    """Незакрытые разделы — строками задания: ключ, вид, раздел и что в нём должно быть."""
+    return "\n".join(
+        f"- блок {s['key']}: {s['kind']} в разделе «{s['section'] or s['label']}»"
+        + (f" — {s['hint']}" if s["hint"] else "")
+        for s in заготовки)
+
+
+def _section_of(s: dict) -> str:
+    """Как назвать незакрытый раздел человеку: заголовком, а не ключом блока."""
+    имя = str(s.get("section") or s.get("label") or "").strip()
+    return f"«{имя}»" if имя else str(s.get("key") or "")
 
 
 # ── стадия 5: тексты ─────────────────────────────────────────────────────────
@@ -460,7 +624,7 @@ def stage_texts(session: Session) -> None:
     считать вместе с ручными значило бы навсегда показывать «9 из 12».
     """
     work = session.work
-    begin(work, "тексты", current="пишу связный текст одним проходом")
+    _begin(session, "тексты", current="пишу связный текст одним проходом")
     записи = method(session.project, "blocks", "список блоков")()
     мест = _slots_for_model(session, записи)
     if not мест:
@@ -469,13 +633,13 @@ def stage_texts(session: Session) -> None:
         # что она уже готова.
         finish(work, "тексты", note="писать нечего: текстовых мест не осталось")
         return
-    step(work, "тексты", done=0, total=len(мест),
-         current=f"пишу связный текст одним проходом: блоков {len(мест)}")
+    _step(session, "тексты", done=0, total=len(мест),
+          current=f"пишу связный текст одним проходом: блоков {len(мест)}")
     result = door(session.services, "write_texts", "текст")(overwrite=False)
     написано = list(getattr(result, "filled", ()) or ())
     work.problems.extend(blocks_mod.problem_dict(p)
                          for p in getattr(result, "problems", ()) or ())
-    step(work, "тексты", done=len(написано), total=max(len(мест), len(написано)))
+    _step(session, "тексты", done=len(написано), total=max(len(мест), len(написано)))
     if not написано:
         _stumble(session, "тексты", problem(
             "текст_не_написан", "проход текста не вернул ни одного блока: "
@@ -511,7 +675,7 @@ def stage_build(session: Session) -> None:
     собрать работу из-за одной ссылки стоил бы человеку целого прогона.
     """
     work = session.work
-    begin(work, "сборка", current="проверяю работу")
+    _begin(session, "сборка", current="проверяю работу")
     записи = method(session.project, "blocks", "список блоков")()
     if not записи:
         _stumble(session, "сборка", problem(
@@ -527,7 +691,7 @@ def stage_build(session: Session) -> None:
     if жёсткие:
         _stumble(session, "сборка", жёсткие[0], rest=жёсткие[1:])
 
-    step(work, "сборка", current="собираю документ")
+    _step(session, "сборка", current="собираю документ")
     try:
         docx = blocks_mod.assemble(список)
     except KadaiError as exc:
@@ -589,7 +753,7 @@ def _repair_refs(session: Session, записи, беды):
             and прежние[ключ].get("source") not in ("manual", "file")]
 
     if свои:
-        step(work, "сборка", current="переписываю блок с битой ссылкой")
+        _step(session, "сборка", current="переписываю блок с битой ссылкой")
         подсказки = {ключ: _ref_hint(прежние[ключ], плохие) for ключ in свои}
         set_blocks = method(session.project, "set_blocks", "список блоков")
         set_blocks(rework_mod.redraft(записи, свои,
@@ -671,7 +835,12 @@ def _write_texts_again(session: Session) -> None:
     """
     try:
         door(session.services, "write_texts", "текст")(overwrite=False)
-    except Exception:                       # noqa: BLE001 — чужая дверь и чужая модель
+    except Exception as exc:                # noqa: BLE001 — чужая дверь и чужая модель
+        # Остановку человека глотать нельзя: дверь помечает её признаком
+        # `stopped` (класса мы не знаем — правило разреза), и без этой проверки
+        # стадия дошла бы до конца, а остановка сработала бы только следующей.
+        if getattr(exc, "stopped", False):
+            raise
         return
 
 
@@ -740,12 +909,21 @@ def stage_archive(session: Session) -> None:
     """Опись и ZIP. Называет содержимое `kadai`, складывает `orchestrator`.
 
     В архиве: отчёт (DOCX и, если вышло, PDF), шаблон работы, исходники,
-    схемы, `решение.md` и обязательный `как-это-собрано.txt` со строкой о
-    том, что код не запускался. Строка обязательна и проверяется описью:
-    компилируемый исходник без неё читается как проверенный.
+    схемы, `решение.md` и обязательная запись о сборке `.metadata` со строкой
+    о том, что код не запускался. Строка обязательна и проверяется описью:
+    компилируемый исходник без неё читается как проверенный. Запись скрытая:
+    она метаданные архива, а не документ работы, и в одном ряду с отчётом её
+    открывали как ещё один файл на сдачу.
+
+    Папка `исходники/` собирается из двух мест сразу, и оба обязательны:
+    листинги, напечатанные в работе блоками `code`, и файлы исходников из папки
+    решения — те, что положил агент, строя по ним схемы, и те, что принёс
+    человек. Одних блоков мало: программа, по которой построена блок-схема,
+    жила бы только материалом, и человек, распаковав архив, увидел бы работу
+    без единого `.c` или `.py`.
     """
     work = session.work
-    begin(work, "архив", current="собираю архив")
+    _begin(session, "архив", current="собираю архив")
     записи = method(session.project, "blocks", "список блоков")()
     список = blocks_mod.work_of(записи, resolve_artifact=_resolver(session))
     задание = status.task(session.project)
@@ -753,10 +931,13 @@ def stage_archive(session: Session) -> None:
 
     шаблон = method(session.project, "put_artifact", "артефакты")(
         blocks_mod.template_bytes(список), name=archive_mod.TEMPLATE)
-    исходники = [(archive_mod.source_name(r.get("key"),
-                                          (r.get("value") or {}).get("lang")),
-                  blocks_mod.text_of(r))
-                 for r in записи if str(r.get("kind")) == "code"]
+    исходники = _sources(session, записи)
+    беда = _no_code_problem(session, исходники)
+    if беда is not None:
+        # Замечание добавляется до описи: `.metadata` собирается из
+        # этого же списка, и сказать про отсутствующий код только на экране
+        # значило бы отдать человеку архив, который об этом молчит.
+        work.problems.append(беда)
     # Схема лежит в значении блока либо идентификатором артефакта, либо XML'ем —
     # и обратно в запись движок отчётов пишет всегда XML. Один путь из двух
     # оставить нельзя: он молча даёт пустую папку `схемы/` в архиве, и узнаёт об
@@ -784,6 +965,89 @@ def stage_archive(session: Session) -> None:
            outputs={"zip": имя})
 
 
+def _sources(session: Session, записи) -> list:
+    """Исходники в архив: файлы папки решения и листинги блоков. → `[(имя, текст)]`.
+
+    Два места, а не одно, и это не запас на всякий случай. Код, написанный
+    агентом, живёт **и** блоком работы (его читают в отчёте), **и** материалом
+    (по материалу строятся схемы: `put_source` → `make_flowchart`); код,
+    принесённый человеком, лежит только материалом. Архив из одних блоков
+    оставляет человека без файла, который можно открыть и собрать, а из одних
+    материалов — без того, что напечатано в работе.
+
+    Различать «положил агент» и «принёс человек» нечем, и признака для этого не
+    заводится: материал адресуется содержимым, и тот же файл, положенный
+    обоими, — один материал, то есть признак достался бы тому, кто успел
+    первым, и врал бы про второго. Отбор идёт по расширению — по тому же, по
+    чему человек узнаёт исходник в распакованной папке
+    (`archive.is_source_name`).
+
+    Порядок: сначала файлы — у них есть имя, данное человеком или моделью, —
+    потом блоки кода, которых среди файлов ещё нет. Один и тот же листинг под
+    двумя именами в одной папке ставит вопрос «какой из них настоящий», а
+    ответить на него человеку нечем.
+    """
+    занято: set = set()
+    out: list = []
+    тексты: set = set()
+    for имя, текст in _source_materials(session):
+        out.append((archive_mod.unique_name(имя, занято), текст))
+        тексты.add(текст.strip())
+    for record in записи:
+        if str(record.get("kind")) != "code":
+            continue
+        текст = blocks_mod.text_of(record)
+        if текст.strip() in тексты:
+            continue
+        имя = archive_mod.source_name(record.get("key"),
+                                      (record.get("value") or {}).get("lang"))
+        out.append((archive_mod.unique_name(имя, занято), текст))
+        тексты.add(текст.strip())
+    return out
+
+
+def _source_materials(session: Session) -> list:
+    """Текстовые исходники папки решения. → `[(имя файла, текст)]`.
+
+    Байты сценарий с диска не читает и путей не знает: текст материала берётся
+    у хранилища по идентификатору (`store.read`), тем же движением, что и текст
+    условия. Файлы берутся **папки решения**, а не всей работы: общая методичка
+    кафедры — материал работы, и класть её в `исходники/` было бы неправдой.
+
+    Материал без разобранного текста пропускается: у картинки и архива его нет
+    вовсе, и ронять сборку из-за файла, который в `исходники/` и не просился,
+    незачем.
+    """
+    store = method(session.project, "store", "разбор условия")()
+    свои = method(session.project, "solution_materials", "разбор условия")()
+    out = []
+    for mid in свои or ():
+        material = store.get(mid)
+        if not archive_mod.is_source_name(material.name):
+            continue
+        текст = store.read(mid).text
+        if текст.strip():
+            out.append((str(material.name), текст))
+    return out
+
+
+def _no_code_problem(session: Session, исходники) -> dict | None:
+    """Работа ждала кода, а его нет ни блоком, ни файлом — замечание человеку.
+
+    Ждала не мы: `needs["code"]` объявило само строение работы (`profile`), и
+    молчание здесь читалось бы как «кода и не требовалось». Проверка стоит на
+    архиве, потому что здесь впервые видно оба места сразу — и блоки, и файлы
+    папки решения.
+    """
+    if not session.plan.profile.needs.get("code") or исходники:
+        return None
+    return problem(
+        "код_не_написан",
+        "работа объявлена с программой, но кода в ней нет: ни блока code, ни "
+        "файла исходника. Попросите замечанием написать код или приложите свой",
+        level="warning")
+
+
 def _solution(список) -> list:
     """`решение.md`: заголовки и текст под ними — производная от блоков работы.
 
@@ -797,7 +1061,10 @@ def _solution(список) -> list:
             заголовок = b.text.lstrip("# ").strip()
             continue
         текст = b.text.strip()
-        if текст and not текст.lower().startswith(blocks_mod.DRAFT_MARK):
+        # Незаполненная заготовка в `решение.md` не едет — ни место под текст,
+        # ни место под схему: строка «черновик diagram: …» читается как текст
+        # решения, и человек прочтёт её как решение.
+        if текст and not blocks_mod.is_draft_text(текст):
             out.append((заголовок or b.label or b.key, текст))
     return out
 

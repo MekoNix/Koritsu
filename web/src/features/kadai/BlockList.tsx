@@ -18,6 +18,13 @@
  * них вид `структура`, а само действие сказано словами в замечании: своего
  * вида «убери блок» у службы нет, и выдумывать его на стороне сайта значило бы
  * гадать, что сделает сценарий.
+ *
+ * **Черновик отличается от написанного.** Место под содержимое хранится не
+ * пустым, а строкой с пометкой «черновик:» (`hokoku.live.DRAFT_MARK`): пустое
+ * значение движок отчётов считает ошибкой сборки. Из-за этого черновик выглядит
+ * как обычный блок с текстом, и незамеченным он уезжает в готовый документ.
+ * Поэтому у него своя метка и приглушённая карточка: «здесь ещё ничего нет» —
+ * это то, ради чего на список и смотрят.
  */
 import { useState } from 'react'
 
@@ -28,13 +35,20 @@ import { Button, EmptyState, Icon, SkeletonLines, Textarea, type IconName } from
 import { blockText, type ReworkKind } from './stages'
 import type { BlockRecordBody } from './types'
 
-/** Значок по виду блока. Вид приходит от движка отчётов (`hokoku.live.KINDS`). */
+/**
+ * Значок по виду блока. Вид приходит от движка отчётов (`hokoku.live.KINDS`).
+ *
+ * Один значок на два разных вида — хуже, чем никакого: листинг и схема с общим
+ * знаком читаются как одно и то же, а разница между ними в замечании решает,
+ * что именно переигрывать (`вид_замечания`). Поэтому у листинга свой знак
+ * (строки кода), у таблицы — сетка, у схемы — блок-схема.
+ */
 const ЗНАЧОК: Record<string, IconName> = {
   heading: 'file',
   markdown: 'file',
   text: 'file',
-  code: 'flowchart',
-  table: 'chart',
+  code: 'queue',
+  table: 'dashboard',
   diagram: 'flowchart',
   image: 'eye',
   formula: 'chart',
@@ -52,6 +66,25 @@ const ВИД: Record<string, string> = {
   image: 'kadai.blocks.kind.image',
   formula: 'kadai.blocks.kind.formula',
   toc: 'kadai.blocks.kind.toc',
+}
+
+/**
+ * Пометка черновика — та же строка, что и у движка отчётов
+ * (`hokoku.live.DRAFT_MARK`). Признака «это ещё не написано» отдельным полем у
+ * блока нет намеренно: флаг пришлось бы нести через запись на томе, ответ
+ * службы и сборку, и в первом же месте, где его забыли переложить, черновик
+ * уехал бы в документ молчаливым абзацем. Строка едет вместе со значением.
+ */
+const ЧЕРНОВИК = 'черновик:'
+
+/** Виды блоков, у которых пустое значение — это тоже «ещё не написано». */
+const ТЕКСТОВЫЕ = ['markdown', 'text']
+
+/** Не написан ли блок ещё: пометка черновика или пустой текст у текстового. */
+function черновик(kind: string, текст: string): boolean {
+  const это = текст.trim()
+  if (это.toLowerCase().startsWith(ЧЕРНОВИК)) return true
+  return !это && ТЕКСТОВЫЕ.includes(kind)
 }
 
 export type ReworkRequest = { block: string; kind: ReworkKind; note: string }
@@ -120,11 +153,16 @@ function BlockCard({
   const вид = String(block.kind ?? '')
   const текст = blockText(block)
   const заголовок = вид === 'heading'
+  const не_написан = черновик(вид, текст)
 
   return (
     <article
       className={cn(
-        'rounded-md border bg-surface shadow-1 transition-colors',
+        'rounded-md border shadow-1 transition-colors',
+        // Черновик приглушён и обведён пунктиром: карточка, неотличимая от
+        // готовой, читается как готовая — и человек узнаёт про пустое место
+        // из собранного документа, а не из списка.
+        не_написан ? 'border-dashed bg-surface-2' : 'bg-surface',
         open ? 'border-accent' : 'border-line hover:border-line-strong',
       )}
     >
@@ -144,24 +182,44 @@ function BlockCard({
                 заголовок
                   ? 'font-display text-base font-semibold text-ink-strong'
                   : 'font-medium text-ink-strong',
+                не_написан && 'text-muted',
               )}
             >
               {block.label || block.key}
             </span>
-            <span className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">
+            <span className="rounded-sm border border-line bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">
               {ВИД[вид] ? t(ВИД[вид]) : вид || t('kadai.blocks.kind.unknown')}
             </span>
+            {не_написан && (
+              <span className="rounded-sm border border-warn bg-warn-bg px-1.5 py-0.5 text-[11px] text-warn">
+                {t('kadai.blocks.draft')}
+              </span>
+            )}
             <span
               className={cn(
                 'rounded-sm px-1.5 py-0.5 text-[11px]',
                 block.source === 'manual' ? 'bg-accent-bg text-ink-strong' : 'text-agent',
               )}
             >
-              {t(block.source === 'manual' ? 'kadai.blocks.byHuman' : 'kadai.blocks.byAgent')}
+              {t(
+                block.source === 'manual'
+                  ? 'kadai.blocks.source.human'
+                  : 'kadai.blocks.source.agent',
+              )}
             </span>
           </span>
           {текст && (
-            <span className="line-clamp-3 whitespace-pre-wrap text-xs text-muted">{текст}</span>
+            <span
+              className={cn(
+                'line-clamp-3 whitespace-pre-wrap text-xs text-muted',
+                не_написан && 'italic',
+              )}
+            >
+              {текст}
+            </span>
+          )}
+          {не_написан && !текст && (
+            <span className="text-xs italic text-muted">{t('kadai.blocks.draftEmpty')}</span>
           )}
         </span>
         <Icon
@@ -178,6 +236,7 @@ function BlockCard({
               {текст}
             </pre>
           )}
+          {не_написан && <p className="text-xs text-warn">{t('kadai.blocks.draftHint')}</p>}
           <Textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}

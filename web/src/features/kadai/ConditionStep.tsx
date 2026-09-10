@@ -19,8 +19,19 @@
  * Кладёт исправленный текст **новым материалом** и называет условием его.
  * Правки текста разобранного материала у службы нет и быть не может: материал
  * адресуется хешем содержимого (`materials.Store`), и «поправленный материал»
- * — это по построению другой материал. Прежний остаётся в описи: по нему видно,
- * что именно было распознано, и подменять эту память нельзя.
+ * — это по построению другой материал. Прежний остаётся в папке решения: по
+ * нему видно, что именно было распознано, и подменять эту память нельзя. Модели
+ * он с этой минуты не показывается (`Project.past_conditions`) — иначе она
+ * получила бы два условия сразу и решала бы по тому, которое человек исправлял.
+ *
+ *     Пока условие не названо
+ *     -----------------------
+ *
+ * Шаг говорит «условие не названо» и предлагает выбрать файл из папки решения.
+ * Считать условием первый файл папки нельзя: «первый» там оказывается то скан,
+ * то методичка, то прежняя версия условия, и человек платит за решение чужой
+ * задачи, ничего не выбирая. Название — действие с одним нажатием и видимым
+ * ответом, а не догадка экрана.
  */
 import { useState } from 'react'
 
@@ -30,12 +41,13 @@ import { Button, Icon, SkeletonLines, Textarea } from '@/ui'
 import { useMaterialText, useUploadMaterial } from '@/features/projects/data'
 import type { Material } from '@/features/projects/types'
 
-import { useSetCondition } from './data'
+import { useContextMaterials, useSetCondition } from './data'
 
 export function ConditionStep({
   projectId,
   runId,
   material,
+  named,
   ocr,
   confirmed,
   onConfirm,
@@ -48,8 +60,16 @@ export function ConditionStep({
    * промпт соседней.
    */
   runId: string
-  /** Материал-условие решения. `undefined` — ещё не назван. */
+  /** Материал-условие решения. `undefined` — назван, но ещё не найден в описи. */
   material: Material | undefined
+  /**
+   * Назвало ли решение условие вообще. Отдельно от `material`, потому что между
+   * «назвали» и «материал появился в описи» проходит секунда: правку кладут
+   * новым файлом, и опись перечитывается после. Без этого шаг в ту самую
+   * секунду говорил бы «условие не названо» человеку, который его только что
+   * назвал.
+   */
+  named: boolean
   /** Читано ли условие распознаванием: тогда проверить его особенно нужно. */
   ocr: boolean
   /** Подтвердил ли человек текст в этот раз. */
@@ -61,6 +81,9 @@ export function ConditionStep({
   const текст = useMaterialText(projectId, material?.id, !!material)
   const upload = useUploadMaterial()
   const setCondition = useSetCondition()
+  // Папка решения — из чего выбирают условие, пока его не назвали. Тот же ключ
+  // кэша, что у списка файлов ниже: второго запроса за тем же ответом нет.
+  const папка = useContextMaterials(projectId, runId)
 
   const [правим, setПравим] = useState(false)
   const [черновик, setЧерновик] = useState('')
@@ -75,10 +98,62 @@ export function ConditionStep({
     setПравим(true)
   }
 
+  /** Назвать условием файл, выбранный человеком в папке решения. */
+  function выбрать(materialId: string) {
+    setБеда(null)
+    // `useFileName` — истина: файл принёс человек, и его имя говорит, какая это
+    // задача. Безымянному решению служба возьмёт имя отсюда.
+    setCondition.mutate(
+      { projectId, materialId, runId, useFileName: true },
+      { onError: (е) => setБеда(errorText(е)) },
+    )
+  }
+
   if (!material) {
+    // Условие названо, а материала под рукой ещё нет: ждём опись, а не
+    // предлагаем выбрать файл заново.
+    if (named) {
+      return (
+        <Карточка>
+          <SkeletonLines count={4} />
+        </Карточка>
+      )
+    }
+    const свои = папка.data ?? []
     return (
       <Карточка>
+        <header className="flex flex-wrap items-center gap-s2">
+          <Icon name="file" size={16} className="text-muted" />
+          <span className="font-semibold text-ink-strong">{t('kadai.condition.unnamed')}</span>
+        </header>
         <p className="text-sm text-muted">{t('kadai.condition.none')}</p>
+        {папка.isPending ? (
+          <SkeletonLines count={2} />
+        ) : свои.length === 0 ? (
+          <p className="text-xs text-muted">{t('kadai.condition.noneEmpty')}</p>
+        ) : (
+          <>
+            <p className="text-xs text-muted">{t('kadai.condition.pickHint')}</p>
+            <ul className="flex flex-col gap-1 text-sm text-ink" data-testid="kadai-condition-pick">
+              {свои.map((m) => (
+                <li key={m.id} className="flex items-center gap-s2">
+                  <Icon name="file" size={14} className="text-muted" />
+                  <span className="truncate">{m.name}</span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="ml-auto"
+                    disabled={disabled || setCondition.isPending}
+                    onClick={() => выбрать(m.id)}
+                  >
+                    {t('kadai.condition.pick')}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {беда && <p className="text-xs text-err">{беда}</p>}
       </Карточка>
     )
   }

@@ -1701,7 +1701,7 @@ export interface paths {
         };
         /**
          * How far the work in this project has got
-         * @description A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.
+         * @description A snapshot of the work: stage states, what it is waiting for, the assignment, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. `condition` is the material named as the assignment right now, which the solution has before its first run and after the person has corrected it; `condition_text` is that text as the run read it, and is empty until a run has read it. `condition_past` lists materials that used to be the assignment: they stay in the solution's folder and are not shown to the model. Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.
          */
         get: operations["kadai_status"];
         put?: never;
@@ -1722,7 +1722,7 @@ export interface paths {
         get?: never;
         /**
          * Name the material that holds the assignment
-         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of this file, without its extension. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of this file, without its extension. The material named before this one stays in the solution's folder and stops being shown to the model: two assignments at once, the old one and the corrected one, would be solved as the old one. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_condition"];
         post?: never;
@@ -1741,12 +1741,12 @@ export interface paths {
         };
         /**
          * Project-wide files this solution shows the model
-         * @description The files attached to the project as a whole (the ones that belong to no single solution) and whether this solution shows them to the model. All of them are shown by default, including files uploaded later: a course handbook is attached to the project once and is wanted in every task. Files of the solution's own context folder are not listed here; they are in `GET ./materials?run=`. `run` is required: the project as a whole sees all of its files. Viewer role. 400 invalid_id, 404 not_found.
+         * @description The files attached to the project as a whole (the ones that belong to no single solution) and whether this solution shows them to the model. None of them is shown until it is attached to this solution by hand: a file that belongs to the project as a whole need not belong to every task in it, and the prompt it reaches is paid for by the person. Files of the solution's own context folder are not listed here; they are in `GET ./materials?run=`. `run` is required: the project as a whole sees all of its files. Viewer role. 400 invalid_id, 404 not_found.
          */
         get: operations["kadai_context"];
         /**
          * Choose which project-wide files this solution uses
-         * @description Replaces the list of project-wide files this solution hides from the model. What is stored is the excluded list, not the chosen one, on purpose: a file uploaded to the project tomorrow reaches the solution by itself, and the choice does not have to be confirmed after every upload. `run` is required. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Replaces the list of project-wide files this solution shows the model. What is stored is the chosen list, not the excluded one, on purpose: a file uploaded to the project tomorrow is not sent to a task nobody attached it to, and a prompt the person has not seen is one they still pay for. Solutions created before this rule remember the excluded list, and it is still honoured: a choice once made is not changed behind the person's back. `run` is required. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_context"];
         post?: never;
@@ -2637,7 +2637,7 @@ export interface paths {
         };
         /**
          * How far the work in this project has got
-         * @description A snapshot of the work: stage states, what it is waiting for, the condition as it was read, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.
+         * @description A snapshot of the work: stage states, what it is waiting for, the assignment, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. `condition` is the material named as the assignment right now, which the solution has before its first run and after the person has corrected it; `condition_text` is that text as the run read it, and is empty until a run has read it. `condition_past` lists materials that used to be the assignment: they stay in the solution's folder and are not shown to the model. Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.
          */
         get: operations["kadai_status_v1"];
         put?: never;
@@ -2658,7 +2658,7 @@ export interface paths {
         get?: never;
         /**
          * Name the material that holds the assignment
-         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of this file, without its extension. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of this file, without its extension. The material named before this one stays in the solution's folder and stops being shown to the model: two assignments at once, the old one and the corrected one, would be solved as the old one. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_condition_v1"];
         post?: never;
@@ -2677,12 +2677,12 @@ export interface paths {
         };
         /**
          * Project-wide files this solution shows the model
-         * @description The files attached to the project as a whole (the ones that belong to no single solution) and whether this solution shows them to the model. All of them are shown by default, including files uploaded later: a course handbook is attached to the project once and is wanted in every task. Files of the solution's own context folder are not listed here; they are in `GET ./materials?run=`. `run` is required: the project as a whole sees all of its files. Viewer role. 400 invalid_id, 404 not_found.
+         * @description The files attached to the project as a whole (the ones that belong to no single solution) and whether this solution shows them to the model. None of them is shown until it is attached to this solution by hand: a file that belongs to the project as a whole need not belong to every task in it, and the prompt it reaches is paid for by the person. Files of the solution's own context folder are not listed here; they are in `GET ./materials?run=`. `run` is required: the project as a whole sees all of its files. Viewer role. 400 invalid_id, 404 not_found.
          */
         get: operations["kadai_context_v1"];
         /**
          * Choose which project-wide files this solution uses
-         * @description Replaces the list of project-wide files this solution hides from the model. What is stored is the excluded list, not the chosen one, on purpose: a file uploaded to the project tomorrow reaches the solution by itself, and the choice does not have to be confirmed after every upload. `run` is required. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Replaces the list of project-wide files this solution shows the model. What is stored is the chosen list, not the excluded one, on purpose: a file uploaded to the project tomorrow is not sent to a task nobody attached it to, and a prompt the person has not seen is one they still pay for. Solutions created before this rule remember the excluded list, and it is still honoured: a choice once made is not changed behind the person's back. `run` is required. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_context_v1"];
         post?: never;
@@ -3172,20 +3172,20 @@ export interface components {
             kind: string;
             /**
              * Selected
-             * @description Whether this file reaches the model of this solution
+             * @description Whether this file reaches the model of this solution. False unless it was attached to the solution by hand
              */
             selected: boolean;
         };
         /**
          * ContextIn
-         * @description Какие общие файлы работы с этого решения сняты. Список целиком.
+         * @description Какие общие файлы работы подключены к этому решению. Список целиком.
          */
         ContextIn: {
             /**
-             * Excluded
-             * @description Ids of the project-wide files this solution must not show the model. Everything else, including files uploaded later, reaches it.
+             * Included
+             * @description Ids of the project-wide files this solution shows the model. What is stored is the chosen list, not the excluded one: nothing else reaches the model, including files uploaded later.
              */
-            excluded?: string[];
+            included?: string[];
         };
         /**
          * ContextOut
@@ -3194,7 +3194,7 @@ export interface components {
         ContextOut: {
             /**
              * Common
-             * @description Files attached to the project as a whole, in upload order
+             * @description Files attached to the project as a whole, in upload order; `selected` says which of them this solution shows the model
              */
             common?: components["schemas"]["ContextFileOut"][];
         };

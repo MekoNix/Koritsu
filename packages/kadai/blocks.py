@@ -16,10 +16,11 @@ blocks — единственное место в `kadai`, где зовётся
   проверка списка блоков была бы вторым мнением о том, что такое годная работа.
 * `assemble`, `work_template` — сборка DOCX и синтетический шаблон с `{{ключ}}`
   для архива. Обе чистые: список блоков на входе, байты на выходе.
-* `text_slots`, `draft`, `list_blocks`, `outline` — знание о том, что такое
-  «место под текст» и как выглядит скелет. Оно уже записано в движке, и
-  повторить его здесь значило бы разойтись с проходом текста в тот день, когда
-  движок поменяет пометку черновика.
+* `text_slots`, `tool_slots`, `draft`, `is_draft_text`, `list_blocks`,
+  `outline` — знание о том, что такое «место под текст», чем оно отличается от
+  заготовки под схему и как выглядит скелет. Оно уже записано в
+  движке, и повторить его здесь значило бы разойтись с проходом текста в тот
+  день, когда движок поменяет пометку черновика.
 
 Чего здесь нет и быть не может: `open_document`, `build_report`, `docx_to_pdf`
 с путями, `Project` — всё, что ходит на диск или знает проект. Диск знает
@@ -50,6 +51,11 @@ SECTION_TYPES = tuple(k for k in _live.KINDS
 # (`hokoku.live.DRAFT_MARK`), и второго объяснения здесь не заводится. Сценарию
 # она нужна затем, что по ней он отличает написанное от места под текст
 # (`is_draft`, `_solution`).
+#
+# Читать пометку сравнением строк сценарий не вправе: у заготовки, которую ждёт
+# инструмент, в пометке стоит ещё и вид («черновик diagram: …»), и `startswith`
+# по одному слову объявил бы её написанной. Разбирают пометку функции движка
+# (`is_draft_text`, `draft_kind`), а константа остаётся ради показа человеку.
 DRAFT_MARK = _live.DRAFT_MARK
 
 
@@ -159,14 +165,27 @@ def listing(work) -> list:
     return _live.list_blocks(work)
 
 
-def draft_json(hint: str) -> dict:
-    """Место под текст с подсказкой — записью для `set_blocks`.
+def tool_slots(work) -> list:
+    """Заготовки, которых ждёт инструмент: схема, код, таблица, картинка, формула.
+
+    По ним стадия решения узнаёт, что осталось заглушкой, — а проход текста их
+    не берёт вовсе. Своего разбора пометки здесь не заводится: что такое
+    заготовка и какого вида, знает движок (`hokoku.live.tool_slots`).
+    """
+    return _live.tool_slots(work)
+
+
+def draft_json(hint: str, kind: str = "") -> dict:
+    """Место под содержимое с подсказкой — записью для `set_blocks`.
 
     Пустым значением место под текст не выразить: пустое значение движок
     считает ошибкой сборки. Поэтому черновик с пометкой, и пометка не
     украшение — её читает проход текста (`text_slots` → `hint`).
+
+    `kind` — вид содержимого, если раздел заполняет инструмент: он встаёт в
+    пометку, и проход текста такую заготовку прозой не заливает.
     """
-    return hokoku.value_to_json(_live.draft(str(hint or "")))
+    return hokoku.value_to_json(_live.draft(str(hint or ""), kind=str(kind or "")))
 
 
 def is_text(record) -> bool:
@@ -175,9 +194,14 @@ def is_text(record) -> bool:
 
 
 def is_draft(record) -> bool:
-    """Не написан ли блок ещё: пусто или пометка черновика."""
-    text = str((record.get("value") or {}).get("text") or "").strip()
-    return not text or text.lower().startswith(DRAFT_MARK)
+    """Не написан ли блок ещё: пусто или пометка черновика — с видом или без."""
+    return is_draft_text((record.get("value") or {}).get("text") or "")
+
+
+def is_draft_text(text) -> bool:
+    """То же про голый текст блока: пусто или пометка черновика."""
+    return _live.is_draft_text(text)
+
 
 
 def text_of(record) -> str:
@@ -215,5 +239,6 @@ def errors_of(problems) -> list:
 
 __all__ = ["TOOL_KINDS", "TEXT_KINDS", "SECTION_TYPES", "DRAFT_MARK", "work_of", "records_of", "validate", "to_pdf",
            "strip_refs", "unresolved",
-           "assemble", "template_bytes", "slots", "outline", "listing", "draft_json",
-           "is_text", "is_draft", "text_of", "problem_dict", "errors_of"]
+           "assemble", "template_bytes", "slots", "tool_slots", "outline", "listing",
+           "draft_json", "is_text", "is_draft", "is_draft_text", "text_of",
+           "problem_dict", "errors_of"]

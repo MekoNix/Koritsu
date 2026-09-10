@@ -324,6 +324,36 @@ class ToolError(Exception):
         self.payload = {"error": code, "message": message, **extra}
 
 
+# Сколько знаков чужого отказа доезжает до человека одной строкой хода. Строка
+# эта показывается под полоской стадий, и отказ на три экрана вытеснил бы с него
+# всё остальное; полный текст модель всё равно получает целиком.
+NOTE_CHARS = 160
+
+# Как называется по-русски то, что построил инструмент схем.
+_DIAGRAM_WORDS = {
+    "make_flowchart": "построена блок-схема",
+    "make_class_diagram": "построена диаграмма классов",
+    "make_object_diagram": "построена диаграмма объектов",
+}
+
+
+def _refusal_words(tool: str, payload: dict) -> str:
+    """Отказ инструмента — фразой для человека. Имя инструмента едет полем.
+
+    Текст чужого исключения (`tool_failed` — это `ИмяКласса: текст` из
+    `fragmos`, `materials` или `uml_generator`) сюда не переносится: написан он
+    для того, кто чинит службу, а человек читает его как поломку. Наши отказы
+    написаны по-русски и человеку понятны — их видно как есть, обрезанными по
+    длине строки.
+    """
+    if str(payload.get("error") or "") == "tool_failed":
+        return "инструмент не отработал, агент попробует иначе"
+    сказано = " ".join(str(payload.get("message") or "").split())
+    if len(сказано) > NOTE_CHARS:
+        сказано = сказано[:NOTE_CHARS - 1].rstrip() + "…"
+    return "инструмент отказал" + (f": {сказано}" if сказано else "")
+
+
 class ToolBox:
     """Диспетчер инструментов одного прогона: `on_call` для `llm.run_tools`.
 
@@ -341,10 +371,21 @@ class ToolBox:
     схем, а тегов, манифеста и шаблона у него нет вовсе — работа там список
     блоков. Пустой `allowed` при этом означает ровно то, что написано: ставить
     значение тега этому прогону нельзя ни одного.
+
+    `on_step(ход)` — доклад о каждом ходе тому, кто показывает работу человеку:
+    словарь `{tool, ok, note, n, total}`, где `note` — фраза по-русски о том, что
+    сейчас сделано. Он не то же самое, что запись хода на диск (`_step`): та
+    нужна разбору «за что заплачено» и пишется всегда, а этот — человеку,
+    который ждёт и не понимает, идёт ли работа. Без него прогон уровня 3
+    выглядит зависшей полоской на десять минут.
+
+    `max_steps` — потолок ходов петли, знаменатель этого доклада. Приходит
+    аргументом, а не берётся из `MAX_STEPS`: потолок ставит вызывающий, и
+    названный не тот превратил бы «ход 7 из 50» в неправду, выглядящую правдой.
     """
 
     def __init__(self, project, run, *, parts, manifest=None, template=None,
-                 allowed=(), extra_flags=()):
+                 allowed=(), extra_flags=(), on_step=None, max_steps=None):
         self.project = project
         self.run = run
         self.manifest = manifest
@@ -355,6 +396,19 @@ class ToolBox:
         self.filled: list = []
         self.problems: list = []
         self.calls: int = 0
+        self.on_step = on_step
+        self.max_steps = int(max_steps) if max_steps else None
+        # Имя инструмента и аргументы текущего вызова: их спрашивают и
+        # обработчики живого режима (имя решает, какой инструмент списка
+        # позвали), и рассказ о ходе (аргументы называют, по чему строилась
+        # схема). Ответ инструмента их не повторяет, а `_answer` вызова уже не
+        # видит.
+        self._current: str = ""
+        self._args: dict = {}
+        # Имена материалов, которые прогон уже трогал: идентификатор → имя.
+        # Нужны рассказу о ходе — человеку говорят «по «sort.py»», а не
+        # идентификатор, которого он никогда не видел.
+        self._имена: dict = {}
         # Набор материалов решения считается один раз на прогон: `context_ids`
         # обходит опись на томе, а спрашивают его у каждого чтения файла.
         # Материалы кладут между прогонами, а не посреди хода модели, поэтому
@@ -394,6 +448,7 @@ class ToolBox:
         и «что именно поправить» она должна прочитать, а не угадать.
         """
         self.calls += 1
+        self._current, self._args = call.name, dict(call.arguments or {})
         handler = self._handlers.get(call.name)
         if handler is None:
             return self._answer(call, {"error": "unknown_tool",
@@ -420,8 +475,69 @@ class ToolBox:
     def _answer(self, call, payload: dict, *, is_error: bool = False) -> llm.ToolResult:
         self._step({"tool": call.name, "ok": not is_error,
                     "error": payload.get("error", "") if is_error else ""})
+        self._tell(call, payload, not is_error)
         return llm.ToolResult(call_id=call.id, is_error=is_error,
                               content=json.dumps(payload, ensure_ascii=False))
+
+    def _tell(self, call, payload: dict, ok: bool) -> None:
+        """Ход прогона — наружу, тому, кто показывает работу человеку.
+
+        Зовётся на каждый ответ инструмента, включая отказы: отказ — такая же
+        часть хода, как удача, и человек, ждущий десять минут, вправе видеть,
+        что происходит.
+
+        Беда самого доклада проглатывается, и это единственное такое место в
+        классе. Петля превращает любое исключение из `on_call` в ответ
+        инструмента с ошибкой (`llm/loop.py`), то есть сорвавшийся рассказ о
+        ходе приехал бы модели бедой инструмента, которого она не звала, и она
+        стала бы чинить исправное. Сделанного он не отменяет: всё ценное уже на
+        диске, а «за что заплачено» записано ходом прогона.
+        """
+        if self.on_step is None:
+            return
+        try:
+            ход = {"tool": call.name, "ok": bool(ok), "n": self.calls,
+                   "note": self._step_note(call, payload, ok)}
+            if self.max_steps and self.calls <= self.max_steps:
+                # Знаменатель — потолок ходов петли, и ставится он не всегда: за
+                # один ход модель вправе позвать несколько инструментов, и
+                # счётчик вызовов уходит за потолок. Полоска с выдуманным
+                # знаменателем врёт (то же правило, что у счётчика стадий),
+                # поэтому за потолком называется только номер хода.
+                ход["total"] = self.max_steps
+            self.on_step(ход)
+        except Exception:                       # noqa: BLE001 — см. выше
+            return
+
+    def _step_note(self, call, payload: dict, ok: bool) -> str:
+        """Что сейчас сделано — фразой для человека, без путей и адресов.
+
+        Имя материала и ключ блока в фразе остаются: по ним человек узнаёт своё
+        («методичка.pdf», «b-03»). Идентификаторов материалов и артефактов в ней
+        нет — они не говорят ему ничего, а места занимают больше самой фразы.
+
+        Живой режим добавляет к этому свои инструменты (`live.LiveBox`), и
+        добавляет их переопределением, а не вторым словарём: инструменты списка
+        блоков есть только у него.
+        """
+        if not ok:
+            return _refusal_words(call.name, payload)
+        if call.name == "list_materials":
+            return "просмотрены материалы работы"
+        if call.name == "read_material":
+            return f"прочитан материал «{payload.get('name') or '?'}»"
+        if call.name in _DIAGRAM_WORDS:
+            ids = ([self._args.get("id")] if call.name == "make_flowchart"
+                   else self._args.get("ids"))
+            имена = [self._имена.get(str(i)) for i in (ids or ())]
+            откуда = ", ".join(f"«{имя}»" for имя in имена if имя)
+            return _DIAGRAM_WORDS[call.name] + (f" по {откуда}" if откуда else "")
+        if call.name == "set_tag":
+            ключ = payload.get("key") or self._args.get("key") or "?"
+            return f"поставлено значение тега «{ключ}»"
+        if call.name == "preview":
+            return "проверен собранный отчёт"
+        return f"позван инструмент {call.name}"
 
     def _step(self, step: dict) -> None:
         """Ход в записи прогона — сразу на диск, а не в конце.
@@ -677,6 +793,7 @@ class ToolBox:
         except materials.MaterialsError:
             material = None
         if material is not None and (свои is None or mid in свои):
+            self._имена[mid] = material.name
             return material
         # «Чужой файл» и «такого нет» отвечают одинаково: разные ответы
         # рассказали бы модели, что в работе есть файл, которого ей не дали.
@@ -745,4 +862,4 @@ def _one_of(value, allowed, name: str) -> str:
 __all__ = ["tools", "material_tools", "ToolBox", "ToolError", "TOOL_NAMES",
            "MATERIAL_TOOLS", "operator_channel_gate",
            "WITHOUT_OPERATOR_CHANNEL", "UNVERIFIED_FLAG", "READ_CHARS", "MAX_STEPS",
-           "MAX_SOURCES", "MAX_SOURCE_CHARS"]
+           "MAX_SOURCES", "MAX_SOURCE_CHARS", "NOTE_CHARS"]

@@ -96,13 +96,19 @@ def stage_names() -> tuple:
 
 
 def work(project, *, endpoint: str, wishes: dict | None = None,
-         until: str | None = None, on_stage=None, stop=None) -> dict:
+         until: str | None = None, on_stage=None, on_step=None, stop=None) -> dict:
     """Завести или продолжить работу `kadai` и пройти стадии. → снимок.
 
     Работа заводится один раз на проект: есть запись о задании — продолжаем
     (`run.load`), нет — заводим (`run.new`). Решать это по флагу от вызывающего
     нельзя: «завести поверх заведённой» стёрло бы ход уже сделанных стадий, а
     узнал бы об этом человек по счёту за повторное решение задачи.
+
+    Остановленная работа тем же вызовом и продолжается: `cancelled` — это не
+    конец, а «человек нажал стоп», и второй команды для «продолжить» не
+    заводится. Кнопка «Решить задачу» после остановки означает ровно то же, что
+    означала до неё, и повторный прогон подхватывает стадию, на которой
+    остановились.
 
     Стадии проходятся **по одной**, а не одним `run(session)`, и это не
     дробление ради дробления: `run` внутри не докладывает никому, а показать
@@ -111,23 +117,43 @@ def work(project, *, endpoint: str, wishes: dict | None = None,
     второго механизма остановки здесь не заводится — `until` из пожеланий
     по-прежнему решает `plan.pause_after`.
 
-    `on_stage(имя, снимок)` зовётся после каждой стадии; `stop()` — «пора
-    остановиться» (отмена задания): спрашивается между стадиями, где остановка
-    ничего не стоит — сделанное сохранено, следующее не начато.
+    `on_stage(имя, снимок)` зовётся после каждой стадии, `on_step(ход)` — на
+    каждом ходу внутри стадии (`doors.kadai_services`). `stop()` — «пора
+    остановиться»: спрашивается и здесь, между стадиями, где остановка ничего
+    не стоит, и внутри стадий — там его спрашивает слой моделей перед каждым
+    куском потока, а двери превращают его в `Остановлено`.
     """
     from kadai import run as run_mod, status as status_mod
     from kadai.plan import Wishes
+    from kadai.stages import reopen
 
-    services = doors_mod.kadai_services(project, endpoint=endpoint)
+    services = doors_mod.kadai_services(project, endpoint=endpoint, cancel=stop,
+                                        on_step=on_step)
     сессия = (run_mod.load(services) if status_mod.task(project)
               else run_mod.new(services, wishes=Wishes(**dict(wishes or {}))))
+    if сессия.work.state == "cancelled":
+        reopen(сессия.work, note="работа продолжается с остановленной стадии")
+        сессия.save()
 
     имена = stage_names()
     предел = имена.index(until) if until in имена else len(имена) - 1
     for имя in имена[:предел + 1]:
         if stop is not None and stop():
+            # Стоящая на вопросе работа отменой не трогается: её остановил не
+            # человек кнопкой, а сама стадия, и `hold` — единственное, чем
+            # человеку сказано, чего от него ждут. Затереть его значило бы
+            # оставить работу без вопроса и без ответа.
+            if сессия.work.state == "running":
+                _остановить(сессия)
             break
-        run_mod.run(сессия, until=имя)
+        try:
+            run_mod.run(сессия, until=имя)
+        except doors_mod.Остановлено:
+            # Стадию прервали посреди: сделанное уже на диске (блоки пишутся
+            # версией в момент вставки), а сама стадия возвращается в «ждёт» —
+            # повторный прогон начнёт её заново, а не объявит работу упавшей.
+            _остановить(сессия)
+            break
         if on_stage is not None:
             on_stage(имя, run_mod.snapshot(сессия))
         if сессия.work.state != "running":
@@ -135,6 +161,34 @@ def work(project, *, endpoint: str, wishes: dict | None = None,
     снимок = run_mod.snapshot(сессия)
     снимок["made"] = _положить_архив(project, сессия.work)
     return снимок
+
+
+def _остановить(сессия) -> None:
+    """Работу остановил человек: стадия — снова «ждёт», работа — «остановлена».
+
+    Почему не `failed`. Споткнувшаяся стадия — конечное состояние
+    (`kadai.stages.stumble`): продолжить её нечем, и работа закрывается. Но
+    отмена не беда стадии: её прервали снаружи, на середине, и всё, что она
+    успела произвести, лежит в проекте. Объявив её упавшей, мы закрыли бы
+    оплаченную работу нажатием кнопки «Остановить» — то есть наказали бы
+    человека за то, что он ею воспользовался.
+
+    Стадия при этом честно откатывается в «ждёт» с пометкой, а не остаётся
+    «идёт»: идущей она не является, и повторный прогон обязан начать её заново
+    — обрывок ответа модели никуда не сохранён. История событий работы не
+    трогается: по ней видно, что стадию начинали и остановили.
+    """
+    from kadai.stages import RUNNING, WAITING, cancel, stage_now
+
+    работа = сессия.work
+    имя = stage_now(работа)
+    st = работа.stage(имя) if имя else None
+    if st is not None and st.state == RUNNING:
+        st.state, st.finished = WAITING, None
+        st.done, st.total, st.note = None, None, "остановлена человеком"
+    if работа.state not in ("done", "cancelled"):
+        cancel(работа, note="остановлено человеком")
+    сессия.save()
 
 
 def _положить_архив(project, работа) -> dict:
@@ -232,14 +286,22 @@ def restart(project, *, stage: str | None = None) -> dict:
 
 
 def _вставшая(работа) -> str:
-    """С какой стадии начинать заново, если её не назвали: с той, что встала."""
-    from kadai.stages import STUMBLED
+    """С какой стадии начинать заново, если её не назвали: с той, что встала.
+
+    Остановленная человеком работа считается вставшей на той стадии, которую
+    прервали: она уже вернулась в «ждёт» (`_остановить`), и «начать заново»
+    означает для неё ровно то же, что «продолжить». Отказ здесь заставил бы
+    человека называть стадию руками после нажатия своей же кнопки.
+    """
+    from kadai.stages import STUMBLED, stage_now
 
     for st in работа.stages:
         if st.state == STUMBLED:
             return st.name
     остановка = getattr(работа, "hold", None)
-    return str(getattr(остановка, "stage", "") or "")
+    if остановка is not None:
+        return str(getattr(остановка, "stage", "") or "")
+    return stage_now(работа) if работа.state == "cancelled" else ""
 
 
 def wishes(project) -> dict:
@@ -275,19 +337,31 @@ def set_wishes(project, *, text: str = "", show_task: bool = False,
 
 
 def rework(project, *, endpoint: str, note: str, block: str | None = None,
-           kind: str | None = None) -> dict:
+           kind: str | None = None, on_step=None, stop=None) -> dict:
     """Замечание человека → минимальный пересчёт → снимок.
 
     Что именно переигрывается, решает `kadai.rework.apply` (маршруты замечаний
     и их честная цена записаны там). Здесь — только сборка дверей и снимок
     после: служба должна отдать человеку то же, что показала бы командная
     строка, и вторым описанием «что случилось» этого не добиться.
+
+    Остановка работает так же, как в `work`, и по той же причине: переделка по
+    замечанию — это те же стадии, идущие минутами. Остановленная посреди
+    переделки работа возвращается в «остановлена», а стадия — в «ждёт»; что
+    именно решено было переиграть, остаётся в ответе, иначе человек не поймёт,
+    за что заплатил.
     """
     from kadai import rework as rework_mod, run as run_mod
 
-    services = doors_mod.kadai_services(project, endpoint=endpoint)
+    services = doors_mod.kadai_services(project, endpoint=endpoint, cancel=stop,
+                                        on_step=on_step)
     сессия = run_mod.load(services)
-    итог = rework_mod.apply(сессия, note=note, block=block, kind=kind)
+    try:
+        итог = rework_mod.apply(сессия, note=note, block=block, kind=kind)
+    except doors_mod.Остановлено:
+        _остановить(сессия)
+        итог = {"kind": kind, "block": block, "stages": [], "honest": "",
+                "note": "остановлено человеком: стадия начнётся заново"}
     return {"rework": итог, "snapshot": run_mod.snapshot(сессия)}
 
 

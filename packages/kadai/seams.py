@@ -62,9 +62,11 @@ SEAMS: dict[str, Seam] = {
         neighbor="materials + orchestrator",
         address="materials/_pdf.py:92-124, orchestrator.doors.ask. "
                 "Проверено по коду",
-        signature="Project.condition() -> id | None, Project.store().read(id) -> Chunk(.text); "
-                  "materials: пометка происхождения на кусок — какой текст взят из "
-                  "текстового слоя, а какой распознан OCR",
+        signature="Project.condition() -> id | None, Project.store().read(id) -> Chunk(.text), "
+                  "Project.store().get(id) -> Material(.name), "
+                  "Project.solution_materials() -> [id] (файлы папки решения: по ним "
+                  "в архив попадают исходники); materials: пометка происхождения на "
+                  "кусок — какой текст взят из текстового слоя, а какой распознан OCR",
         awaits="условие принимается (add_material(condition=True), разбор .docx есть, "
                "tesseract зовётся), но распознанное OCR отделимо только целым "
                "материалом: внутри PDF страница со сканом склеивается с остальными в "
@@ -238,6 +240,13 @@ class Services:
     допишут своё. Отсутствующая дверь даёт `NotReady` в тот момент, когда её
     позвали, — а не пустой результат и не падение на `AttributeError`, по
     которому не понять, кого ждать.
+
+    В `extra` лежат двери, которых у сценария не одна форма на всех:
+    `write_texts`, `check_code`, `to_pdf` и `on_step`. Последняя — не шов, а
+    слушатель: `on_step({"stage", "tool", "ok", "note", "n", "total"})` зовётся
+    на каждом ходу, о котором стоит сказать человеку, и её отсутствие ничего не
+    ломает — командной строке докладывать некому. Отказа по шву у неё поэтому
+    нет: она спрашивается по имени и молча пропускается.
     """
 
     project: object = None

@@ -17,6 +17,12 @@ kadai_rework — замечание человека к готовой рабо�
 **Ни `block`, ни `kind` мы не додумываем.** Сценарий отказывает на замечании без
 адреса, и отказ этот проводится наружу как есть (`422 kadai_failed`): угаданный
 маршрут переписал бы не то, и узнал бы человек об этом по счёту.
+
+**Остановка и ход — как у `kadai_run`.** `common.Отмена` уезжает дверям
+сценария, поэтому кнопка «Остановить» действует и посреди переделки; события
+`step` рассказывают, что делается сейчас. Остановленная переделка не роняет
+работу: стадия возвращается в «ждёт», работа — в «остановлена», и повторное
+замечание (или прогон) продолжает с неё.
 """
 from __future__ import annotations
 
@@ -24,7 +30,7 @@ from orchestrator import kadai as сценарий
 
 from ...errors import ApiError
 from ...jobs.registry import KADAI_REWORK, register
-from .common import Прогон, отменено
+from .common import Прогон, беда_словами, отменено
 
 NOTE_REQUIRED = "note_required"
 KADAI_FAILED = "kadai_failed"
@@ -45,13 +51,26 @@ def переиграть(ctx) -> dict:
         ctx.progress(0, 1, note=вид or блок or "rework")
         if ctx.cancelled():
             return отменено(ctx, "rework")
+
+        стадия = [""]
+
+        def на_ход(ход: dict) -> None:
+            # То же, что в `kadai_run`: стадию называет сценарий, а ход петли
+            # приходит из слоя инструментов, который про стадии не знает.
+            имя = str(ход.get("stage") or "")
+            if имя:
+                стадия[0] = имя
+            прогон.ход({**ход, "stage": имя or стадия[0]})
+
         try:
             итог = сценарий.rework(прогон.project, endpoint=прогон.ep,
-                                   note=замечание, block=блок, kind=вид)
+                                   note=замечание, block=блок, kind=вид,
+                                   on_step=на_ход, stop=прогон.отмена)
         except Exception as беда:                            # noqa: BLE001
             # Тот же довод, что в `kadai_run`: ловить сценарий по имени класса
-            # значило бы импортировать `kadai` из службы.
-            raise ApiError(KADAI_FAILED, str(беда), 422,
+            # значило бы импортировать `kadai` из службы, а текст беды
+            # приводится к одной русской фразе (`common.беда_словами`).
+            raise ApiError(KADAI_FAILED, беда_словами(беда), 422,
                            where="body.payload") from None
         снимок = итог.get("snapshot") or {}
         for st in снимок.get("stages") or ():

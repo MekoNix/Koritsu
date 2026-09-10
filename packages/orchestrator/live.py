@@ -46,7 +46,7 @@ from llm.model import Part
 
 from . import agent as agent_mod, fill as fill_mod, prompt as prompt_mod, \
     tools as tools_mod
-from .errors import OrchestratorError
+from .errors import OrchestratorError, trouble_words
 from .tools import ToolError
 
 # Сколько ходов живого режима позволено одному прогону. Своё умолчание, а не
@@ -137,11 +137,14 @@ def source_tool() -> llm.Tool:
     """Объявление `put_source`: модель кладёт сочинённый ею исходник материалом.
 
     Описание написано по образцу остальных (`tools.material_tools`) и говорит
-    модели три вещи, без которых инструмент зовут неправильно: **путей он не
+    модели четыре вещи, без которых инструмент зовут неправильно: **путей он не
     принимает** (имя нужно человеку, адресом служит возвращённый
-    идентификатор), **код не выполняется** и **листинг в работу ставится
-    отдельно** блоком `code`. Последнее не придирка: положив исходник и решив,
-    что он уже в работе, модель отдала бы отчёт без листинга.
+    идентификатор), **код не выполняется**, **листинг в работу ставится
+    отдельно** блоком `code` и **файл уезжает человеку в архив**. Третье не
+    придирка: положив исходник и решив, что он уже в работе, модель отдала бы
+    отчёт без листинга. Четвёртое — тот же довод в обратную сторону: написав
+    код одним блоком, она отдала бы человеку архив без единого файла, который
+    можно открыть и собрать.
     """
     return llm.Tool(name=PUT_SOURCE, description=(
         "Положить сочинённый тобой исходник в материалы работы. Возвращает "
@@ -151,7 +154,9 @@ def source_tool() -> llm.Tool:
         "принимает: имя нужно человеку, чтобы узнать файл, а адресом служит "
         f"идентификатор. Больше {tools_mod.MAX_SOURCE_CHARS} знаков за раз не "
         "берёт. Сам листинг в работу этот инструмент НЕ ставит — вставь его "
-        "блоком code отдельно."),
+        "блоком code отдельно. Положенный файл уезжает человеку в архив работы "
+        "папкой «исходники», поэтому весь написанный тобой код клади сюда: "
+        "иначе у человека останется отчёт без единого файла программы."),
         schema=_obj({
             "name": {"type": "string",
                      "description": "имя файла, например «сортировка.py»; "
@@ -196,8 +201,9 @@ class LiveBox(tools_mod.ToolBox):
     """
 
     def __init__(self, project, run, *, parts, work=None, note: str = "",
-                 source: str = "agent"):
-        super().__init__(project, run, parts=parts)
+                 source: str = "agent", on_step=None, max_steps=None):
+        super().__init__(project, run, parts=parts, on_step=on_step,
+                         max_steps=max_steps)
         self.records = project.blocks()
         self.work = work_of(project, self.records) if work is None else work
         self.source = source
@@ -274,10 +280,23 @@ class LiveBox(tools_mod.ToolBox):
             answer = {**answer, "version": self.version.n}
         return answer
 
-    def __call__(self, call):
-        """Тот же диспетчер, но с памятью об имени: его спрашивает `_block_tool`."""
-        self._current = call.name
-        return super().__call__(call)
+    def _step_note(self, call, payload: dict, ok: bool) -> str:
+        """Ход словами: к общим инструментам добавлены свои — правка списка блоков.
+
+        Те же слова, что уезжают пометкой версии списка (`_note_of`), и это не
+        совпадение: человек читает историю блоков и строку «сейчас» рядом, и
+        два описания одного действия он прочёл бы как два действия. Название
+        блока в строке есть, а в пометке версии его нет — там оно уже стоит
+        рядом, в самом блоке.
+        """
+        if ok and call.name == PUT_SOURCE:
+            return f"положен исходник «{payload.get('name') or '?'}»"
+        if not ok or call.name not in hokoku.live.TOOL_NAMES:
+            return super()._step_note(call, payload, ok)
+        if call.name == "list_blocks":
+            return "просмотрен состав работы"
+        заголовок = str(self._args.get("label") or "").strip()
+        return _note_of(call.name, payload) + (f" «{заголовок}»" if заголовок else "")
 
     def _write(self, work, note: str) -> None:
         """Новый список — на диск сразу. Прогон обрывается, сделанное остаётся."""
@@ -356,7 +375,7 @@ class LiveResult:
 
 def solve(project, task: str, *, endpoint: str, tools=None, chunks=(), data=(),
           max_steps=None, max_units=None, max_tokens=None, effort=None,
-          cancel=None, note: str = "") -> LiveResult:
+          cancel=None, on_step=None, note: str = "") -> LiveResult:
     """Уровень 3 живого режима: агент собирает работу блоками.
 
     Порядок тот же, что у `fill_agent`, и переставляться не должен: ворота
@@ -375,6 +394,11 @@ def solve(project, task: str, *, endpoint: str, tools=None, chunks=(), data=(),
     `max_steps=None` — потолок ходов живого режима `MAX_STEPS` (50), а не
     умолчание среднего слоя: собрать работу целиком за дюжину ходов нельзя,
     и прогон обрывался бы на середине штатно.
+
+    `on_step(ход)` — рассказ о каждом ходе тому, кто показывает работу человеку
+    (форма и доводы — в `tools.ToolBox`). Стадия «решение» идёт минутами, и без
+    него человек видит десять минут неподвижной полоски: «работает» и «зависла»
+    выглядят одинаково, и второе он лечит отменой оплаченного.
     """
     extra_flags, gate_problems = tools_mod.operator_channel_gate(endpoint)
 
@@ -389,12 +413,16 @@ def solve(project, task: str, *, endpoint: str, tools=None, chunks=(), data=(),
     parts.append(Part(role="request", stable=False, text=_solve_request(task)))
     fill_mod._seal(project, run, parts)
 
-    box = LiveBox(project, run, parts=parts,
-                  note=note or ("проверить: нет операторского канала"
-                                if extra_flags else ""))
     limits = llm.Limits(
         max_steps=int(max_steps or MAX_STEPS), max_units=max_units,
         **({} if max_tokens is None else {"max_tokens_per_call": max_tokens}))
+    # Потолок ходов коробка получает готовым, а не берёт из `MAX_STEPS`: он
+    # знаменатель доклада о ходе, и назови она свой — «ход 7 из 50» разошлось бы
+    # с настоящей границей прогона.
+    box = LiveBox(project, run, parts=parts, on_step=on_step,
+                  max_steps=limits.max_steps,
+                  note=note or ("проверить: нет операторского канала"
+                                if extra_flags else ""))
     result = llm.run_tools(endpoint, list(tools if tools is not None else live_tools()),
                            parts, box, limits=limits, cancel=cancel,
                            journal=project.journal(), meta={"run": run.id, "level": 3},
@@ -411,7 +439,8 @@ def solve(project, task: str, *, endpoint: str, tools=None, chunks=(), data=(),
                      usage=llm.usage_of(result), steps=result.attempts,
                      calls=box.calls, text=result.text or "", stop=result.stop)
     if result.error is not None:
-        out.problems.append(fill_mod._problem("run_failed", None, str(result.error)))
+        out.problems.append(fill_mod._problem(
+            "run_failed", None, trouble_words(result.error)))
     for code, message in agent_mod._degraded_words(limits.max_steps).items():
         if code in result.degraded:
             out.problems.append(fill_mod._problem(code, None, message, "info"))
@@ -422,7 +451,13 @@ def solve(project, task: str, *, endpoint: str, tools=None, chunks=(), data=(),
 
 
 def _solve_request(task: str) -> str:
-    """Хвост запроса живого режима: что делать и чем. После брейкпойнта кэша."""
+    """Хвост запроса живого режима: что делать и чем. После брейкпойнта кэша.
+
+    Про заготовки разделов здесь сказано отдельно и подробно, потому что именно
+    на них петля молчаливо ошибается: заготовка выглядит написанным абзацем, её
+    легко принять за готовый раздел и пойти дальше, — а раздел, объявленный
+    схемой, остался бы в готовой работе строкой текста.
+    """
     return (f"{str(task).strip()}\n"
             "Работай инструментами. Материалы читаются по идентификатору "
             "(list_materials, read_material), свой сочинённый исходник кладётся "
@@ -430,9 +465,18 @@ def _solve_request(task: str) -> str:
             "(make_flowchart, make_class_diagram, make_object_diagram), блоки "
             "правятся insert_block, replace_block, remove_block, move_block, "
             "состав работы показывает list_blocks.\n"
+            "Заготовка раздела названа видом того, чего он ждёт: «черновик "
+            "diagram: …», «черновик code: …», «черновик table: …». Такую "
+            "заготовку обязан заменить ты (replace_block по её ключу): проход "
+            "текста её не трогает, и оставленная — это заглушка в готовой "
+            "работе. «черновик: …» без вида — место под текст, его не трогай.\n"
             "Схема по своему же коду строится в два хода: сначала put_source, "
             "потом make_flowchart по возвращённому идентификатору. Сам листинг "
-            "put_source в работу не ставит — вставь его блоком code.\n"
+            "put_source в работу не ставит — вставь его блоком code. Схему "
+            "нельзя «описать словами»: описанная словами схема — это "
+            "отсутствующая схема.\n"
+            "Просьбу человека построить схему или написать код исполняй "
+            "буквально: это часть задания, а не пожелание.\n"
             "Каждый готовый блок вставляй сразу, не копи их до конца: "
             "вставленное сохранено и обрыв его не отменит.\n"
             "Ошибка инструмента — не конец работы: в ответе написано, что не так, "

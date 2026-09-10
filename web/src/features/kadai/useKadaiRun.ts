@@ -24,16 +24,28 @@
  * (`useUserEvents`) по коду из уведомления. Беда
  * остаётся на экране строкой: тост уходит через шесть секунд, а человек
  * смотрит именно сюда.
+ *
+ * **Ход внутри стадии — второй поток событий.** Стадия «решение» идёт минутами
+ * и о себе сообщает дважды: «началась» и «кончилась». Между этими двумя
+ * словами сценарий зовёт инструменты, и события `step` — то, что он делает
+ * прямо сейчас. Отсюда они уезжают журналом ходов, а последний из них
+ * становится строкой «сейчас: …».
+ *
+ * **Остановка — то же задание очереди.** Прогон останавливается общим для всей
+ * очереди `POST /api/jobs/{id}/cancel`, и результат его — не беда: у
+ * остановленного задания своё состояние, и на экране оно говорит «остановлено,
+ * продолжить можно кнопкой».
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { ApiError, errorText, keys } from '@/api'
+import { ApiError, errorSaid, errorText, keys } from '@/api'
 import { useJobStream } from '@/api/hooks'
+import { useCancelJob } from '@/features/agent/data'
 import { useEnqueueJob } from '@/features/projects/data'
 
-import type { ReworkKind, StageEvent, Wishes } from './stages'
-import { reworkPayload, runPayload } from './stages'
+import type { Move, ReworkKind, StageEvent, Wishes } from './stages'
+import { readSteps, reworkPayload, runPayload } from './stages'
 import { EV_STAGE, KADAI_REWORK, KADAI_RUN } from './types'
 
 export type KadaiRunState = {
@@ -41,16 +53,28 @@ export type KadaiRunState = {
   running: boolean
   /** Вид идущего задания: `kadai_run` | `kadai_rework` | `null`. */
   kind: string | null
+  /** Идущее задание — по нему его и останавливают. `null` — прогона нет. */
+  jobId: string | null
   /** События `stage`, пришедшие по потоку этого прогона. */
   stageEvents: StageEvent[]
-  /** Строка «что делает сейчас»: заметка последнего события стадии. */
+  /** Ходы внутри стадий: журнал того, что сценарий делал по дороге. */
+  moves: Move[]
+  /** Строка «что делает сейчас»: последний ход, а пока их нет — заметка стадии. */
   note: string
   /** Беда прогона или отказ постановки — уже по-русски. */
   error: string | null
+  /** Сырьё от службы под раскрывашку «подробности». `null` — беда сказана словами. */
+  errorRaw: string | null
+  /** Прошлый прогон остановлен человеком. Сделанное сохранено, можно продолжать. */
+  stopped: boolean
+  /** Просьба остановиться уже отправлена, ответа ещё нет. */
+  stopping: boolean
   /** Запустить сценарий: до какой стадии и с какими пожеланиями. */
   start: (opts: { until: string | null; stages: string[]; wishes: Wishes; first: boolean }) => void
   /** Замечание к блоку. */
   rework: (opts: { block: string; kind: ReworkKind; note: string }) => void
+  /** Попросить прогон остановиться. Сделанное до этого хода остаётся сделанным. */
+  stop: () => void
 }
 
 /**
@@ -62,9 +86,15 @@ export type KadaiRunState = {
 export function useKadaiRun(projectId: string, endpoint: string | null, runId = ''): KadaiRunState {
   const qc = useQueryClient()
   const enqueue = useEnqueueJob()
+  // Отмена задания общая для всей очереди (`POST /api/jobs/{id}/cancel`), и
+  // своего хука у этой области нет намеренно: второй такой же рядом с первым —
+  // это два кэша одного действия.
+  const cancel = useCancelJob()
 
   const [running, setRunning] = useState<{ id: string; kind: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [errorRaw, setErrorRaw] = useState<string | null>(null)
+  const [stopped, setStopped] = useState(false)
   const stream = useJobStream(running?.id)
   // Чтобы не показать конец одного задания дважды: поток закрывается, карточка
   // перечитывается, и `done` становится истиной не один раз.
@@ -78,6 +108,18 @@ export function useKadaiRun(projectId: string, endpoint: string | null, runId = 
     }
     return события
   }, [stream.events])
+
+  const ходы = useMemo(() => readSteps(stream.events), [stream.events])
+
+  // Журнал ходов переживает конец задания намеренно. Кадры видит только тот
+  // поток, что открыт, а он закрывается вместе с заданием — и список того, что
+  // сценарий делал, исчез бы ровно в ту секунду, когда на него смотрят: «что
+  // он там наработал» спрашивают после прогона, а не во время. Чистится журнал
+  // на следующем пуске: тогда он и правда про другой прогон.
+  const [журнал, setЖурнал] = useState<Move[]>([])
+  useEffect(() => {
+    if (ходы.length > 0) setЖурнал(ходы)
+  }, [ходы])
 
   const идёт = !!running && !stream.done
 
@@ -93,9 +135,16 @@ export function useKadaiRun(projectId: string, endpoint: string | null, runId = 
     void qc.invalidateQueries({ queryKey: keys.kadai.runs(projectId) })
     void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
     void qc.invalidateQueries({ queryKey: keys.usage })
-    if (stream.job?.status !== 'done') {
+    // Отмена — не беда: человек сам попросил остановиться, и красная строка на
+    // его собственное действие читается как поломка. Состояние у неё своё, и
+    // экран говорит им «остановлено, продолжить можно кнопкой».
+    if (stream.job?.status === 'cancelled') {
+      setStopped(true)
+    } else if (stream.job?.status !== 'done') {
       const беда = (stream.job?.error ?? {}) as { code?: string; message?: string }
-      setError(errorText(new ApiError(беда.code || 'unknown', беда.message || '')))
+      const сказано = errorSaid(new ApiError(беда.code || 'unknown', беда.message || ''))
+      setError(сказано.text)
+      setErrorRaw(сказано.raw || null)
     }
     setRunning(null)
   }, [running, stream.done, stream.job, projectId, runId, qc])
@@ -103,6 +152,9 @@ export function useKadaiRun(projectId: string, endpoint: string | null, runId = 
   const поставить = useCallback(
     (kind: string, payload: Record<string, unknown>) => {
       setError(null)
+      setErrorRaw(null)
+      setStopped(false)
+      setЖурнал([])
       enqueue.mutate(
         { kind, projectId, payload },
         {
@@ -149,14 +201,36 @@ export function useKadaiRun(projectId: string, endpoint: string | null, runId = 
     [endpoint, runId, поставить],
   )
 
+  /**
+   * Остановка — просьба, а не выключатель: ждущее задание служба снимает
+   * сразу, а идущее останавливается на ближайшей проверке, и всё, что успело
+   * лечь на том, остаётся лежать. Поэтому кнопка гаснет не по ответу службы, а
+   * по концу потока: до него прогон ещё идёт, и говорить «остановлено» рано.
+   */
+  const stop = useCallback(() => {
+    if (!running) return
+    cancel.mutate(running.id, { onError: (беда) => setError(errorText(беда)) })
+  }, [cancel, running])
+
+  // «Сейчас: …» — последний ход, а пока ходов нет (служба их не шлёт или
+  // стадия только началась) — заметка последнего события стадии: это всё, что
+  // про текущую работу известно, и молчать вместо неё было бы хуже.
+  const шаг = журнал.length > 0 ? журнал[журнал.length - 1] : null
   const последнее = stageEvents.length > 0 ? stageEvents[stageEvents.length - 1] : null
+  const заметка_стадии = typeof последнее?.note === 'string' ? последнее.note : ''
   return {
     running: идёт,
     kind: идёт ? (running?.kind ?? null) : null,
+    jobId: running?.id ?? null,
     stageEvents,
-    note: typeof последнее?.note === 'string' ? последнее.note : '',
+    moves: журнал,
+    note: шаг?.note || заметка_стадии,
     error,
+    errorRaw,
+    stopped,
+    stopping: cancel.isPending,
     start,
     rework,
+    stop,
   }
 }

@@ -25,12 +25,30 @@
  * DOCX и PDF собираются одним заданием (см. `useBuild`), поэтому «скачать Word»
  * не запускает вторую сборку — файл уже есть.
  */
+import type { ReactNode } from 'react'
+
 import { useT } from '@/i18n'
 import { Button, EmptyState, Icon, Spinner } from '@/ui'
 
 import type { BuildState } from './useBuild'
 
-export function PdfPreview({ build, canBuild }: { build: BuildState; canBuild: boolean }) {
+export function PdfPreview({
+  build,
+  canBuild,
+  extra,
+}: {
+  build: BuildState
+  canBuild: boolean
+  /**
+   * Добавочная кнопка в шапке просмотрщика, рядом со «скачать».
+   *
+   * Пропсом, а не своей кнопкой внутри: чем управлять просмотрщику, решает тот
+   * экран, на котором он стоит. У решений это «развернуть на всю ширину» —
+   * колонка там узкая, а вёрстку смотрят целой страницей; у отчётов такой
+   * нужды нет, и лишняя кнопка там была бы кнопкой без работы.
+   */
+  extra?: ReactNode
+}) {
   const t = useT()
 
   return (
@@ -47,6 +65,7 @@ export function PdfPreview({ build, canBuild }: { build: BuildState; canBuild: b
           {build.pdfUrl ? t('reports.pdf.rebuild') : t('reports.pdf.build')}
         </Button>
         <span className="ml-auto flex items-center gap-s2">
+          {extra}
           {build.docxUrl && (
             <Button variant="ghost" size="sm" asChild>
               <a href={build.docxUrl} download>

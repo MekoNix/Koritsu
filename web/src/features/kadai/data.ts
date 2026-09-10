@@ -112,6 +112,12 @@ export function useSetCondition() {
       // Условие — карточка решения в списке: пока его не назвали, карточка
       // молчит о том, какую задачу решают.
       void qc.invalidateQueries({ queryKey: keys.kadai.runs(projectId) })
+      // Папка решения перечитывается тем же шагом: условием называют файл,
+      // который только что в неё положили (правка условия — новый материал), и
+      // пометки в ней меняются вместе с условием — «условие» переезжает на
+      // новый файл, а прежний становится прежним условием.
+      void qc.invalidateQueries({ queryKey: keys.kadai.context(projectId, runId) })
+      void qc.invalidateQueries({ queryKey: keys.projects.materials(projectId) })
     },
   })
 }
@@ -357,8 +363,8 @@ export function useDeleteKadaiRun() {
  * Общие файлы работы и галочки этого решения.
  *
  * Общий файл — приложенный ко всей работе, а не к решению: методичку кафедры
- * кладут один раз, а нужна она в каждой задаче. Все они уезжают в промпт по
- * умолчанию, включая положенные позже: служба хранит снятое, а не выбранное.
+ * кладут один раз, а нужна она не каждой задаче. В промпт решения не уезжает ни
+ * один, пока его к решению не подключили: служба хранит выбранное, а не снятое.
  */
 export function useKadaiCommonFiles(
   projectId: string | undefined,
@@ -381,11 +387,11 @@ export function useKadaiCommonFiles(
 }
 
 /**
- * Снять с решения общие файлы работы. Список снятых заменяется целиком.
+ * Подключить к решению общие файлы работы. Список выбранных заменяется целиком.
  *
- * Присылается снятое, а не выбранное: файл, положенный в работу между чтением
- * списка и нажатием галочки, иначе оказался бы снятым за компанию — молча и в
- * промпте, за который платит человек.
+ * Присылается выбранное, а не снятое: файл, положенный в работу между чтением
+ * списка и нажатием галочки, иначе уехал бы в промпт за компанию — молча и за
+ * деньги человека.
  */
 export function useSetKadaiCommonFiles() {
   const qc = useQueryClient()
@@ -393,16 +399,16 @@ export function useSetKadaiCommonFiles() {
     mutationFn: ({
       projectId,
       runId,
-      excluded,
+      included,
     }: {
       projectId: string
       runId: string
-      excluded: string[]
+      included: string[]
     }) =>
       unwrap<KadaiContextBody>(
         api.PUT('/api/projects/{project_id}/kadai/context', {
           params: { path: { project_id: projectId }, query: { run: runId } },
-          body: { excluded },
+          body: { included },
         }),
       ),
     onSuccess: (ответ, { projectId, runId }) => {

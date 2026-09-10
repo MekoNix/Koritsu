@@ -48,7 +48,7 @@ import hokoku
 import llm
 
 from . import prompt as prompt_mod, schema as schema_mod
-from .errors import OrchestratorError, hint
+from .errors import OrchestratorError, hint, trouble_words
 from .stream import TagStream
 
 
@@ -249,7 +249,7 @@ def fill_report(project, *, endpoint: str, keys=None, chunks=(), effort=None,
         # Исходы разные, а поведение одно: сохранённое остаётся сохранённым.
         error = exc
     if error is not None:
-        out.problems.append(_problem("stream_failed", None, str(error)))
+        out.problems.append(_problem("stream_failed", None, trouble_words(error)))
 
     tail = tags.close()
     for key, raw in tail["broken"]:
@@ -480,11 +480,18 @@ def _outcome(out: RunResult, error, tags: TagStream) -> str:
 
 
 def _why(result) -> str:
+    """Почему вызов не дал значения — одной фразой для человека.
+
+    Через `trouble_words`, а не `str(result.error)`: замечание отсюда уезжает в
+    статус работы, в карточку задания и на экран, а текст поставщика приходит
+    по-английски и телом JSON. Подробности беды при этом не теряются — они в
+    журнале расхода и в записи прогона.
+    """
     if getattr(result, "error", None) is not None:
-        return str(result.error)
+        return trouble_words(result.error)
     if not isinstance(result.value, dict):
-        return f"модель вернула {type(result.value).__name__}, а нужен объект значения"
-    return f"вызов не удался (stop={result.stop})"
+        return "модель ответила не по схеме: пришёл не объект значения"
+    return trouble_words(stop=str(getattr(result, "stop", "")))
 
 
 def _problem(code: str, key, message: str, level: str = "error") -> hokoku.Problem:
