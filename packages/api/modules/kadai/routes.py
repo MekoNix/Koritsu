@@ -6,7 +6,7 @@ routes — решения: `/api/kadai` и `/api/projects/{id}/kadai`.
     POST   /api/projects/{id}/kadai/runs         201  завести решение   (editor)
     DELETE /api/projects/{id}/kadai/runs/{run_id} 204 снести решение    (editor)
     GET    /api/projects/{id}/kadai?run=         200  ход решения: стадии, файлы
-    PUT    /api/projects/{id}/kadai/condition    200  назвать материал условием (editor)
+    PUT    /api/projects/{id}/kadai/condition    200  условие: текст и/или файл (editor)
     GET    /api/projects/{id}/kadai/context      200  общие файлы работы у решения
     PUT    /api/projects/{id}/kadai/context      200  какие общие файлы подключить (editor)
     GET    /api/projects/{id}/kadai/wishes       200  пожелания к решению
@@ -81,18 +81,23 @@ routes — решения: `/api/kadai` и `/api/projects/{id}/kadai`.
 
 **Условие — отдельный маршрут, а не флаг загрузки.** Человек подтверждает
 распознанное **после** приёма файла: до подтверждения условие — обычный
-материал. Поэтому «назвать условием» это
-действие над проектом, и `PUT`: назвать дважды тот же материал — то же
-состояние, а не второе условие.
+материал. Поэтому «записать условие» это действие над проектом, и `PUT`:
+записать дважды то же самое — то же состояние, а не второе условие.
 
-**Условие в снимке — то, что названо на томе, а не то, с которым шла работа.**
-Ход стадий помнит условие таким, каким его прочитала стадия «приём», и после
-правки помнит **прежнее**: поправленный текст ложится новым материалом, а
-стадию с тех пор не проходили. Показывать это на экране значило бы отвечать
-человеку прежним текстом на его же правку, поэтому карточка условия в ответе
-берётся с тома (`Project.condition`) — она есть и до первого прогона. Прежние
-условия приезжают отдельным полем (`condition_past`): файлы остаются в папке
-решения, но модели не показываются, и экран помечает их.
+**Условие живёт текстом, а файл — тем, из чего его прочитали.** Текст лежит
+записью решения и правится на месте; файл (pdf, docx, скан) остаётся
+материалом, потому что в нём бывают картинки и по нему видно, что читали. Текст
+старше файла: правка действует сразу, без второй загрузки, и условие в решении
+ровно одно — прежнему незачем оставаться в папке под пометкой «по нему больше
+не решают». Раньше условие, набранное в форме, заворачивалось в `.txt` и
+ложилось материалом, а правка — вторым материалом; так в папке решения копились
+файлы, которых человек не приносил.
+
+**Условие в снимке — то, что записано на томе, а не то, с которым шла работа.**
+Ход стадий помнит условие таким, каким его прочитала стадия «приём», а правят
+его между прогонами. Показывать снимок значило бы отвечать человеку прежним
+текстом на его же правку, поэтому и текст, и карточка файла в ответе берутся с
+тома — они есть и до первого прогона.
 
 **Бланк с тегами — то, что остаётся от решения после него самого.** Готовая
 работа это список блоков, и второй такой же работе он не поможет ничем: блоки
@@ -111,8 +116,9 @@ routes — решения: `/api/kadai` и `/api/projects/{id}/kadai`.
 `projects.module` здесь означал бы, что одно и то же решение читается или не
 читается в зависимости от пункта сайдбара, под которым его завели.
 
-Коды отказа: `400 invalid_id` — форма идентификатора; `403 forbidden` — роли
-мало; `404 not_found` — нет проекта, спрашивающий не участник или нет такого
+Коды отказа: `400 invalid_id` — форма идентификатора; `400 invalid_value` — в
+теле условия нет ни текста, ни материала; `403 forbidden` — роли мало;
+`404 not_found` — нет проекта, спрашивающий не участник или нет такого
 материала (одинаково: разные ответы рассказывали бы, что проект существует);
 `422 kadai_failed` — собирать бланк не из чего.
 """
@@ -150,18 +156,36 @@ router = APIRouter(tags=["kadai"])
 # входом он попросил, ему незачем (`runs/handlers/kadai_run.KADAI_FAILED`).
 KADAI_FAILED = "kadai_failed"
 
+# Отказ «в теле нечего записать»: ни текста, ни материала.
+INVALID_VALUE = "invalid_value"
+
+# Потолок условия текстом. Условие — это страница-другая задания, а не
+# методичка: методичку кладут файлом, и она разбирается кусками. Потолок стоит
+# затем, что текст едет в промпт целиком и его оплачивает человек.
+CONDITION_MAX = 40000
+
 
 class ConditionIn(BaseModel):
-    """Какой материал проекта считать условием задачи."""
+    """Условие задачи: текст, файл или то и другое. Одно из двух обязательно."""
 
     material_id: str = Field(
-        description="Id of an already parsed material of this project")
+        default="",
+        description=("Id of an already parsed material of this project: the "
+                     "assignment as a file. Empty leaves the named file as it "
+                     "is."))
+    text: str | None = Field(
+        default=None, max_length=CONDITION_MAX,
+        description=("The assignment in words: typed into the form, or "
+                     "corrected after a scan has been read. This is what the "
+                     "work is solved by; the file is where it was read from. "
+                     "Null leaves the stored text alone; an empty string "
+                     "erases it, and the file is read again."))
     use_file_name: bool = Field(
         default=True,
         description=("Name the solution after this file when the person has "
-                     "not named it. False when the file was not brought by the "
-                     "person: an assignment typed into the form, or a "
-                     "correction of what was read from a scan."))
+                     "not named it. Means nothing without `material_id`: an "
+                     "assignment typed into the form is not a file the person "
+                     "brought."))
 
 
 class ContextFileOut(BaseModel):
@@ -349,27 +373,29 @@ def условие_решения(вид) -> dict:
 
 
 def с_условием(вид, снимок: dict) -> dict:
-    """Дописать в снимок условие, названное на томе. → тот же словарь.
+    """Дописать в снимок условие, записанное на томе. → тот же словарь.
 
-    Ход стадий помнит условие таким, каким его прочитала стадия «приём». После
-    правки условия том знает новый материал, а ход стадий — прежний, и экран,
-    читающий только снимок, отвечал бы человеку старым текстом на его же
-    правку. Поэтому карточка условия берётся с тома; она же есть и до первого
-    прогона, когда снимка нет вовсе.
+    Ход стадий помнит условие таким, каким его прочитала стадия «приём». Правят
+    же его между прогонами, и экран, читающий только снимок, отвечал бы человеку
+    старым текстом на его же правку. Поэтому и текст, и карточка файла берутся с
+    тома; они же есть и до первого прогона, когда снимка нет вовсе.
+
+    Порядок тот же, что у стадии «приём»: подтверждённый человеком текст
+    (`condition_text`) старше того, что прочитано из файла. Прочитанное остаётся
+    ответом, пока человек ничего не подтверждал, — иначе после первого прогона
+    условие на экране пропадало бы у всех, кто принёс его файлом.
 
     Карточка прогона сохраняется, пока речь об одном и том же материале: она
     знает про него больше — читан ли он распознаванием, — и терять это незачем.
-    Разошлись — прежний текст условия из ответа убирается: он принадлежит
-    другому файлу.
     """
     названо = условие_решения(вид)
     прочитано = dict(снимок.get("condition") or {})
+    текст_прогона = ("" if названо.get("material") != прочитано.get("material")
+                     else str(снимок.get("condition_text") or ""))
     if названо and названо.get("material") == прочитано.get("material"):
         названо = прочитано
-    else:
-        снимок["condition_text"] = ""
-    снимок["condition"] = названо
-    снимок["condition_past"] = list(вид.past_conditions())
+    снимок["condition"] = {k: v for k, v in названо.items() if k != "text"}
+    снимок["condition_text"] = вид.condition_text() or текст_прогона
     return снимок
 
 
@@ -520,13 +546,15 @@ def стадии() -> dict:
                 "the assignment, problems, and the artifacts of "
                 "everything already built. Empty `work` means no run has been "
                 "started for this project yet, which is not an error. "
-                "`condition` is the material named as the assignment right "
-                "now, which the solution has before its first run and after "
-                "the person has corrected it; `condition_text` is that text as "
-                "the run read it, and is empty until a run has read it. "
-                "`condition_past` lists materials that used to be the "
-                "assignment: they stay in the solution's folder and are not "
-                "shown to the model. Reading "
+                "`condition_text` is the assignment in words: what the person "
+                "typed or confirmed, and until they have, what the last run "
+                "read out of the file. `condition` is the file it came from "
+                "(`{material, name, unit}`), empty when the assignment was "
+                "typed. Both are read from the volume, so a correction shows "
+                "before the next run. `made` carries the artifacts to "
+                "download: `docx`, `pdf`, `archive` (the full archive) and "
+                "`archive_light` (the report with the sources and the "
+                "diagrams, the one to hand in). Reading "
                 "it costs nothing: no model call and no stage is run. `run` "
                 "names the solution to read; without it the project is read as "
                 "a whole, the way it looked while it carried one solution. "
@@ -550,36 +578,59 @@ def ход(проект: ЧитательПроекта, s: SessionDep, run: str
 
 @router.put("/projects/{project_id}/kadai/condition",
             operation_id="kadai_set_condition",
-            summary="Name the material that holds the assignment",
+            summary="Set the assignment of this solution: text, file, or both",
             description=(
-                "Marks an already parsed material of this project as the "
-                "condition of the task. Until one is named, a `kadai_run` job "
-                "refuses: there is nothing to solve. Naming the same material "
-                "twice is the same state, which is why this is a PUT. Every "
-                "solution has an assignment of its own: `run` says which. A "
-                "solution the person has not named takes the name of this "
-                "file, without its extension. The material named before this "
-                "one stays in the solution's folder and stops being shown to "
-                "the model: two assignments at once, the old one and the "
-                "corrected one, would be solved as the old one. Editor role. "
-                "400 invalid_id, 403 forbidden, 404 not_found."))
+                "Writes the assignment of the task. `text` is the assignment "
+                "in words — typed into the form, or corrected after a scan has "
+                "been read — and it is what the work is solved by. "
+                "`material_id` names an already parsed material of this "
+                "project as the file the assignment came from; the file keeps "
+                "its pictures and shows what was read. Text wins over file: a "
+                "correction takes effect at once, without a second upload, and "
+                "there is exactly one assignment in a solution — no previous "
+                "version stays behind to be marked and explained. Until one of "
+                "the two is set, a `kadai_run` job refuses: there is nothing "
+                "to solve. Writing the same values twice is the same state, "
+                "which is why this is a PUT. Every solution has an assignment "
+                "of its own: `run` says which. A solution the person has not "
+                "named takes the name of the file, without its extension. "
+                "Naming another file drops the stored text: it belonged to the "
+                "previous one. Editor role. 400 invalid_id, 400 invalid_value "
+                "(neither text nor material), 403 forbidden, 404 not_found."))
 def назначить_условие(тело: ConditionIn, проект: РедакторПроекта,
                       s: SessionDep, run: str = РЕШЕНИЕ) -> dict:
-    """Назвать материал условием задачи. Материал обязан быть разобран."""
-    проверить_ид(тело.material_id)
+    """Записать условие задачи: текстом, файлом или тем и другим.
+
+    Текст ложится в состояние решения, а не в материал: условие, завёрнутое в
+    `.txt`, правится только вторым файлом — первый остаётся в папке, требует
+    пометки «прежнее» и объяснения, почему по нему не решают. Текст заменяется
+    на месте, и условие в решении ровно одно.
+    """
+    if not тело.material_id and тело.text is None:
+        raise ApiError(INVALID_VALUE,
+                       "Give the assignment as `text`, as `material_id`, or as "
+                       "both", 400, where="body")
     проект_на_томе = решение(проект, s, run)
-    try:
-        проект_на_томе.set_condition(тело.material_id)
-    except _materials.MaterialsError:
-        # Материал есть в задании на разбор, но ещё не разобран — с точки
-        # зрения хранилища его нет, и различать эти два случая кодом ответа
-        # значило бы рассказывать, что кто-то грузит файл прямо сейчас.
-        raise ApiError(NOT_FOUND, "Material not found", 404,
-                       where="body.material_id") from None
-    если = str(run or "").strip()
-    if если and тело.use_file_name:
-        назвать_по_условию(s, проект.id, если, проект_на_томе)
-    return {"condition": проект_на_томе.condition()}
+    if тело.material_id:
+        проверить_ид(тело.material_id)
+        try:
+            проект_на_томе.set_condition(тело.material_id)
+        except _materials.MaterialsError:
+            # Материал есть в задании на разбор, но ещё не разобран — с точки
+            # зрения хранилища его нет, и различать эти два случая кодом ответа
+            # значило бы рассказывать, что кто-то грузит файл прямо сейчас.
+            raise ApiError(NOT_FOUND, "Material not found", 404,
+                           where="body.material_id") from None
+        если = str(run or "").strip()
+        if если and тело.use_file_name:
+            назвать_по_условию(s, проект.id, если, проект_на_томе)
+    if тело.text is not None:
+        # Текст пишется после файла: назвав новый файл, `set_condition` стирает
+        # текст прежнего, и правка, приехавшая с ним в одном теле, иначе
+        # пропала бы молча.
+        проект_на_томе.set_condition_text(тело.text)
+    return {"condition": проект_на_томе.condition(),
+            "text": проект_на_томе.condition_text()}
 
 
 @router.get("/projects/{project_id}/kadai/context",
@@ -776,7 +827,8 @@ def бланк(проект: РедакторПроекта, s: SessionDep, user
 
 __all__ = ["router", "BlankOut", "ConditionIn", "WishesIn", "RestartIn",
            "SolutionIn", "SolutionOut", "ContextIn", "ContextOut", "ContextFileOut",
-           "KADAI_FAILED", "МОДУЛЬ", "записи_решений", "найти_решение",
+           "KADAI_FAILED", "INVALID_VALUE", "CONDITION_MAX", "МОДУЛЬ",
+           "записи_решений", "найти_решение",
            "развести_решения", "решение", "карточка_решения",
            "назвать_по_условию", "общие_файлы", "условие_решения",
            "с_условием", "бланк"]

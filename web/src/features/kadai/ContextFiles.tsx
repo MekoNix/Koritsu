@@ -16,14 +16,11 @@
  *
  * **«Убрать» уносит файл с тома, а не только из папки.** Файл, положенный
  * сюда, принадлежит этому решению, и «убрал из папки, а он остался в работе»
- * было бы состоянием, которого человек не просил и не видит. Условие при этом
- * убрать нельзя: без него решать нечего, и меняется оно своим шагом.
+ * было бы состоянием, которого человек не просил и не видит. Файл условия при
+ * этом убрать нельзя: он помечен «условие», и меняется оно своим шагом.
  *
- * **Прежние условия помечены.** Поправленное условие ложится новым материалом,
- * а файл с прежним текстом остаётся в папке — по нему видно, что было
- * прочитано. Модели он больше не показывается (`Project.context_ids`), и
- * пометка говорит это прямо: без неё список обещал бы модели файл, которого
- * она не увидит.
+ * Версий условия в папке не бывает: условие живёт в решении текстом и правится
+ * на месте, а файл — то, из чего его вынули, и он один.
  */
 import { useState } from 'react'
 
@@ -48,15 +45,12 @@ export function ContextFiles({
   projectId,
   runId,
   conditionId,
-  pastIds = [],
   disabled,
 }: {
   projectId: string
   runId: string
-  /** Материал-условие: его из папки не убирают — без него решать нечего. */
+  /** Файл условия: его из папки не убирают — условие меняют своим шагом. */
   conditionId: string | undefined
-  /** Материалы, бывшие условием раньше: лежат в папке, но модели не видны. */
-  pastIds?: string[]
   disabled: boolean
 }) {
   const t = useT()
@@ -98,14 +92,6 @@ export function ContextFiles({
               <li key={m.id} className="flex items-center gap-s2">
                 <Icon name="file" size={14} className="text-muted" />
                 <span className="truncate">{m.name}</span>
-                {pastIds.includes(m.id) && (
-                  <span
-                    className="shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5 text-xs text-muted"
-                    title={t('kadai.context.wasConditionHint')}
-                  >
-                    {t('kadai.context.wasCondition')}
-                  </span>
-                )}
                 {m.id === conditionId ? (
                   <span className="ml-auto rounded-sm bg-surface-2 px-1.5 py-0.5 text-xs text-muted">
                     {t('kadai.context.isCondition')}

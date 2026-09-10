@@ -76,16 +76,41 @@ export function useKadaiStatus(
 }
 
 /**
- * Назвать материал условием задачи.
+ * Ответ маршрута условия: файл, из которого оно взято, и его текст.
  *
- * Без этого прогон отказывает «условие задачи не приложено»: до подтверждения
- * условие — обычный материал.
+ * Текст в ответе не лишний: правка условия — это правка строки на томе, и
+ * показать после неё надо ровно то, что легло, а не то, что было в поле.
+ */
+type ConditionAnswer = { condition: string | null; text: string }
+
+/** Что перечитывается после правки условия — одним списком на оба хука. */
+function условие_изменилось(
+  qc: ReturnType<typeof useQueryClient>,
+  projectId: string,
+  runId: string,
+) {
+  void qc.invalidateQueries({ queryKey: keys.kadai.status(projectId, runId) })
+  // Условие — карточка решения в списке: пока его не назвали, карточка молчит
+  // о том, какую задачу решают.
+  void qc.invalidateQueries({ queryKey: keys.kadai.runs(projectId) })
+  // Папка решения перечитывается тем же шагом: файлом условия называют то, что
+  // в неё только что положили, и пометка «условие» переезжает вместе с ним.
+  void qc.invalidateQueries({ queryKey: keys.kadai.context(projectId, runId) })
+  void qc.invalidateQueries({ queryKey: keys.projects.materials(projectId) })
+}
+
+/**
+ * Назвать материал файлом условия задачи.
+ *
+ * Без условия прогон отказывает «условие задачи не приложено»: до этого файл —
+ * обычный материал. Распознанный текст файла служба кладёт в состояние решения
+ * и дальше решает по нему, а файл остаётся тем, из чего текст взят: сверить
+ * прочитанное со сканом человек может только по самому скану.
  *
  * `useFileName` — брать ли имя решения из имени этого файла. Так называется
  * решение, которому человек имени не дал: «Решение 4» в списке из шести задач
- * ничем не отличается от «Решения 5». Ложь передаётся там, где файл придумали
- * мы: условие, набранное в форме текстом, и правка распознанного заворачиваются
- * в `.txt` интерфейсом, и его имя человек не выбирал.
+ * ничем не отличается от «Решения 5». Ложь передаётся там, где файл принёс не
+ * человек.
  */
 export function useSetCondition() {
   const qc = useQueryClient()
@@ -101,24 +126,51 @@ export function useSetCondition() {
       runId?: string
       useFileName?: boolean
     }) =>
-      unwrap<{ condition: string | null }>(
+      unwrap<ConditionAnswer>(
         api.PUT('/api/projects/{project_id}/kadai/condition', {
           params: { path: { project_id: projectId }, query: { run: runId } },
           body: { material_id: materialId, use_file_name: useFileName },
         }),
       ),
-    onSuccess: (_answer, { projectId, runId = '' }) => {
-      void qc.invalidateQueries({ queryKey: keys.kadai.status(projectId, runId) })
-      // Условие — карточка решения в списке: пока его не назвали, карточка
-      // молчит о том, какую задачу решают.
-      void qc.invalidateQueries({ queryKey: keys.kadai.runs(projectId) })
-      // Папка решения перечитывается тем же шагом: условием называют файл,
-      // который только что в неё положили (правка условия — новый материал), и
-      // пометки в ней меняются вместе с условием — «условие» переезжает на
-      // новый файл, а прежний становится прежним условием.
-      void qc.invalidateQueries({ queryKey: keys.kadai.context(projectId, runId) })
-      void qc.invalidateQueries({ queryKey: keys.projects.materials(projectId) })
-    },
+    onSuccess: (_answer, { projectId, runId = '' }) => условие_изменилось(qc, projectId, runId),
+  })
+}
+
+/**
+ * Записать условие задачи текстом.
+ *
+ * Тот же маршрут, что и у файла, но телом уезжает строка: условие живёт в
+ * состоянии решения текстом, и правят его на месте. Заворачивать правку в файл
+ * и класть его материалом было нельзя — материал адресуется содержимым, и
+ * «поправленный материал» по построению другой; папка решения набиралась
+ * версиями условия, из которых модели показывалась одна, а человек видел все.
+ *
+ * Файл условия при этом остаётся приложенным: правят прочитанный из него текст,
+ * а не сам файл.
+ */
+export function useSetConditionText() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      text,
+      runId = '',
+    }: {
+      projectId: string
+      text: string
+      runId?: string
+    }) =>
+      unwrap<ConditionAnswer>(
+        api.PUT('/api/projects/{project_id}/kadai/condition', {
+          params: { path: { project_id: projectId }, query: { run: runId } },
+          // Пустой `material_id` — «файл оставить как есть»: правят текст, а
+          // файл, из которого он прочитан, остаётся приложенным. `use_file_name`
+          // без файла ничего не значит и передаётся ложью, чтобы имя решения не
+          // выглядело взятым отсюда.
+          body: { material_id: '', text, use_file_name: false },
+        }),
+      ),
+    onSuccess: (_answer, { projectId, runId = '' }) => условие_изменилось(qc, projectId, runId),
   })
 }
 

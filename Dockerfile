@@ -8,6 +8,11 @@
 #   libreoffice-writer   DOCX → PDF (`hokoku/pdf.py` зовёт `soffice --headless`).
 #                        Writer, а не весь LibreOffice: Calc и Impress мы не
 #                        зовём никогда, а весят они больше самого Python.
+#   libreoffice-math     формулы. Формула в отчёте — нативный объект Word (OMML,
+#                        `hokoku/omml.py`), и рисует его при выводе в PDF
+#                        компонент Math. Без него Writer открывает документ
+#                        молча и без единой ошибки, но на месте каждой формулы
+#                        оставляет пустоту: остаётся только её номер «(1)».
 #   fonts-liberation,    кириллица в PDF. Без шрифтов LibreOffice подставит
 #   fonts-dejavu-core    что найдёт, и отчёт студента приедет квадратами.
 #                        Liberation метрически совпадает с Times New Roman и
@@ -43,6 +48,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
         libreoffice-writer \
+        libreoffice-math \
         fonts-liberation \
         fonts-dejavu-core \
         tesseract-ocr \

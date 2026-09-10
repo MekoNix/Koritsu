@@ -1,5 +1,5 @@
 """
-archive — опись ZIP: что кладём, под каким именем и почему один файл обязателен всегда.
+archive — описи ZIP: что кладём, под каким именем и почему запись о сборке обязательна.
 
 `kadai` называет содержимое, складывает `orchestrator` (шов «архив»). Разрез
 именно тут: опись — это список пар «имя в архиве → откуда взять»
@@ -8,12 +8,22 @@ archive — опись ZIP: что кладём, под каким именем 
 встречается только в `project.py`», на котором держится переезд на SQLite,
 ломается первой же строкой.
 
-**`.metadata` обязателен, и в нём обязательна строка про незапущенный код.**
-Исполнять код мы не будем никогда (песочницы не будет), а врать о непроверенном
-нельзя. Компилируемый исходник без этой строки читается как проверенный —
-человек узнает правду на защите, а не от нас. Поэтому опись отказывается
-собираться, если строки в тексте нет: это не оформление, а условие честности
-архива.
+**Архивов два, и оба собираются вместе.** Полный отвечает на вопрос «откуда это
+взялось»: отчёт, бланк, исходники, схемы, `решение.md` и запись о сборке.
+Облегчённый — это то, что сдают: отчёт (DOCX и PDF), `исходники/` и `схемы/`, и
+больше ничего. Бланк, `решение.md` и запись о сборке из него убраны не ради
+объёма — их принимали за часть работы и несли вместе с ней. Выбор между двумя
+архивами человек делает, когда скачивает, а не когда запускает решение: спросить
+до прогона значило бы прогнать его второй раз ради другого ZIP.
+
+**`.metadata` обязателен в полном архиве, и в нём обязательна строка про
+незапущенный код.** Исполнять код мы не будем никогда (песочницы не будет), а
+врать о непроверенном нельзя. Компилируемый исходник без этой строки читается
+как проверенный — человек узнает правду на защите, а не от нас. Поэтому опись
+отказывается собираться, если строки в тексте нет: это не оформление, а условие
+честности архива. Облегчённый архив собирается только рядом с полным
+(`run.stage_archive` кладёт оба), поэтому запись о сборке у работы есть всегда —
+человек её не теряет, а лишь не несёт на сдачу.
 
 Имя у этой записи служебное и скрытое, и решает оно один вопрос: **что человек
 примет за часть работы**. Русское имя рядом с отчётом и решением читалось как
@@ -59,11 +69,16 @@ NOTICE = ".metadata"
 DIR_SOURCES = "исходники"
 DIR_DIAGRAMS = "схемы"
 
+# Имена самих архивов. Полный называет работу целиком, облегчённый — то, что из
+# него несут на сдачу; по имени файла человек различает их, не открывая.
+ZIP_FULL = "работа.zip"
+ZIP_LIGHT = "отчёт-и-код.zip"
+
 # Строка, без которой опись не собирается. Дословная: её ищут в тексте, и
 # переформулировка «где-то там то же самое» проверку бы прошла, а смысл потеряла.
 NOT_RUN = ("Код в этом архиве не запускался и не проверялся исполнением: система "
-           "пользовательский код не выполняет. Разбор был только статический "
-           "(tree-sitter): он ловит синтаксический мусор и обрывки, но не отвечает "
+           "пользовательский код не выполняет. Проверка была только чтением текста "
+           "программы: она ловит синтаксический мусор и обрывки, но не отвечает "
            "на вопрос, верно ли работает решение. Проверьте код перед сдачей.")
 
 _MAX_LEAF = 120
@@ -195,12 +210,18 @@ def check_names(entries) -> None:
         seen[key] = e.name
 
 
-def plan_archive(*, notice: str, report: str | None = None,
+def plan_archive(*, notice: str = "", report: str | None = None,
                  report_artifact: str | None = None, pdf: str | None = None,
                  pdf_artifact: str | None = None, template_artifact: str | None = None,
                  sources=(), source_texts=(), diagrams=(), diagram_texts=(),
-                 solution: str = "") -> list[Entry]:
+                 solution: str = "", light: bool = False) -> list[Entry]:
     """Опись архива. `notice` обязателен и обязан содержать строку про незапущенный код.
+
+    `light=True` — опись того, что сдают: отчёт, `исходники/` и `схемы/`. Бланк,
+    `решение.md` и запись о сборке в неё не попадают, даже будучи названными:
+    решает вид архива, а не вызывающий, — иначе «облегчённый» у двух вызовов
+    означал бы разное. Запись о сборке здесь не требуется и по той же причине не
+    кладётся: она у работы уже есть, в полном архиве, который собран рядом.
 
     Отчёт приходит одним из двух путей, и оба законны. `report` — имя готового
     файла в каталоге сборки (шаблонный путь: `build_report` пишет DOCX в `out/`).
@@ -225,7 +246,7 @@ def plan_archive(*, notice: str, report: str | None = None,
     построенная петлёй, доезжает сюда текстом, и знать про это надо здесь:
     иначе `схемы/` в архиве молча пусты, а человек узнаёт об этом, распаковав.
     """
-    if NOT_RUN not in (notice or ""):
+    if not light and NOT_RUN not in (notice or ""):
         raise KadaiError("в «.metadata» нет строки о том, что код не запускался. "
                          "Без неё архив обещает проверенный код: соберите текст "
                          "через notice_text()")
@@ -241,7 +262,7 @@ def plan_archive(*, notice: str, report: str | None = None,
         entries.append(Entry(REPORT_PDF, {"artifact": pdf_artifact}))
     elif pdf:
         entries.append(Entry(safe_leaf(pdf), {"output": pdf}))
-    if template_artifact:
+    if template_artifact and not light:
         entries.append(Entry(TEMPLATE, {"artifact": template_artifact}))
     for name, art in sources:
         entries.append(Entry(in_dir(DIR_SOURCES, name), {"artifact": art}))
@@ -251,25 +272,42 @@ def plan_archive(*, notice: str, report: str | None = None,
         entries.append(Entry(in_dir(DIR_DIAGRAMS, f"{key}.drawio"), {"artifact": art}))
     for key, xml in diagram_texts:
         entries.append(Entry(in_dir(DIR_DIAGRAMS, f"{key}.drawio"), {"text": str(xml)}))
-    if solution:
+    if solution and not light:
         entries.append(Entry(SOLUTION, {"text": solution}))
-    entries.append(Entry(NOTICE, {"text": notice}))
+    if not light:
+        entries.append(Entry(NOTICE, {"text": notice}))
     check_names(entries)
     return entries
 
 
-def notice_text(*, work_id: str, profile: str, wishes: str = "", requirement: str = "",
-                stages=(), spent: dict | None = None, versions: dict | None = None,
-                problems=()) -> str:
+# Как называется уровень замечания в тексте для человека. Кодов уровня
+# (`error`, `warning`) в файле нет: их читает интерфейс, а `.metadata` читает
+# тот, кто открыл архив и хочет знать, что с работой не так.
+_LEVEL_WORDS = {"error": "Ошибка", "warning": "Предупреждение", "info": "Замечание"}
+
+
+def notice_text(*, work_id: str, profile: str, condition: str = "", wishes: str = "",
+                requirement: str = "", stages=(), spent: dict | None = None,
+                versions: dict | None = None, problems=()) -> str:
     """Текст «.metadata»: чем работа была, как собиралась и чего мы не проверяли.
 
     Собирается всегда и целиком: файл отвечает на вопрос «откуда это взялось»
-    через полгода, когда прогона уже нет ни в чьей памяти. Номера версий
-    значений на момент сборки кладутся сюда же — без них по архиву не понять,
-    какой именно вариант отчёта в нём лежит.
+    через полгода, когда прогона уже нет ни в чьей памяти. Номера версий на
+    момент сборки кладутся сюда же — без них по архиву не понять, какой именно
+    вариант отчёта в нём лежит.
+
+    **Условие — дословно.** Оно первое, что спрашивают у архива: работа
+    отвечает на задачу, и без её текста рядом сверить ответ не с чем.
+
+    **Ни одного внутреннего имени.** Читает файл человек, а не служба: имена
+    наших модулей, коды замечаний и названия чужих пакетов ему не говорят
+    ничего, а выглядят поломкой. Всё, что в файле есть, названо теми же
+    словами, какими это же показано на экране.
     """
     lines = ["Как собрана эта работа", "",
              f"Работа: {work_id}", f"Вид работы: {profile}"]
+    if condition:
+        lines += ["", "Условие задачи (дословно):", _quote(condition)]
     if wishes:
         lines += ["", "Пожелания (дословно):", _quote(wishes)]
     if requirement:
@@ -287,13 +325,12 @@ def notice_text(*, work_id: str, profile: str, wishes: str = "", requirement: st
                   + (f" ({share:.0%})" if share is not None else "")
                   + f"; оценено, а не измерено: {spent.get('estimated_share', 0):.0%}"]
     if versions:
-        lines += ["", "Версии значений на момент сборки:"]
+        lines += ["", "Версии на момент сборки:"]
         lines += [f"  {key}: v{n}" for key, n in sorted(versions.items())]
     if problems:
-        lines += ["", "Замечания сборки:"]
-        lines += [f"  [{p.get('level')}] {p.get('module')}/{p.get('code')}"
-                  + (f" ({p['key']})" if p.get("key") else "")
-                  + f": {p.get('message')}" for p in problems]
+        lines += ["", "Что осталось не так:"]
+        lines += [f"  {_LEVEL_WORDS.get(str(p.get('level')), 'Замечание')}: "
+                  f"{p.get('message')}" for p in problems]
     lines += ["", NOT_RUN, ""]
     return "\n".join(lines)
 
@@ -329,6 +366,7 @@ def pack(project, entries, *, name: str = "") -> str:
 
 
 __all__ = ["Entry", "NOT_RUN", "NOTICE", "SOLUTION", "TEMPLATE", "REPORT_DOCX", "REPORT_PDF",
+           "ZIP_FULL", "ZIP_LIGHT",
            "DIR_SOURCES", "DIR_DIAGRAMS", "SOURCE_EXT", "SOURCE_EXTS", "source_name",
            "is_source_name", "unique_name",
            "safe_leaf", "in_dir", "check_names", "plan_archive", "notice_text",

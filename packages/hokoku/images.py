@@ -73,7 +73,8 @@ def count_pages(xml: str) -> int:
 def drawio_to_png(xml: str, page: int | None = None, scale: float = 2.0, timeout: float = 120,
                   cache: bool = True) -> bytes:
     """draw.io XML → PNG через drawio CLI (+ xvfb-run, если есть). Ошибка, если CLI нет.
-    Зовётся с `--no-sandbox`: Electron без него в контейнере падает (см. ниже).
+    Зовётся с `--no-sandbox` и `--disable-dev-shm-usage`: без первого Electron в
+    контейнере падает, без второго — виснет на схеме крупнее мегапикселя (см. ниже).
     page — номер страницы mxfile, считая с 1 (None — первая). CLI при выходе за границу
     молча отдаёт последнюю страницу, поэтому номер проверяется здесь.
 
@@ -89,6 +90,7 @@ def drawio_to_png(xml: str, page: int | None = None, scale: float = 2.0, timeout
         return _PNG_CACHE[key]
     import os
     import shutil
+    import signal
     import subprocess
     import tempfile
     exe = shutil.which("drawio")
@@ -109,18 +111,36 @@ def drawio_to_png(xml: str, page: int | None = None, scale: float = 2.0, timeout
         # Опасности здесь меньше, чем кажется: свой процесс мы и так закрываем
         # снаружи (`subproc`, потолки памяти и времени), а рисуется не чужая
         # страница, а наш собственный XML.
-        cmd = [exe, "-x", "-f", "png", "-s", str(scale), "--no-sandbox", "-o", out]
+        #
+        # `--disable-dev-shm-usage` — про размер картинки. Холст крупнее примерно
+        # мегапикселя Chromium собирает в разделяемой памяти, а `/dev/shm` в
+        # контейнере по умолчанию 64 МБ. Не уместившись, он бросает ошибку внутри
+        # промиса, которого CLI не ловит: drawio не падает и не выходит, а висит
+        # до нашего таймаута. Наружу это выглядело как «схема не построилась», и
+        # выглядело избирательно: мелкая схема рисовалась, блок-схема обычного
+        # алгоритма при scale=2 (это ~1400×1700 точек) — нет. С флагом буфер
+        # уходит в обычный каталог, и та же схема рисуется за несколько секунд.
+        cmd = [exe, "-x", "-f", "png", "-s", str(scale),
+               "--no-sandbox", "--disable-dev-shm-usage", "-o", out]
         if page is not None:
             cmd += ["-p", str(page)]
         cmd.append(src)
         if shutil.which("xvfb-run"):
             cmd = ["xvfb-run", "-a"] + cmd
+        # Своя группа процессов, чтобы по таймауту снять всё дерево. `xvfb-run` —
+        # оболочка, и убить один её процесс мало: Xvfb и с полдюжины процессов
+        # Electron остались бы жить до перезапуска контейнера, а на прогоне со
+        # схемами их набирается десяток.
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, start_new_session=True)
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            out_text, err_text = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            proc.communicate()
             raise ValueError(f"drawio не уложился в {timeout:g} с")
         if not os.path.isfile(out):
-            raise ValueError(f"drawio не создал PNG: {(r.stderr or r.stdout).strip()[-300:]}")
+            raise ValueError(f"drawio не создал PNG: {(err_text or out_text).strip()[-300:]}")
         with open(out, "rb") as f:
             png = f.read()
     if cache:

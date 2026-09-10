@@ -72,8 +72,9 @@ from .stages import (DONE, RUNNING, SKIPPED, STAGE_NAMES, STAGES, STUMBLED, WAIT
                      events_since, finish, new_work, reopen, resume, stage_now, step,
                      stumble)
 from .status import empty_spent, save_task, snapshot, spent_of, task
-from .archive import (DIR_DIAGRAMS, DIR_SOURCES, Entry, NOTICE, NOT_RUN, check_names,
-                      in_dir, notice_text, pack, plan_archive, safe_leaf, solution_md)
+from .archive import (DIR_DIAGRAMS, DIR_SOURCES, Entry, NOTICE, NOT_RUN, ZIP_FULL,
+                      ZIP_LIGHT, check_names, in_dir, notice_text, pack, plan_archive,
+                      safe_leaf, solution_md)
 from .rework import (BLOCK_ROUTE, REPLAY, ROUTES, Route, changed_entries, inputs_of,
                      plan_rework, route, route_of_block, tags_using_artifact, text_tags)
 from .run import Session
@@ -90,7 +91,7 @@ __all__ = [
     "new_work", "begin", "step", "finish", "resume", "reopen", "stumble", "cancel",
     "stage_now", "events_since", "as_dict",
     "snapshot", "spent_of", "empty_spent", "save_task", "task",
-    "Entry", "NOT_RUN", "NOTICE", "DIR_SOURCES", "DIR_DIAGRAMS",
+    "Entry", "NOT_RUN", "NOTICE", "DIR_SOURCES", "DIR_DIAGRAMS", "ZIP_FULL", "ZIP_LIGHT",
     "safe_leaf", "in_dir", "check_names", "plan_archive", "notice_text", "solution_md", "pack",
     "Route", "ROUTES", "BLOCK_ROUTE", "REPLAY", "route", "route_of_block",
     "tags_using_artifact", "changed_entries", "text_tags", "inputs_of", "plan_rework",

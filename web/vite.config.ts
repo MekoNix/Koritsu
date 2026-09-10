@@ -186,9 +186,6 @@ export default defineConfig(({ mode }) => ({
          *               значит держится в кэше браузера через выкаты;
          *   codemirror  редактор кода; нужен только на схемах и на правке
          *               нетекстовых тегов, а весит как треть всего остального;
-         *   pdfjs       просмотрщик PDF; нужен на одном экране решения и весит
-         *               около двух мегабайт — свой кусок, чтобы он приезжал по
-         *               `import()` и только к тем, кто открыл вёрстку;
          *   fonts       шрифты «Бумаги» подключаются CSS'ом, здесь их нет —
          *               про них см. `styles/`.
          *
@@ -200,9 +197,6 @@ export default defineConfig(({ mode }) => ({
           if (!id.includes('node_modules')) return undefined
           if (/[\\/]node_modules[\\/](@codemirror|@lezer|codemirror)[\\/]/.test(id)) {
             return 'codemirror'
-          }
-          if (/[\\/]node_modules[\\/]pdfjs-dist[\\/]/.test(id)) {
-            return 'pdfjs'
           }
           if (/[\\/]node_modules[\\/](react|react-dom|react-router|scheduler)[\\/]/.test(id)) {
             return 'react'

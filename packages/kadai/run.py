@@ -16,7 +16,7 @@ run — семь стадий, выполненных дверями: от ус�
     5 тексты         — ОДИН проход по готовому списку блоков, видя соседей
     6 сборка         — проверка списка, статическая проверка кода, DOCX, PDF; модель
                        зовётся только на починку ссылки в никуда, и не больше раза
-    7 архив          — без модели: опись и ZIP
+    7 архив          — без модели: две описи и два ZIP (полный и на сдачу)
 
 **Связный текст — одним проходом.** Стадия 4 собирает скелет и то, чего текстом
 не написать; стадия 5 пишет весь текст разом. Абзацы, написанные по одному в
@@ -323,10 +323,19 @@ def _telling(session: Session, name: str) -> None:
 def stage_receive(session: Session) -> None:
     """Материалы разобраны, условие прочитано, распознанное показано человеку.
 
+    Условие бывает двух видов, и порядок между ними один: **текст старше
+    файла**. Набранный или подтверждённый человеком текст (`condition_text`) —
+    это условие, по которому решают; файл (`condition`) — то, из чего его
+    однажды прочитали, и читается он, только пока текста нет. Обратный порядок
+    означал бы, что правка условия не действует, пока человек не приложит новый
+    файл, — а править условие человек хочет словами.
+
     Модель не зовётся ни разу. Единственное решение стадии — остановиться, если
-    условие читано OCR: ошибка распознавания в формуле даёт безупречно решённую
-    **чужую** задачу, и заметить её может только человек. Остановка эта не из
-    пожеланий, а из самой стадии, и приходит тем же `hold`, что и просьба
+    условие читано OCR и человек прочитанное ещё не подтверждал: ошибка
+    распознавания в формуле даёт безупречно решённую **чужую** задачу, и
+    заметить её может только человек. Подтверждённый текст такой остановки не
+    требует — он и есть ответ на вопрос «верно ли распознано». Остановка эта не
+    из пожеланий, а из самой стадии, и приходит тем же `hold`, что и просьба
     человека, — второго механизма паузы нет.
     """
     work = session.work
@@ -337,26 +346,34 @@ def stage_receive(session: Session) -> None:
           current="читаю условие", note=f"материалов: {len(материалы)}")
 
     condition = method(session.project, "condition", "разбор условия")()
-    if not condition:
+    свой_текст = method(session.project, "condition_text", "разбор условия")()
+    if not condition and not свой_текст.strip():
         _stumble(session, "приём", problem(
-            "нет_условия", "условие задачи не приложено: решать нечего. "
-            "Положите файл условия (add_material(condition=True))"))
-    material = store.get(condition)
-    текст = store.read(condition).text
-    читано_ocr = _ocr(material)
-    work.condition = {"material": str(condition), "name": str(material.name),
-                      "unit": str(getattr(material, "unit", "")),
+            "нет_условия", "условие задачи не названо: решать нечего. Наберите "
+            "его текстом или приложите файл условия"))
+    material = store.get(condition) if condition else None
+    имя = str(material.name) if material is not None else ""
+    читано_ocr = _ocr(material) if material is not None else False
+    текст = свой_текст or (store.read(condition).text if condition else "")
+    work.condition = {"material": str(condition or ""), "name": имя,
+                      "unit": str(getattr(material, "unit", "")) if material else "",
                       "ocr": читано_ocr, "text": текст}
     if not текст.strip():
+        # Пустым условие бывает по двум разным причинам, и называть их одним
+        # словом нельзя: из файла не вынулось ни строки — это одно, а человек
+        # стёр набранный текст — совсем другое, и чинятся они по-разному.
+        беда = (f"из файла {имя!r} не вынуто ни строки текста"
+                if имя and not свой_текст.strip() else "условие пусто")
         _stumble(session, "приём", problem(
-            "условие_пустое", f"из файла {material.name!r} не вынуто ни строки текста: "
-            "решать по пустому условию нельзя", key=str(condition)))
+            "условие_пустое", f"{беда}: решать по пустому условию нельзя. "
+            "Наберите условие текстом", key=str(condition or "")))
     hold = (Hold(stage="приём", show="распознанное условие",
                  note="проверьте, верно ли распознан текст: ошибка в одной формуле "
                       "даёт безупречно решённую чужую задачу")
-            if читано_ocr else None)
+            if читано_ocr and not свой_текст.strip() else None)
+    откуда = f"условие: {имя}" if имя else "условие набрано текстом"
     finish(work, "приём",
-           note=f"{len(материалы)} материалов; условие: {material.name}"
+           note=f"{len(материалы)} материалов; {откуда}"
                 + (" (читано OCR)" if читано_ocr else ""), hold=hold)
 
 
@@ -912,14 +929,21 @@ def _to_pdf(session: Session, docx: bytes):
 # ── стадия 7: архив ──────────────────────────────────────────────────────────
 
 def stage_archive(session: Session) -> None:
-    """Опись и ZIP. Называет содержимое `kadai`, складывает `orchestrator`.
+    """Два архива: полный и тот, что сдают. Складывает `orchestrator`.
 
-    В архиве: отчёт (DOCX и, если вышло, PDF), шаблон работы, исходники,
+    В полном: отчёт (DOCX и, если вышло, PDF), шаблон работы, исходники,
     схемы, `решение.md` и обязательная запись о сборке `.metadata` со строкой
     о том, что код не запускался. Строка обязательна и проверяется описью:
     компилируемый исходник без неё читается как проверенный. Запись скрытая:
     она метаданные архива, а не документ работы, и в одном ряду с отчётом её
     открывали как ещё один файл на сдачу.
+
+    В облегчённом — отчёт, `исходники/` и `схемы/`, и больше ничего: это то,
+    что несут на сдачу, а бланк, `решение.md` и запись о сборке там принимали
+    за часть работы. Собираются оба сразу, а не по выбору: выбирает человек,
+    когда скачивает, и спросить его до прогона значило бы гонять решение второй
+    раз ради другого ZIP. Второй архив стоит одного сложения уже готовых байтов
+    — все они лежат артефактами к этой минуте.
 
     Папка `исходники/` собирается из двух мест сразу, и оба обязательны:
     листинги, напечатанные в работе блоками `code`, и файлы исходников из папки
@@ -957,18 +981,30 @@ def stage_archive(session: Session) -> None:
 
     notice = archive_mod.notice_text(
         work_id=work.id, profile=session.plan.profile.name,
-        wishes=session.wishes.text,
+        condition=work.condition_text, wishes=session.wishes.text,
         requirement=_requirement_text(задание.get("requirement") or {}),
         stages=[{"name": s.name, "state": s.state, "note": s.note} for s in work.stages],
         spent=_spent(session), versions=_versions(session), problems=work.problems)
+    общее = {"report_artifact": сделано.get("docx"), "pdf_artifact": сделано.get("pdf"),
+             "source_texts": исходники, "diagrams": схемы,
+             "diagram_texts": схемы_текстом}
     entries = archive_mod.plan_archive(
-        notice=notice, report_artifact=сделано.get("docx"), pdf_artifact=сделано.get("pdf"),
-        template_artifact=шаблон, source_texts=исходники, diagrams=схемы,
-        diagram_texts=схемы_текстом,
-        solution=archive_mod.solution_md(_solution(список)))
-    имя = archive_mod.pack(session.project, entries)
-    finish(work, "архив", note=f"в архиве файлов: {len(entries)}",
-           outputs={"zip": имя})
+        notice=notice, template_artifact=шаблон,
+        solution=archive_mod.solution_md(_solution(список)), **общее)
+    лёгкие = archive_mod.plan_archive(light=True, **общее)
+    имя = archive_mod.pack(session.project, entries, name=archive_mod.ZIP_FULL)
+    готово = {"zip": имя}
+    if лёгкие:
+        # Пустая опись — это работа без отчёта, без кода и без схем: складывать
+        # в такой ZIP нечего, а собранный он открывался бы как готовый архив, в
+        # котором человек не находит ничего. Полный при этом соберётся всегда —
+        # в нём есть запись о сборке.
+        готово["zip_light"] = archive_mod.pack(session.project, лёгкие,
+                                               name=archive_mod.ZIP_LIGHT)
+    finish(work, "архив",
+           note=f"в архиве файлов: {len(entries)}"
+                + (f"; на сдачу: {len(лёгкие)}" if лёгкие else ""),
+           outputs=готово)
 
 
 def _sources(session: Session, записи) -> list:

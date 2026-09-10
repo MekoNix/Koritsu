@@ -1,52 +1,49 @@
 /**
- * ConditionStep — первый шаг работы: «условие распознано, всё верно?».
+ * ConditionStep — первый шаг работы: «вот условие, всё верно?».
  *
  * Отдельный шаг с двумя кнопками стоит здесь намеренно.
  * Причина не в вежливости: ошибка распознавания в одной формуле даёт безупречно
  * решённую **чужую** задачу, заметить её может только человек, и стоит этот
  * экран одного взгляда, а ошибка — целого прогона.
  *
- *     Откуда берётся текст
- *     --------------------
+ *     Условие — текст, а не файл
+ *     --------------------------
  *
- * Из разбора материала (`GET …/materials/{id}/text`), а не из снимка работы:
- * снимок знает условие только после того, как прогон прошёл стадию «приём», а
- * подтверждают его ДО прогона. Материал же разобран сразу после загрузки.
+ * Решают по тексту: файл (скан, `docx`, `pdf`) — лишь один из способов его
+ * принести, и распознанное из него ложится в состояние решения строкой
+ * (`condition_text` снимка). Поэтому и правят здесь текст на месте — поле,
+ * кнопка, `PUT …/kadai/condition` с новой строкой.
  *
- *     Что делает «поправить»
- *     ----------------------
+ * Правка не заводит второго файла. Материал адресуется содержимым
+ * (`materials.Store`), и «поправленный материал» — это по построению другой
+ * материал: папка решения набиралась бы версиями условия, из которых модели
+ * показывается одна, а человек видит все. Файл, из которого условие вынуто,
+ * остаётся приложенным как был: сверить прочитанное со сканом можно только по
+ * самому скану.
  *
- * Кладёт исправленный текст **новым материалом** и называет условием его.
- * Правки текста разобранного материала у службы нет и быть не может: материал
- * адресуется хешем содержимого (`materials.Store`), и «поправленный материал»
- * — это по построению другой материал. Прежний остаётся в папке решения: по
- * нему видно, что именно было распознано, и подменять эту память нельзя. Модели
- * он с этой минуты не показывается (`Project.past_conditions`) — иначе она
- * получила бы два условия сразу и решала бы по тому, которое человек исправлял.
- *
- *     Пока условие не названо
- *     -----------------------
+ *     Пока условия нет
+ *     ----------------
  *
  * Шаг говорит «условие не названо» и предлагает выбрать файл из папки решения.
- * Считать условием первый файл папки нельзя: «первый» там оказывается то скан,
- * то методичка, то прежняя версия условия, и человек платит за решение чужой
- * задачи, ничего не выбирая. Название — действие с одним нажатием и видимым
- * ответом, а не догадка экрана.
+ * Считать условием первый файл папки нельзя: «первым» там оказывается то скан,
+ * то методичка, и человек платит за решение чужой задачи, ничего не выбирая.
+ * Название — действие с одним нажатием и видимым ответом, а не догадка экрана.
  */
 import { useState } from 'react'
 
 import { errorText } from '@/api'
 import { useT } from '@/i18n'
 import { Button, Icon, SkeletonLines, Textarea } from '@/ui'
-import { useMaterialText, useUploadMaterial } from '@/features/projects/data'
+import { useMaterialText } from '@/features/projects/data'
 import type { Material } from '@/features/projects/types'
 
-import { useContextMaterials, useSetCondition } from './data'
+import { useContextMaterials, useSetCondition, useSetConditionText } from './data'
 
 export function ConditionStep({
   projectId,
   runId,
   material,
+  text,
   named,
   ocr,
   confirmed,
@@ -56,21 +53,22 @@ export function ConditionStep({
   projectId: string
   /**
    * Решение, чьё условие правится. У каждого оно своё, и поправленный текст
-   * ложится в его же папку контекста: иначе правка одной задачи приехала бы в
-   * промпт соседней.
+   * ложится в его же состояние: иначе правка одной задачи приехала бы в промпт
+   * соседней.
    */
   runId: string
-  /** Материал-условие решения. `undefined` — назван, но ещё не найден в описи. */
+  /** Файл, из которого условие вынуто. `undefined` — условие набрано текстом. */
   material: Material | undefined
+  /** Условие текстом из состояния решения. Пусто — его туда ещё не положили. */
+  text: string
   /**
-   * Назвало ли решение условие вообще. Отдельно от `material`, потому что между
-   * «назвали» и «материал появился в описи» проходит секунда: правку кладут
-   * новым файлом, и опись перечитывается после. Без этого шаг в ту самую
+   * Назван ли файл условия. Отдельно от `material`, потому что между «назвали»
+   * и «материал появился в описи» проходит секунда, и без этого шаг в ту самую
    * секунду говорил бы «условие не названо» человеку, который его только что
    * назвал.
    */
   named: boolean
-  /** Читано ли условие распознаванием: тогда проверить его особенно нужно. */
+  /** Читан ли файл распознаванием: тогда проверить текст особенно нужно. */
   ocr: boolean
   /** Подтвердил ли человек текст в этот раз. */
   confirmed: boolean
@@ -78,9 +76,12 @@ export function ConditionStep({
   disabled: boolean
 }) {
   const t = useT()
-  const текст = useMaterialText(projectId, material?.id, !!material)
-  const upload = useUploadMaterial()
+  // Разбор файла спрашивается, только пока текста условия в состоянии нет:
+  // после первого же подтверждения или правки решают по строке, и второй ответ
+  // с тем же текстом был бы лишним запросом на каждое открытие экрана.
+  const из_файла = useMaterialText(projectId, material?.id, !!material && !text)
   const setCondition = useSetCondition()
+  const setText = useSetConditionText()
   // Папка решения — из чего выбирают условие, пока его не назвали. Тот же ключ
   // кэша, что у списка файлов ниже: второго запроса за тем же ответом нет.
   const папка = useContextMaterials(projectId, runId)
@@ -89,16 +90,18 @@ export function ConditionStep({
   const [черновик, setЧерновик] = useState('')
   const [беда, setБеда] = useState<string | null>(null)
 
-  // Черновик заводится из распознанного один раз — в момент входа в правку, а
-  // не наблюдением за пустотой поля. Наблюдение выглядело безобиднее и делало
-  // поле неочищаемым: стёртый текст тут же считался «черновика ещё нет» и
+  const показанный = text || из_файла.data?.text || ''
+
+  // Черновик заводится из показанного один раз — в момент входа в правку, а не
+  // наблюдением за пустотой поля. Наблюдение выглядело безобиднее и делало поле
+  // неочищаемым: стёртый текст тут же считался «черновика ещё нет» и
   // подставлялся заново, так что Ctrl+A и Delete не давали ничего.
   function править() {
-    setЧерновик(текст.data?.text ?? '')
+    setЧерновик(показанный)
     setПравим(true)
   }
 
-  /** Назвать условием файл, выбранный человеком в папке решения. */
+  /** Назвать файлом условия то, что человек выбрал в папке решения. */
   function выбрать(materialId: string) {
     setБеда(null)
     // `useFileName` — истина: файл принёс человек, и его имя говорит, какая это
@@ -109,8 +112,26 @@ export function ConditionStep({
     )
   }
 
-  if (!material) {
-    // Условие названо, а материала под рукой ещё нет: ждём опись, а не
+  function сохранить() {
+    setБеда(null)
+    setText.mutate(
+      { projectId, runId, text: черновик.trim() },
+      {
+        onSuccess: () => {
+          setПравим(false)
+          setЧерновик('')
+          // Поправленное условие подтверждать второй раз незачем: человек
+          // только что написал его своей рукой.
+          onConfirm()
+        },
+        onError: (е) => setБеда(errorText(е)),
+      },
+    )
+  }
+
+  // Ни текста, ни файла: решать нечего, и шаг занят выбором условия.
+  if (!text && !material) {
+    // Файл условия назван, а материала под рукой ещё нет: ждём опись, а не
     // предлагаем выбрать файл заново.
     if (named) {
       return (
@@ -158,49 +179,16 @@ export function ConditionStep({
     )
   }
 
-  async function сохранить() {
-    setБеда(null)
-    try {
-      const принят = await upload.mutateAsync({
-        projectId,
-        runId,
-        file: new File([черновик], `условие-правка.txt`, { type: 'text/plain' }),
-      })
-      // Разбор `.txt` — одна строка работы очереди, но она всё же очередь:
-      // пробуем назвать условием сразу, а не вышло — говорим словами, а не
-      // молча оставляем прежнее условие.
-      await новый_условием(принят.pending_id)
-    } catch (е) {
-      setБеда(errorText(е))
-    }
-  }
-
-  async function новый_условием(materialId: string, попыток = 12) {
-    try {
-      // `useFileName: false` — имя решению отсюда не берётся: файл с правкой
-      // назвали мы сами, и «условие-правка» именем задачи не является.
-      await setCondition.mutateAsync({ projectId, materialId, runId, useFileName: false })
-      setПравим(false)
-      setЧерновик('')
-      onConfirm()
-    } catch (е) {
-      if (попыток <= 0) {
-        setБеда(errorText(е))
-        return
-      }
-      await new Promise((готово) => setTimeout(готово, 500))
-      await новый_условием(materialId, попыток - 1)
-    }
-  }
-
-  const идёт = upload.isPending || setCondition.isPending
+  const идёт = setText.isPending || setCondition.isPending
 
   return (
     <Карточка>
       <header className="flex flex-wrap items-center gap-s2">
         <Icon name="file" size={16} className="text-muted" />
-        <span className="font-semibold text-ink-strong">{t('kadai.condition.title')}</span>
-        <span className="truncate text-xs text-muted">{material.name}</span>
+        <span className="font-semibold text-ink-strong">
+          {t(material ? 'kadai.condition.title' : 'kadai.condition.titleText')}
+        </span>
+        {material && <span className="truncate text-xs text-muted">{material.name}</span>}
         {ocr && (
           <span className="rounded-sm bg-warn-bg px-1.5 py-0.5 text-xs text-warn">
             {t('kadai.condition.ocr')}
@@ -216,19 +204,19 @@ export function ConditionStep({
 
       <p className="text-xs text-muted">{t('kadai.condition.hint')}</p>
 
-      {текст.isPending ? (
+      {из_файла.isPending ? (
         <SkeletonLines count={4} />
       ) : правим ? (
         <Textarea
           value={черновик}
           onChange={(e) => setЧерновик(e.target.value)}
           rows={12}
-          aria-label={t('kadai.condition.title')}
+          aria-label={t('kadai.condition.titleText')}
           disabled={идёт}
         />
       ) : (
         <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap rounded-sm border border-line bg-surface-2 p-s3 font-mono text-xs text-ink">
-          {текст.data?.text || t('kadai.condition.empty')}
+          {показанный || t('kadai.condition.empty')}
         </pre>
       )}
 
@@ -240,7 +228,7 @@ export function ConditionStep({
               size="sm"
               loading={идёт}
               disabled={!черновик.trim()}
-              onClick={() => void сохранить()}
+              onClick={сохранить}
             >
               {t('kadai.condition.save')}
             </Button>
@@ -273,7 +261,7 @@ export function ConditionStep({
             <Button
               variant="secondary"
               size="sm"
-              disabled={disabled || текст.isPending}
+              disabled={disabled || из_файла.isPending}
               onClick={править}
             >
               <Icon name="edit" size={14} />

@@ -12,17 +12,16 @@
  * второго решения показывала бы ход первого — с его условием, его блоками и
  * его историей версий.
  *
- * Сверху шаги стадий, слева работа (условие → блоки), справа история версий
- * списка, а после первой сборки — ещё и «как будет в Word». Порядок не
- * декоративный, он повторяет порядок решений: сначала подтвердить условие,
- * потом смотреть на блоки, и только потом — на вёрстку. Вёрстки до сборки не
- * существует, поэтому и вкладки с ней до неё нет.
+ * Сверху шаги стадий, слева работа (условие, модель, пожелания, файлы), справа
+ * вёрстка с оглавлением блоков — и её же история версий второй вкладкой.
+ * Порядок не декоративный, он повторяет порядок решений: сначала подтвердить
+ * условие, потом смотреть на то, что вышло.
  *
- * **Блок выбирают на вёрстке, а список — оглавление к ней.** Собранная
- * страница показывает блоки там, где они на самом деле стоят, и замечание
- * пишется прямо по ним (`PdfBlocks`); список слева ведёт к блоку и показывает
- * то, чего в вёрстке не видно, — черновики и заготовки, пропущенные сборкой.
- * Выбранный блок у них общий, поэтому он и живёт здесь, а не в каждом своим.
+ * **Блоки живут при вёрстке, а не отдельным списком.** Оглавление стоит над
+ * страницей, форма замечания — под ней (`SolutionPreview`): содержимое блока
+ * показывает сама вёрстка, и второй его показ карточками означал бы чтение
+ * работы дважды в двух видах. Выбранный блок один на весь экран, поэтому он и
+ * живёт здесь.
  *
  *     Три вещи, которые здесь неочевидны
  *     ----------------------------------
@@ -68,15 +67,16 @@ import {
   usePendingMaterials,
   useProject,
 } from '@/features/projects/data'
+import { RunName } from '@/features/projects/RunName'
 import { useDefaultEndpoint, useMakeKadaiTemplate, useProviders } from '@/features/reports/data'
 import type { BuildState } from '@/features/reports/useBuild'
 import { ModelPicker } from '@/features/reports/runControls'
 
-import { BlockList, type ReworkRequest } from './BlockList'
+import { type ReworkRequest } from './BlockPicker'
 import { BlockVersions } from './BlockVersions'
 import { ConditionStep } from './ConditionStep'
 import { ContextFiles } from './ContextFiles'
-import { PdfBlocks } from './PdfBlocks'
+import { SolutionPreview } from './SolutionPreview'
 import { StageStrip } from './StageStrip'
 import { WishesBox } from './WishesBox'
 import { РЕШЕНИЕ, type KadaiScope, type KadaiTemplateWords } from './module'
@@ -97,6 +97,9 @@ import { useKadaiRun } from './useKadaiRun'
 
 /** Стадия, после которой готовы DOCX и PDF. Дальше только ZIP. */
 const СБОРКА = 'сборка'
+
+/** Стадия, кладущая архивы. В модулях, которые до неё не идут, её нет вовсе. */
+const АРХИВ = 'архив'
 
 /** Сколько раз перечитывать опись в ожидании разбора условия (полторы минуты). */
 const ОПРОСОВ = 60
@@ -131,6 +134,8 @@ export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }
   const restart = useRestartKadai(projectId, runId)
 
   const решение = (runs.data ?? []).find((з) => з.id === runId)
+  // Имя по умолчанию рисует сайт из номера решения; своё имя лежит в записи
+  // журнала (`решение.name`) и правится карандашом у заголовка.
   const заголовок = решение
     ? решение.name || t(слова.runName, { n: решение.n })
     : (project.data?.name ?? t('kadai.work.title'))
@@ -147,16 +152,10 @@ export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }
   // вёрстку по колонке в четверть страницы нельзя: поля и переносы — это как
   // раз то, что в узком столбце не видно.
   const [развёрнуто, setРазвёрнуто] = useState(false)
-  // Выбранный блок один на весь экран: карточка списка и область на странице
-  // вёрстки — два вида одного и того же выбора, и своё «выбрано» у каждого
-  // разъехалось бы на первом же клике. Отсюда же счётчик просьб прокрутить
-  // вёрстку: клик по карточке ведёт к блоку на странице, а не только красит её.
+  // Выбранный блок один на весь экран: оглавление над вёрсткой ведёт к нему
+  // страницу, а форма под вёрсткой пишет по нему замечание — это один и тот же
+  // выбор, и два своих «выбрано» разъехались бы на первом же нажатии.
   const [выбран, setВыбран] = useState<string | null>(null)
-  const [к_блоку, setКБлоку] = useState(0)
-  // Какие блоки нашлись в собранной вёрстке. У них форма замечания стоит под
-  // страницей, а не в карточке; у остальных (работа ещё не собиралась,
-  // заготовку пропустили) — по-прежнему в карточке.
-  const [в_вёрстке, setВВёрстке] = useState<ReadonlySet<string>>(() => new Set())
   const пресет = endpoint ?? запомненный(runId) ?? умолчание
 
   const run = useKadaiRun(projectId, пресет, runId)
@@ -171,22 +170,22 @@ export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }
     [stageNames.data, status.data?.stages, run.stageEvents, scope.skip],
   )
 
-  // Материал-условие — ровно тот, который назван условием у службы
-  // (`Project.condition`): снимок знает его и до первого прогона, и сразу после
-  // правки. Первый файл папки за условие не сходит — «первым» там оказывается
-  // то скан, то методичка, то прежняя версия условия, и человек платил бы за
-  // решение задачи, которую не выбирал. Не названо — шаг условия предложит
-  // выбрать файл из папки.
+  // Условие решения — текст в снимке (`condition_text`), а файл при нём —
+  // только то, из чего этот текст вынули. Условие, набранное в форме, файла не
+  // имеет вовсе, и требовать материал значило бы не пускать такое решение в
+  // прогон.
   //
-  // Ищется он в папке решения, а потом в описи работы: условием бывает назван и
-  // общий файл работы, и в папке решения его тогда нет.
+  // Файл ищется в папке решения, а потом в описи работы: условием бывает назван
+  // и общий файл работы, и в папке решения его тогда нет.
   const ид_условия = status.data?.condition?.material
-  const прежние_условия = status.data?.condition_past
-  const условие = useMemo(() => {
+  const текст_условия = status.data?.condition_text ?? ''
+  const файл_условия = useMemo(() => {
     const папка = свои.data ?? []
     const опись = materials.data ?? []
     return папка.find((m) => m.id === ид_условия) ?? опись.find((m) => m.id === ид_условия)
   }, [свои.data, materials.data, ид_условия])
+  /** Есть ли что решать: строка условия или файл, из которого её возьмут. */
+  const условие = !!текст_условия || !!файл_условия
 
   // Работа, у которой уже есть стадии, условие переживает перезагрузку: спорить
   // с ней вопросом «всё верно?» второй раз незачем.
@@ -247,13 +246,6 @@ export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }
     run.rework({ block, kind, note })
   }
 
-  // Выбор в списке ведёт вёрстку к блоку; выбор на странице только красит
-  // карточку (страница уже там, где на неё смотрят).
-  function выбрать_в_списке(ключ: string | null) {
-    setВыбран(ключ)
-    if (ключ) setКБлоку((было) => было + 1)
-  }
-
   // «Начать заново»: сброс стадии ничего не стоит и модель не зовёт, а вот
   // прогон после него — обычное платное задание. Оба шага делаются одним
   // нажатием намеренно: разорванные, они оставили бы работу в состоянии
@@ -265,14 +257,15 @@ export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }
   if (project.isError) return <ErrorState error={project.error} onRetry={() => project.refetch()} />
 
   const собрано = status.data?.made ?? {}
-  // Собиралась ли работа хоть раз: до этого превью показывать нечего.
-  const собиралась = !!собрано.docx || !!собрано.pdf
+  // Доходит ли этот модуль до архива: «Отчёты из задания» кончаются сборкой, и
+  // предлагать им архив значило бы обещать стадию, которой у них нет.
+  const архив_бывает = !scope.skip.includes(АРХИВ)
   const build: BuildState = {
     running: run.running && run.kind === KADAI_RUN,
     artifacts: { docx: собрано.docx, pdf: собрано.pdf },
     pdfUrl: собрано.pdf ? artifactUrl(projectId, собрано.pdf) : null,
     // Просмотрщику нужен тот же адрес с `?inline=1`: без него служба отдаёт
-    // файл вложением, и браузер его скачивает вместо показа (`PdfBlocks`).
+    // файл вложением, и браузер его скачивает вместо показа (`SolutionPreview`).
     pdfInlineUrl: собрано.pdf ? artifactUrl(projectId, собрано.pdf, { inline: true }) : null,
     docxUrl: собрано.docx ? artifactUrl(projectId, собрано.docx) : null,
     error: run.error,
@@ -284,8 +277,20 @@ export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }
     <div className="flex min-h-0 flex-col gap-s4">
       <header className="flex flex-wrap items-end justify-between gap-s3">
         <div className="min-w-0">
-          <h1 className="truncate font-display text-2xl font-semibold text-ink-strong">
-            {заголовок}
+          {/* Имя решения правится там, где его видят: карандаш у заголовка,
+              двойной щелчок по самому имени. Правит он запись журнала — ту же
+              вещь, которую человек видит строкой в списке решений, — поэтому
+              список после правки перечитывается. */}
+          <h1 className="flex min-w-0 items-center font-display text-2xl font-semibold text-ink-strong">
+            <RunName
+              projectId={projectId}
+              runId={runId}
+              name={решение?.name ?? ''}
+              title={заголовок}
+              canEdit={!!решение}
+              iconSize={16}
+              onRenamed={() => void qc.invalidateQueries({ queryKey: keys.kadai.runs(projectId) })}
+            />
           </h1>
           <p className="text-sm text-muted">
             {t('kadai.work.inWork', { work: project.data?.name ?? '' })}
@@ -311,20 +316,36 @@ export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }
         />
       )}
 
-      {/* Архив стадии «архив». Кнопка появляется только когда он есть: стадия
-          кладёт ZIP артефактом (`orchestrator.kadai._положить_архив`), и до неё
-          скачивать нечего. Ссылка ведёт на адрес артефакта — тот же, по
-          которому приезжают DOCX и PDF. */}
-      {собрано.archive && (
-        <p className="flex flex-wrap items-center gap-s2 rounded-md border border-line bg-surface-2 px-s3 py-s2 text-sm text-ink">
-          <Icon name="download" size={15} className="text-muted" />
-          {t('kadai.archive.ready')}
-          <Button variant="secondary" size="sm" className="ml-auto" asChild>
-            <a href={artifactUrl(projectId, собрано.archive)} download>
-              {t('kadai.archive.download')}
-            </a>
-          </Button>
-        </p>
+      {/* Архивы стадии «архив». Их два, и стадия кладёт оба разом: полный несёт
+          всё, чем работа собрана (запись о сборке, бланк, разметку решения),
+          лёгкий — только то, что сдают: документ, исходники и схемы. Выбирать
+          вид до прогона незачем — выбирают его тогда, когда архив уже лежит и
+          видно, что именно нужно.
+
+          Ссылка появляется, только когда файл есть: стадия кладёт ZIP
+          артефактом (`orchestrator.kadai._положить_архив`), и до неё скачивать
+          нечего. */}
+      {архив_бывает && (собрано.archive || собрано.archive_light) && (
+        <section className="flex flex-wrap items-center gap-s2 rounded-md border border-line bg-surface-2 px-s3 py-s2 text-sm text-ink">
+          <Icon name="download" size={15} className="shrink-0 text-muted" />
+          <span className="min-w-0">{t('kadai.archive.ready')}</span>
+          <span className="ml-auto flex flex-wrap items-center gap-s2">
+            {собрано.archive && (
+              <Button variant="secondary" size="sm" asChild>
+                <a href={artifactUrl(projectId, собрано.archive)} download>
+                  {t('kadai.archive.download')}
+                </a>
+              </Button>
+            )}
+            {собрано.archive_light && (
+              <Button variant="secondary" size="sm" asChild>
+                <a href={artifactUrl(projectId, собрано.archive_light)} download>
+                  {t('kadai.archive.downloadLight')}
+                </a>
+              </Button>
+            )}
+          </span>
+        </section>
       )}
 
       {/* Бланк с тегами из блоков — выход модуля «Отчёты» вместо архива.
@@ -426,13 +447,13 @@ export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }
       )}
 
       {/* Две колонки: слева работают, справа сверяют. Разворот выключает
-          вторую колонку и ставит вёрстку первой во всю ширину — список блоков
-          уходит под неё. Порядком, а не отдельной страницей: работа со списком
-          и сверка вёрстки — это один и тот же разговор с одной работой, и
+          вторую колонку и ставит вёрстку первой во всю ширину — условие, модель
+          и файлы уходят под неё. Порядком, а не отдельной страницей: подготовка
+          задачи и сверка вёрстки — один и тот же разговор с одной работой, и
           переход между ними не должен стоить перезагрузки экрана.
 
-          Узкий экран колонок не разводит вовсе (`xl:`), и там вёрстка стоит под
-          списком всегда: колонка в половину телефона — не превью. */}
+          Узкий экран колонок не разводит вовсе (`xl:`), и там вёрстка стоит
+          второй всегда: колонка в половину телефона — не превью. */}
       <div
         className={cn(
           'grid min-h-0 gap-s4',
@@ -443,7 +464,8 @@ export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }
           <ConditionStep
             projectId={projectId}
             runId={runId}
-            material={условие}
+            material={файл_условия}
+            text={текст_условия}
             named={!!ид_условия}
             ocr={!!status.data?.condition?.ocr}
             confirmed={confirmed}
@@ -514,70 +536,42 @@ export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }
           {/* Папка контекста этого решения и общие файлы работы с галочками.
               В промпт уезжают файлы папки, условие и те общие файлы работы,
               которые к решению подключили: файл соседней задачи сбивает модель
-              так же, как чужое условие, и платит за это человек. Прежние
-              версии условия помечены и модели не показываются. */}
+              так же, как чужое условие, и платит за это человек. */}
           <ContextFiles
             projectId={projectId}
             runId={runId}
             conditionId={ид_условия}
-            pastIds={прежние_условия}
             disabled={run.running}
-          />
-
-          {/* Пояснение над списком, а не подсказкой по наведению: «блок» — это
-              слово продукта, и человек, впервые открывший решение, видит
-              двадцать карточек, про которые непонятно ни что это, ни что с
-              ними делать. Три строки отвечают ровно на три вопроса: что это,
-              кто это написал, что будет от нажатия. */}
-          <div className="flex flex-col gap-1">
-            <h2 className="text-sm font-semibold text-ink-strong">{t('kadai.blocks.title')}</h2>
-            <p className="text-xs text-muted">{t('kadai.blocks.about')}</p>
-          </div>
-          <BlockList
-            blocks={blocks.data}
-            loading={blocks.isPending}
-            disabled={run.running}
-            selected={выбран}
-            onSelect={выбрать_в_списке}
-            pickable={в_вёрстке}
-            onRework={замечание}
           />
         </div>
 
         <div className={cn('flex min-h-0 min-w-0 flex-col gap-s2', развёрнуто && 'order-1')}>
-          {/* Превью «как будет в Word» появляется только после первой сборки.
-              До неё показывать нечего: работа собирается стадией «Сборка», и
-              пустая рамка с кнопкой выглядела как ожидание того, чего в проекте
-              ещё нет. */}
-          {собиралась && (
-            <Segmented
-              value={вкладка}
-              onChange={(v) => setВкладка(v as 'preview' | 'versions')}
-              options={[
-                { value: 'preview', label: t('kadai.tabs.preview') },
-                { value: 'versions', label: t('kadai.tabs.versions') },
-              ]}
-            />
-          )}
-          {собиралась && вкладка === 'preview' ? (
-            // Высота — в долях экрана, а не в пикселях: страница A4 в рамке
-            // высотой в треть экрана показывает не вёрстку, а её кусок, и
-            // ошибку переноса в такой рамке не увидеть. Развёрнутая рамка выше
-            // ещё на десятую: колонки рядом уже нет, и место есть.
-            <div
-              className={cn(
-                'overflow-hidden rounded-md border border-line',
-                развёрнуто ? 'min-h-[85vh]' : 'min-h-[75vh]',
-              )}
-            >
-              <PdfBlocks
+          {/* Вкладки стоят с самого начала, а не после первой сборки: блоки
+              появляются раньше вёрстки (стадия «Строение»), и оглавление с
+              формой замечания нужно уже тогда — сказать «этот раздел не нужен»
+              человек хочет до того, как за него заплатили сборкой. */}
+          <Segmented
+            value={вкладка}
+            onChange={(v) => setВкладка(v as 'preview' | 'versions')}
+            options={[
+              { value: 'preview', label: t('kadai.tabs.preview') },
+              { value: 'versions', label: t('kadai.tabs.versions') },
+            ]}
+          />
+          {/* Пояснение над оглавлением, а не подсказкой по наведению: «блок» —
+              это слово продукта, и человек, впервые открывший решение, видит
+              два десятка строк, про которые непонятно ни что это, ни что с
+              ними делать. */}
+          {вкладка === 'preview' ? (
+            <>
+              <p className="text-xs text-muted">{t('kadai.blocks.about')}</p>
+              <SolutionPreview
                 build={build}
-                canBuild={!!пресет && !!условие && confirmed}
+                canBuild={!!пресет && условие && confirmed}
                 blocks={blocks.data}
+                loading={blocks.isPending}
                 selected={выбран}
-                scrollAt={к_блоку}
                 onSelect={setВыбран}
-                onPickable={setВВёрстке}
                 onRework={замечание}
                 disabled={run.running}
                 extra={
@@ -592,7 +586,7 @@ export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }
                   </Button>
                 }
               />
-            </div>
+            </>
           ) : (
             <div className="rounded-md border border-line bg-surface p-s3">
               <BlockVersions

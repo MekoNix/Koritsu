@@ -62,12 +62,14 @@ SEAMS: dict[str, Seam] = {
         neighbor="materials + orchestrator",
         address="materials/_pdf.py:92-124, orchestrator.doors.ask. "
                 "Проверено по коду",
-        signature="Project.condition() -> id | None, Project.store().read(id) -> Chunk(.text), "
+        signature="Project.condition_text() -> str (условие словами: оно старше файла), "
+                  "Project.condition() -> id | None, Project.store().read(id) -> Chunk(.text), "
                   "Project.store().get(id) -> Material(.name), "
                   "Project.solution_materials() -> [id] (файлы папки решения: по ним "
                   "в архив попадают исходники); materials: пометка происхождения на "
                   "кусок — какой текст взят из текстового слоя, а какой распознан OCR",
-        awaits="условие принимается (add_material(condition=True), разбор .docx есть, "
+        awaits="условие принимается и текстом (condition_text), и файлом "
+               "(add_material(condition=True), разбор .docx есть, "
                "tesseract зовётся), но распознанное OCR отделимо только целым "
                "материалом: внутри PDF страница со сканом склеивается с остальными в "
                "общий текст. Значит человеку показывается весь текст условия с "

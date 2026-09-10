@@ -60,6 +60,10 @@ services:
   # задания: воркер держит два слота, и оба могут работать разом.
   worker:
     image: koritsu:local
+    # `init` — PID 1 контейнера жнёт осиротевшие процессы. Воркер запускает
+    # подпроцессы с деревьями (Xvfb, Electron у drawio, LibreOffice), и убитое по
+    # таймауту дерево без этого оставляет зомби до перезапуска контейнера.
+    init: true
     depends_on:
       migrate:
         condition: service_completed_successfully

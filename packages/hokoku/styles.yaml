@@ -18,7 +18,8 @@ code:
   font: "Courier New"
   size_pt: 10
   highlight: true                        # подсветка синтаксиса (pygments), если указан язык
-  line_numbers: false                    # нумерация строк по умолчанию
+  line_numbers: false                    # номеров строк в листинге нет: ссылаются на
+                                         # листинг целиком, а правка кода их сдвигает
   style: "default"                       # стиль pygments (default, friendly, bw …)
 
 table:

@@ -1701,7 +1701,7 @@ export interface paths {
         };
         /**
          * How far the work in this project has got
-         * @description A snapshot of the work: stage states, what it is waiting for, the assignment, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. `condition` is the material named as the assignment right now, which the solution has before its first run and after the person has corrected it; `condition_text` is that text as the run read it, and is empty until a run has read it. `condition_past` lists materials that used to be the assignment: they stay in the solution's folder and are not shown to the model. Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.
+         * @description A snapshot of the work: stage states, what it is waiting for, the assignment, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. `condition_text` is the assignment in words: what the person typed or confirmed, and until they have, what the last run read out of the file. `condition` is the file it came from (`{material, name, unit}`), empty when the assignment was typed. Both are read from the volume, so a correction shows before the next run. `made` carries the artifacts to download: `docx`, `pdf`, `archive` (the full archive) and `archive_light` (the report with the sources and the diagrams, the one to hand in). Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.
          */
         get: operations["kadai_status"];
         put?: never;
@@ -1721,8 +1721,8 @@ export interface paths {
         };
         get?: never;
         /**
-         * Name the material that holds the assignment
-         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of this file, without its extension. The material named before this one stays in the solution's folder and stops being shown to the model: two assignments at once, the old one and the corrected one, would be solved as the old one. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * Set the assignment of this solution: text, file, or both
+         * @description Writes the assignment of the task. `text` is the assignment in words — typed into the form, or corrected after a scan has been read — and it is what the work is solved by. `material_id` names an already parsed material of this project as the file the assignment came from; the file keeps its pictures and shows what was read. Text wins over file: a correction takes effect at once, without a second upload, and there is exactly one assignment in a solution — no previous version stays behind to be marked and explained. Until one of the two is set, a `kadai_run` job refuses: there is nothing to solve. Writing the same values twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of the file, without its extension. Naming another file drops the stored text: it belonged to the previous one. Editor role. 400 invalid_id, 400 invalid_value (neither text nor material), 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_condition"];
         post?: never;
@@ -2657,7 +2657,7 @@ export interface paths {
         };
         /**
          * How far the work in this project has got
-         * @description A snapshot of the work: stage states, what it is waiting for, the assignment, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. `condition` is the material named as the assignment right now, which the solution has before its first run and after the person has corrected it; `condition_text` is that text as the run read it, and is empty until a run has read it. `condition_past` lists materials that used to be the assignment: they stay in the solution's folder and are not shown to the model. Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.
+         * @description A snapshot of the work: stage states, what it is waiting for, the assignment, problems, and the artifacts of everything already built. Empty `work` means no run has been started for this project yet, which is not an error. `condition_text` is the assignment in words: what the person typed or confirmed, and until they have, what the last run read out of the file. `condition` is the file it came from (`{material, name, unit}`), empty when the assignment was typed. Both are read from the volume, so a correction shows before the next run. `made` carries the artifacts to download: `docx`, `pdf`, `archive` (the full archive) and `archive_light` (the report with the sources and the diagrams, the one to hand in). Reading it costs nothing: no model call and no stage is run. `run` names the solution to read; without it the project is read as a whole, the way it looked while it carried one solution. 400 invalid_id, 404 not_found.
          */
         get: operations["kadai_status_v1"];
         put?: never;
@@ -2677,8 +2677,8 @@ export interface paths {
         };
         get?: never;
         /**
-         * Name the material that holds the assignment
-         * @description Marks an already parsed material of this project as the condition of the task. Until one is named, a `kadai_run` job refuses: there is nothing to solve. Naming the same material twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of this file, without its extension. The material named before this one stays in the solution's folder and stops being shown to the model: two assignments at once, the old one and the corrected one, would be solved as the old one. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * Set the assignment of this solution: text, file, or both
+         * @description Writes the assignment of the task. `text` is the assignment in words — typed into the form, or corrected after a scan has been read — and it is what the work is solved by. `material_id` names an already parsed material of this project as the file the assignment came from; the file keeps its pictures and shows what was read. Text wins over file: a correction takes effect at once, without a second upload, and there is exactly one assignment in a solution — no previous version stays behind to be marked and explained. Until one of the two is set, a `kadai_run` job refuses: there is nothing to solve. Writing the same values twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of the file, without its extension. Naming another file drops the stored text: it belonged to the previous one. Editor role. 400 invalid_id, 400 invalid_value (neither text nor material), 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_condition_v1"];
         post?: never;
@@ -3211,17 +3211,23 @@ export interface components {
         };
         /**
          * ConditionIn
-         * @description Какой материал проекта считать условием задачи.
+         * @description Условие задачи: текст, файл или то и другое. Одно из двух обязательно.
          */
         ConditionIn: {
             /**
              * Material Id
-             * @description Id of an already parsed material of this project
+             * @description Id of an already parsed material of this project: the assignment as a file. Empty leaves the named file as it is.
+             * @default
              */
             material_id: string;
             /**
+             * Text
+             * @description The assignment in words: typed into the form, or corrected after a scan has been read. This is what the work is solved by; the file is where it was read from. Null leaves the stored text alone; an empty string erases it, and the file is read again.
+             */
+            text?: string | null;
+            /**
              * Use File Name
-             * @description Name the solution after this file when the person has not named it. False when the file was not brought by the person: an assignment typed into the form, or a correction of what was read from a scan.
+             * @description Name the solution after this file when the person has not named it. Means nothing without `material_id`: an assignment typed into the form is not a file the person brought.
              * @default true
              */
             use_file_name: boolean;

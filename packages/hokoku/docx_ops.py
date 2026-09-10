@@ -21,6 +21,8 @@ from .markdown import Span, split_refs
 
 CODE_FONT = "Courier New"
 CODE_SIZE_PT = 10
+# Отступ хвоста перенесённой строки листинга, в двадцатых долях пункта (1 см).
+CODE_WRAP_DXA = 567
 HEADING_SIZES = {1: 16, 2: 14, 3: 13, 4: 12, 5: 12, 6: 12}
 XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 
@@ -530,7 +532,15 @@ def add_code_lines(doc, ref_elem, text: str, ppr_template=None, *, lang: str = "
                    font: str = CODE_FONT, size_pt: float = CODE_SIZE_PT,
                    highlight: bool = False, line_numbers: bool = False, style_name: str = "default"):
     """Листинг: по абзацу на строку (переносы страниц между строками), моноширинный шрифт,
-    опционально подсветка pygments и номера строк."""
+    опционально подсветка pygments и номера строк.
+
+    Строка исходника длиннее полосы набора (в Courier New 10 pt это ~78 знаков) в лист
+    не влезает, и абзац её переносит. Чтобы перенос было видно, у каждой строки листинга
+    висячий отступ: сама строка начинается у левого поля, а её хвост уходит вправо на
+    `CODE_WRAP_DXA` — иначе продолжение встаёт под началом следующей строки кода и
+    читается как отдельная. Отступ ставится и поверх стиля `Code` из шаблона: это часть
+    того, как устроен листинг, а красная строка основного текста в коде не нужна никогда.
+    """
     lines = text.split("\n")
     if lines and lines[-1] == "":
         lines.pop()
@@ -543,11 +553,11 @@ def add_code_lines(doc, ref_elem, text: str, ppr_template=None, *, lang: str = "
     last = ref_elem
     for i, line in enumerate(lines):
         p = new_paragraph_after(last, ppr_template)
+        ppr = get_ppr(p)
         if not set_style(doc, p, "Code"):
             set_spacing(p, before=0, after=0)
-            set_child(get_ppr(p), "w:jc", val="left")
-            for old in get_ppr(p).findall(qn("w:ind")):
-                get_ppr(p).remove(old)
+            set_child(ppr, "w:jc", val="left")
+        set_child(ppr, "w:ind", left=CODE_WRAP_DXA, hanging=CODE_WRAP_DXA)
         if line_numbers:
             p.append(make_run(f"{i + 1:>{width}}  ", None, font=font, size_pt=size_pt, color="808080"))
         if colored is None:

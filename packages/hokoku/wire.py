@@ -248,7 +248,11 @@ _TYPES: dict[str, _Spec] = {s.name: s for s in (
     _spec("code", Code, {
         "text": _TEXT,
         "lang": _Field({"type": "string"}, _string),
-        "line_numbers": _Field({"type": ["boolean", "null"]}, _opt_flag),
+        # номера строк модели не показываем: в готовой работе ссылаются на листинг
+        # целиком, а не на строку, и первая же правка кода сдвигает всю нумерацию.
+        # Поле остаётся: человек включает его из модуля отчётов, а старые документы
+        # с ним по-прежнему читаются
+        "line_numbers": _Field({"type": ["boolean", "null"]}, _opt_flag, for_model=False),
         "highlight": _Field({"type": ["boolean", "null"]}, _opt_flag),
         # подпись листинга без `false`: у кода нет третьего состояния (см. model.Code)
         "caption": _Field({"type": ["string", "null"]}, _opt_string), "ref": _REF}),

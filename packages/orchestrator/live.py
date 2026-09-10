@@ -232,6 +232,13 @@ class LiveBox(tools_mod.ToolBox):
         Тот же исходник, положенный дважды, — тот же материал: идентификатор
         считается по содержимому, и повторный ход не плодит мусора и не стоит
         разбора.
+
+        Набор материалов, которые прогон показывает модели, здесь же и
+        забывается (`забыть_контекст`): он запомнен ради дешёвого чтения файлов,
+        а положенный только что исходник в запомненный набор не входит.
+        Следующим ходом модель адресует его `make_flowchart`, и без сброса
+        памяти получила бы «материала в проекте нет» на свой же файл — то есть
+        связка «пишет код и рисует по нему схему» не работала бы вовсе.
         """
         text = args.get("text")
         if not isinstance(text, str) or not text.strip():
@@ -244,6 +251,7 @@ class LiveBox(tools_mod.ToolBox):
                             f"{tools_mod.MAX_SOURCE_CHARS}: разбей его на файлы")
         name = _source_name(args.get("name"), args.get("lang"))
         material = self.project.add_material(text.encode("utf-8"), name, do_ocr=False)
+        self.забыть_контекст()
         return {"material": material.id, "name": material.name, "chars": len(text),
                 "note": "схему по нему строят make_flowchart и диаграммы; сам "
                         "листинг поставь в работу блоком code"}
