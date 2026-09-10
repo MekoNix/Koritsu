@@ -1,10 +1,12 @@
 /**
  * Маршруты области «Отчёты».
  *
- *     /reports                      отчёты всех работ пространства
- *     /reports?project=<работа>     та же лента, суженная до одной работы
- *     /reports/<работа>/<отчёт>     экран отчёта: теги, заполнение, превью PDF
- *     /reports/<работа>             тот же экран без названного отчёта
+ *     /reports                          отчёты всех работ пространства
+ *     /reports?project=<работа>         та же лента, суженная до одной работы
+ *     /reports/<работа>/<отчёт>         экран отчёта: теги, заполнение, превью PDF
+ *     /reports/<работа>                 тот же экран без названного отчёта
+ *     /reports/<работа>/new-live        новый отчёт из задания
+ *     /reports/<работа>/live/<отчёт>    экран отчёта из задания
  *
  * Главная показывает отчёты сразу, без выбора работы: человек приходит сюда за
  * тем, что он писал, и шаг «сначала выберите работу» стоял между ним и его
@@ -25,8 +27,20 @@
  * `/reports/:projectId` — тот же адрес, что в карте модулей
  * (`features/projects/moduleRoutes.ts`): кнопка «открыть в модуле» со страницы
  * работы ведёт сюда, а строка журнала запусков — сразу к своему отчёту.
+ *
+ * **Отчёт из задания живёт под теми же адресами модуля, а не в «Решениях».**
+ * Человек делает его в «Отчётах», и ссылка на него обязана называть модуль, в
+ * котором он лежит. Звено `live` в адресе отличает его от отчёта по бланку:
+ * дороги у них разные с первого экрана, и один идентификатор на два вида
+ * означал бы угадывание вида по ответу службы посреди загрузки страницы.
+ * Экраны при этом общие с «Решениями» — своими у модуля остаются только слова
+ * и адреса (`features/kadai/module.ts`).
  */
 import type { RouteObject } from 'react-router-dom'
+
+import { KadaiNewRunPage } from '@/features/kadai/KadaiNewRunPage'
+import { KadaiWorkPage } from '@/features/kadai/KadaiWorkPage'
+import { ОТЧЁТ_ИЗ_ЗАДАНИЯ } from '@/features/kadai/module'
 
 import { ReportWorkPage } from './ReportWorkPage'
 import { ReportsHomePage } from './ReportsHomePage'
@@ -34,5 +48,11 @@ import { ReportsHomePage } from './ReportsHomePage'
 export const reportsRoutes: RouteObject[] = [
   { path: 'reports', element: <ReportsHomePage /> },
   { path: 'reports/:projectId', element: <ReportWorkPage /> },
+  // `new-live` и `live/:runId` стоят перед `:runId` не по порядку строк, а по
+  // устройству маршрутизатора: постоянное звено пути он предпочитает
+  // переменному, и «новый отчёт из задания» не читается как идентификатор
+  // отчёта.
+  { path: 'reports/:projectId/new-live', element: <KadaiNewRunPage scope={ОТЧЁТ_ИЗ_ЗАДАНИЯ} /> },
+  { path: 'reports/:projectId/live/:runId', element: <KadaiWorkPage scope={ОТЧЁТ_ИЗ_ЗАДАНИЯ} /> },
   { path: 'reports/:projectId/:runId', element: <ReportWorkPage /> },
 ]

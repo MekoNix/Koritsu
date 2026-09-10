@@ -1,5 +1,10 @@
 /**
- * KadaiNewRunPage — страница нового решения в работе: `/kadai/:projectId/new`.
+ * KadaiNewRunPage — страница нового прогона в работе: `/kadai/:projectId/new`.
+ *
+ * Страница стоит в двух модулях сразу: в «Решениях» она заводит решение, в
+ * «Отчётах» — отчёт из задания (`/reports/:projectId/new-live`). Делают они одно
+ * и то же и одними и теми же запросами; различаются слова и адрес возврата, и
+ * приезжают они пропом `scope` (`./module`).
  *
  * Решений в работе несколько: одна задача — одно решение, а задач в работе
  * столько, сколько их задали. У каждого своё условие, свои пожелания, свой ход
@@ -43,6 +48,7 @@ import { useDefaultEndpoint, useProviders } from '@/features/reports/data'
 
 import { ПРИНИМАЕМ } from './ContextFiles'
 import { useCreateKadaiRun, useSetCondition, useSetKadaiWishes } from './data'
+import { РЕШЕНИЕ, type KadaiScope } from './module'
 import { запомнить } from './preset'
 
 /**
@@ -59,8 +65,9 @@ import { запомнить } from './preset'
 const ПОПЫТОК = 60
 const ШАГ_МС = 500
 
-export function KadaiNewRunPage() {
+export function KadaiNewRunPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }) {
   const t = useT()
+  const слова = scope.words
   const navigate = useNavigate()
   const { projectId = '' } = useParams()
   const project = useProject(projectId)
@@ -117,7 +124,7 @@ export function KadaiNewRunPage() {
       const решение = await создать.mutateAsync({ projectId, name: name.trim() })
       const условие = файлом
         ? (файл as File)
-        : new File([текст], `${имя_файла(name || t('kadai.new.title'))}.txt`, {
+        : new File([текст], `${имя_файла(name || t(слова.newTitle))}.txt`, {
             type: 'text/plain',
           })
       // Условие и файлы контекста ложатся в папку этого решения (`run_id` в
@@ -152,7 +159,7 @@ export function KadaiNewRunPage() {
         wishes: { text: wishes, show_task: showTask, show_structure: showStructure },
       })
       if (пресет) запомнить(решение.id, пресет)
-      navigate(`/kadai/${projectId}/${решение.id}`)
+      navigate(scope.run(projectId, решение.id))
     } catch (е) {
       setБеда(errorText(е))
     }
@@ -163,22 +170,22 @@ export function KadaiNewRunPage() {
       <header className="flex flex-wrap items-end justify-between gap-s3">
         <div className="min-w-0">
           <h1 className="truncate font-display text-2xl font-semibold text-ink-strong">
-            {t('kadai.new.title')}
+            {t(слова.newTitle)}
           </h1>
           <p className="text-sm text-muted">
             {t('kadai.new.inWork', { work: project.data?.name ?? '' })}
           </p>
         </div>
         <Button variant="ghost" asChild>
-          <Link to={`/kadai/${projectId}`}>
+          <Link to={scope.list(projectId)}>
             <Icon name="arrowLeft" size={15} />
-            {t('kadai.work.toList')}
+            {t(слова.toList)}
           </Link>
         </Button>
       </header>
 
       <section className="flex flex-col gap-s3 rounded-md border border-line bg-surface p-s4 shadow-1">
-        <Field label={t('kadai.new.name')} htmlFor="kadai-name" hint={t('kadai.new.nameHint')}>
+        <Field label={t(слова.newName)} htmlFor="kadai-name" hint={t(слова.newNameHint)}>
           <Input
             id="kadai-name"
             value={name}
@@ -189,7 +196,7 @@ export function KadaiNewRunPage() {
 
         <fieldset className="flex flex-col gap-s2">
           <legend className="mb-s1 text-sm font-medium text-ink-strong">
-            {t('kadai.new.condition')}
+            {t(слова.newCondition)}
           </legend>
           <div className="flex gap-s3 text-sm text-ink">
             <label className="flex items-center gap-s2">
@@ -266,17 +273,13 @@ export function KadaiNewRunPage() {
           )}
         </fieldset>
 
-        <Field
-          label={t('kadai.new.wishes')}
-          hint={t('kadai.new.wishesHint')}
-          htmlFor="kadai-wishes"
-        >
+        <Field label={t(слова.newWishes)} hint={t(слова.newWishesHint)} htmlFor="kadai-wishes">
           <Textarea
             id="kadai-wishes"
             value={wishes}
             onChange={(e) => setWishes(e.target.value)}
             rows={3}
-            placeholder={t('kadai.new.wishesPlaceholder')}
+            placeholder={t(слова.newWishesPlaceholder)}
           />
         </Field>
 
@@ -315,7 +318,7 @@ export function KadaiNewRunPage() {
             loading={идёт}
             onClick={() => void завести()}
           >
-            {t('kadai.new.submit')}
+            {t(слова.newSubmit)}
           </Button>
         </div>
 

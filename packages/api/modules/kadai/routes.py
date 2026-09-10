@@ -12,6 +12,7 @@ routes — решения: `/api/kadai` и `/api/projects/{id}/kadai`.
     GET    /api/projects/{id}/kadai/wishes       200  пожелания к решению
     PUT    /api/projects/{id}/kadai/wishes       200  записать пожелания (editor)
     POST   /api/projects/{id}/kadai/restart      200  начать стадию заново (editor)
+    POST   /api/projects/{id}/kadai/template  201  бланк из блоков (editor)
 
 Маршрутов хватает этих, потому что делает работу не модуль, а очередь: прогон
 и замечание — задания `kadai_run` и `kadai_rework`, и второго способа их
@@ -93,15 +94,33 @@ routes — решения: `/api/kadai` и `/api/projects/{id}/kadai`.
 условия приезжают отдельным полем (`condition_past`): файлы остаются в папке
 решения, но модели не показываются, и экран помечает их.
 
+**Бланк с тегами — то, что остаётся от решения после него самого.** Готовая
+работа это список блоков, и второй такой же работе он не поможет ничем: блоки
+несут её текст. А вот её **строение** переиспользуемо — заголовки напечатаны,
+на месте содержимого стоят теги `{{ключ:метка}}`, перед каждым подсказка о том,
+что туда писать. Такой файл идёт обычным шаблонным путём: он ложится на личную
+полку человека, прикладывается к работе и выбирается как всякий другой бланк.
+Рядом с байтами кладётся манифест: `type`, задание модели, потолки и
+зависимости абзацем DOCX не выразить, и без записи рядом они восстанавливались
+бы догадкой по метке.
+
+**Эти маршруты не спрашивают, каким модулем делается работа.** Решение — это
+запись журнала (`module: "kadai"`) и каталог под ней, и живёт оно в любой работе:
+в модуле «Решения» им получают ответ на задачу, в модуле «Отчёты» — отчёт из
+задания, у которого на выходе документ и бланк вместо архива. Отбор по
+`projects.module` здесь означал бы, что одно и то же решение читается или не
+читается в зависимости от пункта сайдбара, под которым его завели.
+
 Коды отказа: `400 invalid_id` — форма идентификатора; `403 forbidden` — роли
 мало; `404 not_found` — нет проекта, спрашивающий не участник или нет такого
-материала (одинаково: разные ответы рассказывали бы, что проект существует).
+материала (одинаково: разные ответы рассказывали бы, что проект существует);
+`422 kadai_failed` — собирать бланк не из чего.
 """
 from __future__ import annotations
 
 import os.path
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -214,6 +233,21 @@ class SolutionOut(BaseModel):
         default=None, description="Stage it has got to, in Russian")
     condition_name: str = Field(
         default="", description="File name of the assignment, when one is named")
+
+
+class BlankOut(BaseModel):
+    """Бланк, собранный из блоков решения: где он теперь лежит и чем его взять."""
+
+    template_id: str = Field(
+        description="Id on the personal shelf: GET /api/templates lists it")
+    name: str = Field(description="What the blank is called on the shelf")
+    tags: int = Field(description="How many tags the blank has")
+    sha256: str = Field(description="First characters of the content hash")
+    blob: str = Field(
+        description="Where to download the DOCX: /api/templates/{id}/blob")
+    artifact: str = Field(
+        description=("The same DOCX as an artifact of this project: "
+                     "GET /api/projects/{project_id}/artifacts/{id}"))
 
 
 class RestartIn(BaseModel):
@@ -659,9 +693,90 @@ def начать_заново(тело: RestartIn, проект: Редакто�
         raise ApiError(KADAI_FAILED, str(беда), 422, where="body.stage") from None
 
 
-__all__ = ["router", "ConditionIn", "WishesIn", "RestartIn", "SolutionIn",
-           "SolutionOut", "ContextIn", "ContextOut", "ContextFileOut",
+def _имя_бланка(запись, вид) -> str:
+    """Как назвать бланк на полке: именем решения, а не «Шаблон 7».
+
+    Полка человека — это список из десятка файлов, и «Шаблон 7» в нём не
+    отличается от «Шаблона 8» ничем. Имя решения человек дал сам (или оно
+    взялось у файла условия), и оно говорит ровно то, что он и искал бы глазами.
+
+    Безымянное решение называется по теме — файлу его условия; нет и его —
+    остаётся общее слово. Пустым имя быть не может: `templates.service`
+    отказывает на пустом, и правильно делает — список из пяти пустых строк
+    бесполезен.
+    """
+    имя = str(getattr(запись, "name", "") or "").strip()
+    if имя:
+        return имя
+    тема = os.path.splitext(_имя_условия(вид))[0].strip()
+    return f"Бланк: {тема}" if тема else "Бланк из блоков"
+
+
+@router.post("/projects/{project_id}/kadai/template", status_code=201,
+             operation_id="kadai_template", response_model=BlankOut,
+             summary="Make a tagged blank out of the blocks of a solution",
+             description=(
+                 "Turns the block list of a solution into a reusable DOCX "
+                 "blank: headings are printed as headings, every other block "
+                 "becomes a `{{key:label}}` tag with a hint above it saying "
+                 "what belongs there. The file lands on the personal shelf of "
+                 "whoever asked (GET /api/templates), is attached to this "
+                 "project (GET /api/projects/{id}/templates) and is stored as "
+                 "an artifact of the project as well, so it can be downloaded "
+                 "either way. A manifest is stored beside the bytes: tag "
+                 "types, model tasks, limits and dependencies cannot be said in "
+                 "a DOCX paragraph, and without it they would be guessed from "
+                 "the labels when the blank is used again. Asking twice for the "
+                 "same blocks gives the same file and the same shelf entry: one "
+                 "DOCX is one template. `run` names the solution; without it "
+                 "the blocks of the work as a whole are taken. No model is "
+                 "called and nothing is charged. Editor role. 400 invalid_id, "
+                 "403 forbidden, 404 not_found, 413 quota_exceeded, "
+                 "422 kadai_failed."))
+def бланк(проект: РедакторПроекта, s: SessionDep, user: CurrentUser,
+          request: Request, run: str = РЕШЕНИЕ) -> dict:
+    """Блоки решения → бланк с тегами: артефакт, полка человека, список работы.
+
+    Три места, а не одно, и каждое отвечает на свой вопрос. Артефакт — «скачать
+    прямо сейчас», тем же маршрутом, которым скачивают собранный документ.
+    Полка — «взять этот бланк в другую работу», то есть то самое, ради чего
+    бланк и делается. Список работы — «собирать по нему этот отчёт»: выбор
+    остаётся отдельным действием (`…/templates/{id}/use`), потому что молча
+    сменённый бланк — это чужой ГОСТ в готовой работе.
+
+    Один и тот же бланк, собранный дважды, полку не удлиняет: шаблон опознаётся
+    по содержимому (`templates.service.добавить`), и повторная просьба
+    возвращает прежнюю строку. Ответ при этом остаётся `201` — просили не
+    «завести строку», а «сделать бланк», и он сделан.
+
+    Модель не зовётся ни разу: бланк собирается из того, что уже лежит в
+    работе. Поэтому здесь нет ни задания очереди, ни списания.
+    """
+    from ...templates import service as шаблоны                # noqa: PLC0415
+
+    вид = решение(проект, s, run)
+    если = str(run or "").strip()
+    запись = найти_решение(s, проект.id, если) if если else None
+    try:
+        данные, манифест = orchestrator.template_of_blocks(вид)
+    except Exception as беда:                                # noqa: BLE001
+        # Тот же довод, что в `начать_заново`: ловить движок отчётов по имени
+        # класса значило бы импортировать `hokoku` из службы. Текст уезжает
+        # наружу как есть — он по-русски и путей на томе не содержит.
+        raise ApiError(KADAI_FAILED, str(беда), 422, where="query.run") from None
+    art = вид.put_artifact(данные, name="бланк")
+    шаблон, _ = шаблоны.добавить(s, request.app.state.settings, user.id,
+                                 имя=_имя_бланка(запись, вид), имя_файла="",
+                                 данные=данные, манифест_рядом=манифест)
+    шаблоны.приложить(s, проект.id, шаблон)
+    return {"template_id": шаблон.id, "name": шаблон.name,
+            "tags": int(шаблон.tags), "sha256": шаблон.sha256,
+            "blob": f"/api/templates/{шаблон.id}/blob", "artifact": art}
+
+
+__all__ = ["router", "BlankOut", "ConditionIn", "WishesIn", "RestartIn",
+           "SolutionIn", "SolutionOut", "ContextIn", "ContextOut", "ContextFileOut",
            "KADAI_FAILED", "МОДУЛЬ", "записи_решений", "найти_решение",
            "развести_решения", "решение", "карточка_решения",
            "назвать_по_условию", "общие_файлы", "условие_решения",
-           "с_условием"]
+           "с_условием", "бланк"]

@@ -39,6 +39,29 @@ reports — отчёты работы: `/api/projects/{id}/reports`.
 самой старой записи, каждая следующая получает свой каталог. Первый отчёт при
 этом никуда не переезжает — его значения остаются там, где были записаны.
 
+**В ленте два вида карточек.** Отчёт бывает собран шаблонным путём — бланк с
+тегами, значения, сборка (`kind: "template"`), — а бывает написан из задания:
+человек приносит условие и описание, а работу блоками строит агент
+(`kind: "live"`). Второй носитель для этого не заводится: отчёт из задания — это
+**решение** (`module: "kadai"`) внутри работы модуля `reports`, со своей папкой,
+своим условием, своими пожеланиями и своим списком блоков; всё это у решения уже
+есть, и третья таблица рядом описывала бы то же самое второй раз. На ленте они
+стоят рядом, потому что человек искал бы их вместе: и то и другое — написанный
+им отчёт.
+
+Переезда корневого документа это не касается. Он принадлежит самой старой записи
+**об отчёте** и трогает только записи модуля `reports`; решение живёт в
+`kadai/<id>/` — свой список блоков, свой ход стадий, свои материалы, — и в корне
+работы у него нет ничего. Отчёт из задания и первый шаблонный отчёт одной работы
+не спорят ни за один файл.
+
+**Первую страницу пишет тот, кто собрал документ.** У шаблонного отчёта это
+задание `build`, у отчёта из задания — стадия «сборка» сценария; функция одна и
+та же (`runs/handlers/build.запомнить_превью`), и картинка ложится в
+`preview_artifact_id` той записи журнала, из которой прогон поставлен. Две
+отрисовки отличались бы шириной или разрешением, и по карточке было бы видно,
+каким путём сделан документ.
+
 **Удаление сносит документ, а не бланк.** Уходят значения, их версии и каталог
 сборки этого отчёта; приложенный к работе бланк остаётся на полке, а артефакты —
 на томе: артефакт адресуется содержимым и может стоять значением тега в соседнем
@@ -55,11 +78,14 @@ reports — отчёты работы: `/api/projects/{id}/reports`.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 import orchestrator
+from orchestrator import kadai as сценарий
 
 from ..db import SessionDep
 from ..errors import ApiError, NOT_FOUND
@@ -104,6 +130,10 @@ class ReportIn(BaseModel):
 class ReportOut(BaseModel):
     """Отчёт наружу: запись журнала плюс то, что видно на его карточке."""
 
+    kind: Literal["template"] = Field(
+        default="template",
+        description=("Built the usual way: a template with tags, tag values "
+                     "and a build"))
     id: str = Field(description="Run id of this report: the value of ?report=")
     project_id: str
     name: str = Field(description="Empty means the interface names it itself")
@@ -117,6 +147,35 @@ class ReportOut(BaseModel):
         default="",
         description="Name of the template this report is built from, if known")
     tags: int = Field(default=0, description="How many tags its template has")
+
+
+class LiveReportOut(BaseModel):
+    """Отчёт из задания наружу: запись решения плюс то, чем его показывают.
+
+    Полей меньше, чем у шаблонного отчёта, и это не пропуск: у отчёта из задания
+    нет ни бланка, ни числа тегов — работа в нём это список блоков. Зато есть
+    стадия и состояние прогона, которых не бывает у шаблонного: он не идёт
+    сам, а заполняется по тегу.
+    """
+
+    kind: Literal["live"] = Field(
+        default="live",
+        description="Written from an assignment: a solution built in blocks")
+    id: str = Field(
+        description="Run id of the solution: the value of ?run= on /kadai routes")
+    project_id: str
+    name: str = Field(description="Empty means the interface names it itself")
+    stage: str | None = Field(
+        default=None, description="Stage it has got to, in Russian")
+    state: str | None = Field(
+        default=None,
+        description="State of the work: running, waiting_user, done, failed")
+    preview_artifact_id: str | None = Field(
+        default=None,
+        description="First page of the built document, as a PNG artifact")
+    created_at: str | None = None
+    updated_at: str | None = Field(
+        default=None, description="When the journal entry last changed")
 
 
 class WorkspaceReportOut(ReportOut):
@@ -133,12 +192,64 @@ class WorkspaceReportOut(ReportOut):
         default="", description="Name of the project this report belongs to")
 
 
+class WorkspaceLiveReportOut(LiveReportOut):
+    """Отчёт из задания, названный вместе со своей работой. Довод тот же."""
+
+    project_name: str = Field(
+        default="", description="Name of the project this report belongs to")
+
+
 def карточка(запись: ProjectRun, *, бланк: str = "", тегов: int = 0) -> dict:
-    return {"id": запись.id, "project_id": запись.project_id,
+    return {"kind": "template", "id": запись.id,
+            "project_id": запись.project_id,
             "name": запись.name, "n": int(запись.n),
             "user_id": запись.user_id, "created_at": iso(запись.created_at),
             "preview_artifact_id": запись.preview_artifact_id,
             "template_name": бланк, "tags": int(тегов)}
+
+
+def живая_карточка(запись: ProjectRun, вид: orchestrator.Project) -> dict:
+    """Решение работы карточкой ленты отчётов. → «отчёт из задания».
+
+    Стадия и состояние читаются с тома (`orchestrator.kadai.status`), а не из
+    карточки задания: работа переживает несколько прогонов, и после перезагрузки
+    страницы карточки последнего может не быть вовсе. Стоит это одного чтения
+    файла — ни модели, ни стадии.
+
+    Пустой снимок — законное состояние: решение заводят раньше, чем запускают, и
+    карточка «отчёт есть, работа не начата» верна.
+    """
+    снимок = сценарий.status(вид)
+    return {"kind": "live", "id": запись.id, "project_id": запись.project_id,
+            "name": запись.name, "stage": снимок.get("stage"),
+            "state": снимок.get("state"),
+            "preview_artifact_id": запись.preview_artifact_id,
+            "created_at": iso(запись.created_at),
+            "updated_at": iso(запись.updated_at)}
+
+
+def живые(s, p: Project, проект: orchestrator.Project) -> list[dict]:
+    """Отчёты из задания этой работы, старые сверху. Не тот модуль — пусто.
+
+    Спрашивается объявленный модуль работы (`projects.module`), а не наличие
+    решений на томе: решения бывают у всякой работы, а лентой **отчётов** они
+    становятся только там, где человек их так и заводил. Работа модуля
+    «Решения» с её задачами в ленте отчётов была бы чужой строкой.
+
+    Каталоги решений здесь же и чинятся (`развести_решения`) — тем же способом,
+    каким список отчётов чинит старые работы: без этого первое решение работы
+    читалось бы из корня и показывало бы ход не свой.
+    """
+    if p.module != МОДУЛЬ:
+        return []
+    from ..modules.kadai.routes import (записи_решений,        # noqa: PLC0415
+                                        развести_решения)
+
+    строки = записи_решений(s, p.id)
+    if not строки:
+        return []
+    развести_решения(проект, строки)
+    return [живая_карточка(з, проект.for_solution(з.id)) for з in строки]
 
 
 def записи(s, project_id: str) -> list[ProjectRun]:
@@ -226,19 +337,31 @@ def бланк_отчёта(s, проект: orchestrator.Project, project_id: s
 
 
 @router.get("", operation_id="list_project_reports",
-            response_model=list[ReportOut],
+            response_model=list[ReportOut | LiveReportOut],
             summary="Reports of this project",
             description=(
                 "Every report of the project, oldest first: what it is called, "
-                "which report of this project it is, which template it is "
-                "built from and the first page of what it built last. A "
-                "project carries several reports, each with its own template "
-                "and its own tag values; the id of a report is what the other "
-                "routes take as `report`. Viewer role. 400 invalid_id, "
-                "404 not_found, 409 in_trash."))
+                "which template it is built from and the first page of what it "
+                "built last. A project carries several reports, each with its "
+                "own template and its own tag values; the id of a report is "
+                "what the other routes take as `report`. `kind` says how a "
+                "report is made: `template` is the usual way — a blank with "
+                "tags and tag values — and `report` names it; `live` is a "
+                "report written from an assignment, a solution built in blocks, "
+                "and the `/kadai` routes take its id as `run`. Reports written "
+                "from an assignment are listed only for projects of the "
+                "`reports` module, after the templated ones. Viewer role. "
+                "400 invalid_id, 404 not_found, 409 in_trash."))
 def список(project_id: str, request: Request, s: SessionDep,
            user: CurrentUser) -> list[dict]:
-    """Отчёты работы карточками. Пустой список — законное состояние новой работы."""
+    """Отчёты работы карточками. Пустой список — законное состояние новой работы.
+
+    Отчёты из задания идут после шаблонных, а не вперемешку по времени: у
+    шаблонных порядок — «который это отчёт работы», и вставлять между ними
+    карточку другого вида значило бы сбить счёт, по которому человек их и
+    различает. В общей ленте пространства порядок другой и по другой причине —
+    см. `список_пространства`.
+    """
     settings: Settings = настройки(request)
     p = доступный(s, user, project_id, VIEWER)
     проект = открыть(p, settings)
@@ -248,7 +371,7 @@ def список(project_id: str, request: Request, s: SessionDep,
     for запись in строки:
         бланк, тегов = бланк_отчёта(s, проект, p.id, запись.id)
         итог.append(карточка(запись, бланк=бланк, тегов=тегов))
-    return итог
+    return итог + живые(s, p, проект)
 
 
 @router.post("", status_code=201, operation_id="create_project_report",
@@ -362,12 +485,19 @@ def снести(project_id: str, run_id: str, request: Request, s: SessionDep,
 
 
 @workspace_router.get("", operation_id="list_workspace_reports",
-                     response_model=list[WorkspaceReportOut],
+                     response_model=list[WorkspaceReportOut
+                                         | WorkspaceLiveReportOut],
                      summary="Reports of every project in a workspace",
                      description=(
                          "Every report of every project of one workspace, "
                          "newest first, each named together with the project "
-                         "it belongs to. `workspace_id` is required: a list of "
+                         "it belongs to. `kind` says how a report is made: "
+                         "`template` is a blank with tags and tag values, "
+                         "`live` is a report written from an assignment — a "
+                         "solution built in blocks, whose id the `/kadai` "
+                         "routes take as `run`. Reports written from an "
+                         "assignment are listed for projects of the `reports` "
+                         "module. `workspace_id` is required: a list of "
                          "everything the caller can reach would show the "
                          "reports of one workspace while another one is open. "
                          "Projects in the trash are left out, and so are "
@@ -403,7 +533,8 @@ def список_пространства(request: Request, workspace_id: str, s
     итог: list[dict] = []
     for p in работы:
         строки = записи(s, p.id)
-        if not строки:
+        свои_решения = p.module == МОДУЛЬ
+        if not строки and not свои_решения:
             # Каталог на томе не трогаем вовсе: у работы без отчётов ни читать,
             # ни чинить нечего.
             continue
@@ -417,14 +548,20 @@ def список_пространства(request: Request, workspace_id: str, s
             бланк, тегов = бланк_отчёта(s, проект, p.id, запись.id)
             итог.append({**карточка(запись, бланк=бланк, тегов=тегов),
                          "project_name": p.name})
+        for карта in живые(s, p, проект):
+            итог.append({**карта, "project_name": p.name})
 
     # Новые сверху: лента без выбора работы читается как «что я делал
     # последним», а не как история работы по порядку. Внутри одной секунды
-    # порядок решает номер отчёта.
-    итог.sort(key=lambda к: (к["created_at"] or "", к["n"]), reverse=True)
+    # порядок решает номер отчёта; у отчёта из задания номера нет вовсе — он
+    # считается по решениям, а не по отчётам, и сравнивать эти два счёта
+    # значило бы выдумать порядок там, где его нет.
+    итог.sort(key=lambda к: (к["created_at"] or "", int(к.get("n") or 0)),
+              reverse=True)
     return итог
 
 
 __all__ = ["router", "workspace_router", "ReportIn", "ReportOut",
-           "WorkspaceReportOut", "карточка", "записи", "найти", "развести",
+           "LiveReportOut", "WorkspaceReportOut", "WorkspaceLiveReportOut",
+           "карточка", "живая_карточка", "живые", "записи", "найти", "развести",
            "МОДУЛЬ"]

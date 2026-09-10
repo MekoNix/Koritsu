@@ -1,5 +1,11 @@
 /**
- * KadaiWorkPage — экран одного решения: `/kadai/:projectId/:runId`.
+ * KadaiWorkPage — экран одного прогона: `/kadai/:projectId/:runId`.
+ *
+ * Экран стоит в двух модулях сразу. В «Решениях» это решение задачи и кончается
+ * оно архивом; в «Отчётах» тот же прогон — отчёт из задания
+ * (`/reports/:projectId/live/:runId`): он останавливается на сборке, стадии
+ * «Архив» в полоске шагов нет, а вместо архива из готовых блоков делается бланк
+ * с тегами. Слова, адреса и эта разница приезжают пропом `scope` (`./module`).
  *
  * Решений в работе несколько, и весь экран работает с одним: `runId` уезжает
  * параметром `run` в каждый запрос и в задание прогона. Без него страница
@@ -53,15 +59,16 @@ import { Link, useParams } from 'react-router-dom'
 import { errorSaid, keys } from '@/api'
 import { useDocumentCrumb } from '@/app/shell/breadcrumbs'
 import { useT } from '@/i18n'
+import { withBase } from '@/lib/basePath'
 import { cn } from '@/lib/cn'
-import { Button, ErrorState, Icon, Segmented, SkeletonLines } from '@/ui'
+import { Button, ErrorState, Icon, Segmented, SkeletonLines, useToast } from '@/ui'
 import {
   artifactUrl,
   useMaterials,
   usePendingMaterials,
   useProject,
 } from '@/features/projects/data'
-import { useDefaultEndpoint, useProviders } from '@/features/reports/data'
+import { useDefaultEndpoint, useMakeKadaiTemplate, useProviders } from '@/features/reports/data'
 import type { BuildState } from '@/features/reports/useBuild'
 import { ModelPicker } from '@/features/reports/runControls'
 
@@ -72,6 +79,7 @@ import { ContextFiles } from './ContextFiles'
 import { PdfBlocks } from './PdfBlocks'
 import { StageStrip } from './StageStrip'
 import { WishesBox } from './WishesBox'
+import { РЕШЕНИЕ, type KadaiScope, type KadaiTemplateWords } from './module'
 import {
   useBlocks,
   useContextMaterials,
@@ -93,8 +101,9 @@ const СБОРКА = 'сборка'
 /** Сколько раз перечитывать опись в ожидании разбора условия (полторы минуты). */
 const ОПРОСОВ = 60
 
-export function KadaiWorkPage() {
+export function KadaiWorkPage({ scope = РЕШЕНИЕ }: { scope?: KadaiScope }) {
   const t = useT()
+  const слова = scope.words
   const { projectId = '', runId = '' } = useParams()
   const project = useProject(projectId)
   // Список решений спрашивается ради имени в заголовке — и ради переезда
@@ -123,7 +132,7 @@ export function KadaiWorkPage() {
 
   const решение = (runs.data ?? []).find((з) => з.id === runId)
   const заголовок = решение
-    ? решение.name || t('kadai.home.runName', { n: решение.n })
+    ? решение.name || t(слова.runName, { n: решение.n })
     : (project.data?.name ?? t('kadai.work.title'))
 
   useDocumentCrumb(заголовок)
@@ -151,9 +160,15 @@ export function KadaiWorkPage() {
   const пресет = endpoint ?? запомненный(runId) ?? умолчание
 
   const run = useKadaiRun(projectId, пресет, runId)
+  // Стадии, которых модуль не обещает, отсеиваются здесь, а не в полоске: по
+  // этому же списку считается «работа встала» и «что идёт сейчас», и стадия,
+  // убранная только с картинки, оставляла бы экран в вечном ожидании.
   const стадии = useMemo(
-    () => mergeStages(stageNames.data ?? [], status.data?.stages, run.stageEvents),
-    [stageNames.data, status.data?.stages, run.stageEvents],
+    () =>
+      mergeStages(stageNames.data ?? [], status.data?.stages, run.stageEvents).filter(
+        (стадия) => !scope.skip.includes(стадия.name),
+      ),
+    [stageNames.data, status.data?.stages, run.stageEvents, scope.skip],
   )
 
   // Материал-условие — ровно тот, который назван условием у службы
@@ -244,7 +259,7 @@ export function KadaiWorkPage() {
   // нажатием намеренно: разорванные, они оставили бы работу в состоянии
   // «сброшена, но никуда не идёт», и человек решал бы, что кнопка не сработала.
   function начать_заново() {
-    restart.mutate(undefined, { onSuccess: () => запустить(null) })
+    restart.mutate(undefined, { onSuccess: () => запустить(scope.until) })
   }
 
   if (project.isError) return <ErrorState error={project.error} onRetry={() => project.refetch()} />
@@ -277,9 +292,9 @@ export function KadaiWorkPage() {
           </p>
         </div>
         <Button variant="ghost" asChild>
-          <Link to={`/kadai/${projectId}`}>
+          <Link to={scope.list(projectId)}>
             <Icon name="arrowLeft" size={15} />
-            {t('kadai.work.toList')}
+            {t(слова.toList)}
           </Link>
         </Button>
       </header>
@@ -312,6 +327,19 @@ export function KadaiWorkPage() {
         </p>
       )}
 
+      {/* Бланк с тегами из блоков — выход модуля «Отчёты» вместо архива.
+          Стоит рядом со стадиями, а не под вёрсткой: делают его тогда же,
+          когда смотрят на готовый документ. */}
+      {scope.template && (
+        <TemplateFromBlocks
+          projectId={projectId}
+          runId={runId}
+          words={scope.template}
+          empty={(blocks.data ?? []).length === 0}
+          disabled={run.running}
+        />
+      )}
+
       {/* Работа ждёт человека. Плашка заметная и с одной крупной кнопкой
           намеренно: сценарий останавливается там, где ошибка дороже всего
           (понял ли он задание, то ли строение), и остановка эта неотличима от
@@ -331,7 +359,7 @@ export function KadaiWorkPage() {
               variant="primary"
               disabled={run.running || встала || !пресет || !условие}
               loading={run.running}
-              onClick={() => запустить(null)}
+              onClick={() => запустить(scope.until)}
             >
               {t('kadai.run.continue')}
             </Button>
@@ -347,7 +375,7 @@ export function KadaiWorkPage() {
       {run.stopped && !run.running && (
         <p className="flex flex-wrap items-center gap-s2 rounded-md border border-line bg-surface-2 px-s3 py-s2 text-sm text-ink">
           <Icon name="info" size={15} className="shrink-0 text-muted" />
-          {t('kadai.run.stopped')}
+          {t(слова.stopped)}
         </p>
       )}
 
@@ -441,9 +469,9 @@ export function KadaiWorkPage() {
                   className="ml-auto"
                   disabled={!confirmed || !условие || !пресет || встала}
                   loading={run.running}
-                  onClick={() => запустить(null)}
+                  onClick={() => запустить(scope.until)}
                 >
-                  {работа_заведена ? t('kadai.run.again') : t('kadai.run.start')}
+                  {работа_заведена ? t(слова.again) : t(слова.start)}
                 </Button>
               )}
               {/* Остановка — просьба, а не выключатель: ждущее задание служба
@@ -587,6 +615,75 @@ export function KadaiWorkPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Бланк с тегами из блоков прогона: кнопка и то, что осталось после неё.
+ *
+ * Бланк — обычный `.docx` с тегами `{{ключ:метка}}`, то есть вход в тот же
+ * шаблонный путь, которым собирается любой отчёт работы: написанное один раз
+ * строение переиспользуется дальше без модели.
+ *
+ * Ссылки на файл и на полку стоят строкой на экране, а не только в тосте: тост
+ * уходит через шесть секунд, и ссылка, которую не успели нажать, вернулась бы
+ * только повторным заданием — а оно кладёт на полку второй бланк.
+ *
+ * Пустой список блоков служба отвергает («собирать нечего»), поэтому кнопка
+ * до первого строения выключена: платить отказом за нажатие незачем.
+ */
+function TemplateFromBlocks({
+  projectId,
+  runId,
+  words,
+  empty,
+  disabled,
+}: {
+  projectId: string
+  runId: string
+  words: KadaiTemplateWords
+  /** Блоков ещё нет: делать бланк не из чего. */
+  empty: boolean
+  disabled: boolean
+}) {
+  const t = useT()
+  const toast = useToast()
+  const бланк = useMakeKadaiTemplate(projectId, runId)
+  const готов = бланк.data ?? null
+
+  return (
+    <section className="flex flex-wrap items-center gap-s2 rounded-md border border-line bg-surface-2 px-s3 py-s2 text-sm text-ink">
+      <Icon name="file" size={15} className="shrink-0 text-muted" />
+      <span className="min-w-0">{готов ? t(words.done, { name: готов.name }) : t(words.hint)}</span>
+      {готов && (
+        <>
+          <Button variant="ghost" size="sm" asChild>
+            <a href={withBase(готов.blob)} download>
+              <Icon name="download" size={14} />
+              {t(words.download)}
+            </a>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/settings/templates">{t(words.shelf)}</Link>
+          </Button>
+        </>
+      )}
+      <Button
+        variant="secondary"
+        size="sm"
+        className="ml-auto"
+        disabled={disabled || empty}
+        loading={бланк.isPending}
+        onClick={() =>
+          бланк.mutate(undefined, {
+            onSuccess: (это) => toast.success(t(words.toast), это.name),
+            onError: (беда) => toast.fail(беда),
+          })
+        }
+      >
+        {t(words.make)}
+      </Button>
+    </section>
   )
 }
 

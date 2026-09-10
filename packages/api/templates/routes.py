@@ -31,6 +31,17 @@ routes — шаблоны отчётов: свои (`/api/templates`) и при�
 но не стёрли; задания, типы и ограничения остались. Значения тегов при этом
 никуда не деваются, и работа, у которой сменили бланк, собирается сразу.
 
+**Бланк, у которого есть манифест рядом, поднимается целиком.** Абзацем DOCX
+выразимы только ключ и метка тега; тип, задание модели, потолки и зависимости
+приезжают отдельной записью, положенной рядом с байтами при загрузке
+(`service.манифест`). Без неё те же теги восстанавливались бы догадкой по метке,
+и схема встала бы туда, где ждали таблицу. Про свои теги эта запись знает
+точнее прежнего манифеста работы: ключи бланков раздаёт служба (`b-01`, `b-02`,
+…), и тот же ключ в прошлом бланке — не тот же тег. Записи о тегах, которых в
+новом бланке нет, при этом остаются, как остаются они при всякой смене бланка.
+У бланка, принесённого со стороны, записи рядом нет, и путь у него остаётся
+прежним.
+
 **Зачем это отдельно от проекта.** До сегодня шаблон существовал только внутри
 работы: `POST /api/projects` принимал DOCX, клал его артефактом, и человек,
 заводящий пятую работу по тому же ГОСТу, искал тот же файл у себя на диске в
@@ -323,7 +334,15 @@ async def приложить_шаблон(request: Request, response: Response,
                          "is built from. Decisions already made about the tags "
                          "(prompts, types, limits) move to the new manifest: a "
                          "tag that is gone is marked as such rather than "
-                         "dropped, and tag values are left alone. `report` "
+                         "dropped, and tag values are left alone. A template "
+                         "that carries a manifest of its own — one generated "
+                         "from the blocks of a work — is restored from it: tag "
+                         "types, model tasks, limits and dependencies come "
+                         "back as they were written instead of being guessed "
+                         "from the labels. For the tags of such a template its "
+                         "own manifest is what counts: keys are given out by "
+                         "the service, and the same key in an older blank is "
+                         "not the same tag. `report` "
                          "says which report of the project changes its "
                          "template; without it the single document of the "
                          "work does. Editor role. 400 bad_template, "

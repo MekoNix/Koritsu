@@ -1,8 +1,9 @@
 """
 orchestrator — единственный, кто знает про все пакеты сразу.
 
-Пять пакетов (`hokoku` — отчёты из DOCX-шаблонов, `llm` — слой моделей,
-`materials` — материалы студента, `fragmos` и `uml_generator` — схемы) не связаны
+Шесть пакетов (`hokoku` — отчёты из DOCX-шаблонов, `llm` — слой моделей,
+`materials` — материалы студента, `fragmos` и `uml_generator` — схемы, `zuhyo` —
+графики) не связаны
 между собой ни одним импортом, и это правило держится намеренно: каждый из них
 самостоятелен и тестируется отдельно. Не хватало того единственного, кто знает
 про всех сразу, — им и работает этот пакет. Импортировать соседей можно только
@@ -85,7 +86,8 @@ from .agent import AgentResult, fill_agent
 from .build import check, job_of
 from .build import build
 from .live import LiveResult, TextsResult, live_tools, solve, write_texts
-from .doors import Answer, ask, check_code, kadai_services, make_template
+from .doors import Answer, ask, check_code, kadai_services, make_template, \
+    template_of_blocks
 
 __all__ = [
     "Project", "Version", "BlockVersion", "Run", "SOURCES", "artifact_id",
@@ -95,7 +97,7 @@ __all__ = [
     "fill_agent", "AgentResult", "ToolBox", "ToolError", "operator_channel_gate",
     "build", "check", "job_of",
     "ask", "Answer", "make_template", "check_code", "solve", "write_texts",
-    "kadai_services",
+    "kadai_services", "template_of_blocks",
     "LiveResult", "TextsResult", "live_tools",
     "build_parts", "seal_mark", "render", "prompt_hash", "RULES",
     "tag_schema", "any_value_schema", "report_schema", "fillable", "TagStream",

@@ -19,7 +19,10 @@ tools — инструменты агента (уровень 3) поверх т
 * **Мутирует только `set_tag`.** Остальные читают и производят артефакты.
 * **Пользовательский код не выполняется.** `make_flowchart` и диаграммы — это
   `diagrams.flowchart` и два соседа, то есть разбор исходника tree-sitter'ом.
-  Ни `exec`, ни подпроцесса, ни поиска в сети здесь нет и не будет. Звать
+  `make_chart` — то же правило с другой стороны: модель присылает данные и вид
+  графика, рисует их `zuhyo`, и нарисованного ею кода matplotlib здесь не
+  появляется. Ни `exec`, ни подпроцесса, ни поиска в сети здесь нет и не
+  будет. Звать
   `fragmos` и `uml_generator` напрямую отсюда с 2.0.0a5.1 нельзя: у них один
   фасад на весь проект (`orchestrator.diagrams`), потому что вторым вызывающим
   стала HTTP-служба, а разрез не пускает её к строителям схем.
@@ -69,6 +72,7 @@ import json
 import hokoku
 import llm
 import materials
+import zuhyo
 
 from . import build as build_mod, diagrams, fill as fill_mod, schema as schema_mod
 from .errors import OrchestratorError, hint
@@ -196,7 +200,7 @@ _ARTIFACT = {"type": "string"}
 
 
 def tools() -> list[llm.Tool]:
-    """Объявления всех семи инструментов, в постоянном порядке.
+    """Объявления всех восьми инструментов, в постоянном порядке.
 
     Порядок и состав постоянны намеренно: список едет в каждом запросе прогона и
     стоит в кэшируемом префиксе. Собирать его «по обстановке» (нет материалов —
@@ -240,12 +244,12 @@ def tools() -> list[llm.Tool]:
 
 
 def material_tools() -> list[llm.Tool]:
-    """Пять инструментов чтения и схем — общие для обоих режимов работы.
+    """Шесть инструментов чтения, схем и графиков — общие для обоих режимов.
 
-    Общие, а не скопированные: живой режим (`live.py`) читает материалы и строит
-    схемы теми же вызовами, и разойдись описания, модель получила бы два разных
-    объяснения одного инструмента в двух режимах. Тегов эти пять не касаются
-    вовсе, поэтому и вынесены: всё, что про теги, живёт в `tools()`.
+    Общие, а не скопированные: живой режим (`live.py`) читает материалы, строит
+    схемы и графики теми же вызовами, и разойдись описания, модель получила бы
+    два разных объяснения одного инструмента в двух режимах. Тегов эти шесть не
+    касаются вовсе, поэтому и вынесены: всё, что про теги, живёт в `tools()`.
     """
     return [
         llm.Tool(name="list_materials", schema=_obj({}), description=(
@@ -299,13 +303,54 @@ def material_tools() -> list[llm.Tool]:
                 "language": {"enum": list(_LANGS)},
                 "theme": {"enum": [*_THEMES, None]}},
                 required=["ids", "language"])),
+        llm.Tool(name="make_chart", description=(
+            "График по данным (PNG). Данные и вид присылаешь ты, рисуем их мы: "
+            "кода ты не пишешь и код не выполняется. Виды line, bar, barh, "
+            "scatter, step, area берут series — список [{name, x, y}]; x можно "
+            "не задавать (точки пронумеруются) или дать подписями делений, "
+            "одинаковыми у всех серий. Вид pie берёт labels и values, вид hist — "
+            f"values и bins. Потолки: серий не больше {zuhyo.MAX_SERIES}, точек "
+            f"в серии не больше {zuhyo.MAX_POINTS}; лишнее обрезается, и об этом "
+            "сказано в notes. Возвращает идентификатор артефакта: его ставь "
+            "блоком image с подписью, а в отчёте по шаблону — значением тега "
+            "типа image."),
+            schema=_obj({
+                "kind": {"enum": list(zuhyo.KINDS)},
+                "title": {"type": ["string", "null"],
+                          "description": "заголовок над графиком"},
+                "x_label": {"type": ["string", "null"]},
+                "y_label": {"type": ["string", "null"]},
+                "series": {"type": ["array", "null"],
+                           "maxItems": zuhyo.MAX_SERIES,
+                           "description": "данные видов line, bar, barh, "
+                                          "scatter, step, area",
+                           "items": _obj({
+                               "name": {"type": ["string", "null"],
+                                        "description": "имя серии в легенде"},
+                               "x": {"type": ["array", "null"],
+                                     "items": {"type": ["number", "string"]}},
+                               "y": {"type": "array", "items": {"type": "number"}}},
+                               required=["y"])},
+                "labels": {"type": ["array", "null"], "items": {"type": "string"},
+                           "description": "подписи долей pie"},
+                "values": {"type": ["array", "null"], "items": {"type": "number"},
+                           "description": "доли pie или замеры hist"},
+                "bins": {"type": ["integer", "null"], "minimum": 1,
+                         "maximum": zuhyo.MAX_BINS,
+                         "description": "сколько столбиков у hist"},
+                "legend": {"type": ["boolean", "null"]},
+                "grid": {"type": ["boolean", "null"]},
+                "size": {"enum": [*zuhyo.SIZES, None]},
+                "theme": {"enum": [*zuhyo.THEMES, None]}},
+                required=["kind"])),
     ]
 
 
-# Пять общих на оба режима: чтение материалов и построение схем. Порядок тот же,
-# что в объявлениях, — он же порядок в кэшируемом префиксе запроса.
+# Шесть общих на оба режима: чтение материалов, схемы и графики. Порядок тот же,
+# что в объявлениях, — он же порядок в кэшируемом префиксе запроса, и новое
+# приписывается в конец, чтобы прежний префикс остался прежним.
 MATERIAL_TOOLS = ("list_materials", "read_material", "make_flowchart",
-                  "make_class_diagram", "make_object_diagram")
+                  "make_class_diagram", "make_object_diagram", "make_chart")
 
 TOOL_NAMES = MATERIAL_TOOLS + ("set_tag", "preview")
 
@@ -422,6 +467,7 @@ class ToolBox:
             "make_flowchart": self._make_flowchart,
             "make_class_diagram": self._make_class_diagram,
             "make_object_diagram": self._make_object_diagram,
+            "make_chart": self._make_chart,
             "set_tag": self._set_tag,
             "preview": self._preview,
         }
@@ -526,6 +572,11 @@ class ToolBox:
             return "просмотрены материалы работы"
         if call.name == "read_material":
             return f"прочитан материал «{payload.get('name') or '?'}»"
+        if call.name == "make_chart":
+            # У графика материала-исходника нет: его исходник — числа, которые
+            # модель прислала сама, и назвать в фразе можно только заголовок.
+            заголовок = " ".join(str(self._args.get("title") or "").split())
+            return "построен график" + (f" «{заголовок}»" if заголовок else "")
         if call.name in _DIAGRAM_WORDS:
             ids = ([self._args.get("id")] if call.name == "make_flowchart"
                    else self._args.get("ids"))
@@ -704,6 +755,40 @@ class ToolBox:
         return {"artifact": art,
                 "objects": list(готово.items),
                 "notes": [n.message for n in готово.notices]}
+
+    # ── графики ─────────────────────────────────────────────────────────────
+    def _make_chart(self, args: dict) -> dict:
+        """График по данным модели: `zuhyo.render` → артефакт PNG.
+
+        Аргументы инструмента и есть спецификация графика — второго слоя имён
+        между ними не заводится: перекладывание `y` в `values` и обратно
+        означало бы два описания одних данных, и разошлись бы они на первом же
+        новом виде графика.
+
+        В журнал производных (`_derived`) едет спецификация целиком, а список
+        материалов пуст, и это не оплошность: у графика нет исходника-файла,
+        его исходник — сами числа. Без них замечание «график переделай»
+        упирается в вопрос, что на нём было нарисовано, а нарисовать «как-нибудь
+        заново» значит выдать другую картинку за исправленную.
+
+        Обрезанное (серии и точки сверх потолка) не отказ, а `notes` в ответе —
+        тем же способом, каким говорит о невошедшем `fragmos`: решать, годится
+        ли такая картинка для работы, будет модель, а немой отказ на десяти
+        тысячах точек не даёт ей ничего.
+        """
+        try:
+            готово = zuhyo.render(args)
+        except zuhyo.ChartError as беда:
+            # Поле, на котором всё кончилось, едет отдельным ключом: по нему
+            # модель правит вызов, не перечитывая текст.
+            raise ToolError("bad_chart", беда.message,
+                            **({"field": беда.field} if беда.field else {})) from None
+        art = self.project.put_artifact(готово.png, name="график")
+        self._derived(art, "make_chart", inputs=[], params=готово.spec)
+        return {"artifact": art, "kind": готово.spec["kind"],
+                "notes": list(готово.notes),
+                "note": "картинка: ставь артефакт блоком image с подписью, "
+                        "а в отчёте по шаблону — значением тега типа image"}
 
     # ── значения ────────────────────────────────────────────────────────────
     def _set_tag(self, args: dict) -> dict:

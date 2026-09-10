@@ -314,6 +314,7 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
     ws = require_role(s, user.id, check_id(workspace_id, where="body.workspace_id"),
                       EDITOR, where="body.workspace_id")
     байты = None
+    манифест_рядом = None
     if template is not None and template.filename:
         байты = template.file.read()
     if (template_id or "").strip():
@@ -326,9 +327,13 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
         # приложения — на уровне модуля вышел бы круг импортов.
         from ..templates import service as шаблоны              # noqa: PLC0415
 
-        байты = шаблоны.байты(
-            settings, шаблоны.найти(s, user.id, template_id.strip(),
-                                    where="body.template_id"))
+        шаблон = шаблоны.найти(s, user.id, template_id.strip(),
+                               where="body.template_id")
+        байты = шаблоны.байты(settings, шаблон)
+        # Манифест рядом с бланком полки едет в работу вместе с байтами: у
+        # бланка, собранного из блоков, типы и задания тегов записаны только в
+        # нём, и без него новая работа угадывала бы их по меткам.
+        манифест_рядом = шаблоны.манифест(settings, шаблон)
     p = Project(workspace_id=ws.id, owner_id=user.id,
                 name=name.strip() or "Project",
                 module=проверить_модуль(module, where="body.module"))
@@ -342,7 +347,8 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
         raise ApiError(PROJECT_EXISTS, "Project directory is not empty", 409)
     os.makedirs(каталог, exist_ok=True)
     try:
-        orchestrator.Project.create(каталог, template=байты, name=p.name)
+        orchestrator.Project.create(каталог, template=байты, name=p.name,
+                                    manifest=манифест_рядом)
     except Exception:                                   # noqa: BLE001
         # Подробности — в журнал: в тексте беды оркестратора стоит путь на томе,
         # а клиенту про раскладку тома знать нечего.

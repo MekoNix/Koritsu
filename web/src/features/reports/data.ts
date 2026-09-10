@@ -19,6 +19,7 @@ import { useMe } from '@/api/hooks'
 import type { ReportTemplate } from '@/features/projects/types'
 
 import type {
+  KadaiTemplateMade,
   ProjectReport,
   ProjectTagsBody,
   ProvidersBody,
@@ -142,6 +143,37 @@ export function useDeleteProjectReport() {
     onSuccess: (_ничего, { projectId }) => {
       void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
       void qc.invalidateQueries({ queryKey: keys.projects.workspaceReportsAll })
+    },
+  })
+}
+
+/**
+ * Бланк с тегами из блоков отчёта из задания.
+ *
+ * Блоки — это разделы уже написанного документа; бланк из них — тот же
+ * документ, в котором заголовки напечатаны как есть, а содержательные абзацы
+ * заменены тегами `{{ключ:метка}}`. Дальше он идёт обычным шаблонным путём:
+ * теги, значения, сборка — то есть строение, написанное один раз, служит и
+ * следующим работам, уже без модели.
+ *
+ * Служба кладёт бланк на личную полку автора и прикладывает к работе, поэтому
+ * после ответа перечитываются оба списка: и бланки работы, и полка.
+ *
+ * Прогон называется параметром `run`: отчётов из задания в работе несколько, и
+ * бланк делается из блоков того, который открыт.
+ */
+export function useMakeKadaiTemplate(projectId: string, runId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      unwrap<KadaiTemplateMade>(
+        api.POST('/api/projects/{project_id}/kadai/template', {
+          params: { path: { project_id: projectId }, query: { run: runId } },
+        }),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.projects.projectTemplatesAll(projectId) })
+      void qc.invalidateQueries({ queryKey: keys.templates })
     },
   })
 }

@@ -511,6 +511,37 @@ CODE_GRAMMARS = {
     "csharp": "c_sharp", "c#": "c_sharp", "cs": "c_sharp", "c_sharp": "c_sharp",
 }
 
+# ── бланк с тегами из блоков ─────────────────────────────────────────────────
+
+def template_of_blocks(project, *, profile=None) -> tuple[bytes, dict]:
+    """Список блоков работы → бланк DOCX с тегами и манифест рядом с ним.
+
+    Дверь, а не вызов движка на месте, по тому же правилу, что и соседние: `api`
+    про `hokoku` не знает, а список блоков лежит в проекте — собрать одно с
+    другим может только оркестратор.
+
+    **Манифест уезжает JSON'ом, а не объектом.** Кладёт его рядом с байтами
+    служба (личная полка шаблонов), а она про типы движка отчётов не знает
+    вовсе; JSON же она умеет и хранить, и вернуть обратно нетронутым. Обратный
+    ход — `Project.update_template(данные, manifest=…)`.
+
+    Манифест нужен потому, что DOCX выражает не всё: тег в документе несёт ключ
+    и метку, а `type`, `prompt`, `limits`, `required` и `depends_on` выразить
+    абзацем нечем. Без них бланк, поднятый обратно, гадал бы тип по метке
+    (`suggest_type`) — то есть ставил бы схему туда, где ждали таблицу.
+
+    Пустой список блоков — отказ: бланк без единого тега это пустой документ,
+    а положить его на полку значило бы отдать человеку файл, из которого
+    ничего не собирается.
+    """
+    work = live_mod.work_of(project)
+    if not work.blocks:
+        raise OrchestratorError(
+            "в работе нет ни одного блока: бланк собирать не из чего")
+    итог = hokoku.live.template_of(work, profile=profile)
+    return bytes(итог.docx), hokoku.manifest_to_json(итог.manifest)
+
+
 # Сколько мест разбора показываем. Обрывок исходника даёт ошибку почти в каждой
 # строке, и весь этот список человеку не нужен: чинить он будет первую.
 MAX_CODE_NOTICES = 20
@@ -717,5 +748,5 @@ def kadai_services(project, *, endpoint: str, cancel=None, on_step=None, **defau
 
 
 __all__ = ["Answer", "STRUCTURE_SCHEMA", "ask", "make_template", "blocks_of",
-           "check_code", "CODE_GRAMMARS", "HUMAN_SOURCES", "kadai_services",
-           "Остановлено"]
+           "template_of_blocks", "check_code", "CODE_GRAMMARS", "HUMAN_SOURCES",
+           "kadai_services", "Остановлено"]

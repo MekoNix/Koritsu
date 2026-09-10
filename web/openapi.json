@@ -1936,7 +1936,7 @@
      "projects"
     ],
     "summary": "Reports of this project",
-    "description": "Every report of the project, oldest first: what it is called, which report of this project it is, which template it is built from and the first page of what it built last. A project carries several reports, each with its own template and its own tag values; the id of a report is what the other routes take as `report`. Viewer role. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "description": "Every report of the project, oldest first: what it is called, which template it is built from and the first page of what it built last. A project carries several reports, each with its own template and its own tag values; the id of a report is what the other routes take as `report`. `kind` says how a report is made: `template` is the usual way — a blank with tags and tag values — and `report` names it; `live` is a report written from an assignment, a solution built in blocks, and the `/kadai` routes take its id as `run`. Reports written from an assignment are listed only for projects of the `reports` module, after the templated ones. Viewer role. 400 invalid_id, 404 not_found, 409 in_trash.",
     "operationId": "list_project_reports",
     "parameters": [
      {
@@ -1957,7 +1957,14 @@
         "schema": {
          "type": "array",
          "items": {
-          "$ref": "#/components/schemas/ReportOut"
+          "anyOf": [
+           {
+            "$ref": "#/components/schemas/ReportOut"
+           },
+           {
+            "$ref": "#/components/schemas/LiveReportOut"
+           }
+          ]
          },
          "title": "Response List Project Reports"
         }
@@ -2079,7 +2086,7 @@
      "projects"
     ],
     "summary": "Reports of every project in a workspace",
-    "description": "Every report of every project of one workspace, newest first, each named together with the project it belongs to. `workspace_id` is required: a list of everything the caller can reach would show the reports of one workspace while another one is open. Projects in the trash are left out, and so are projects with no reports at all. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
+    "description": "Every report of every project of one workspace, newest first, each named together with the project it belongs to. `kind` says how a report is made: `template` is a blank with tags and tag values, `live` is a report written from an assignment — a solution built in blocks, whose id the `/kadai` routes take as `run`. Reports written from an assignment are listed for projects of the `reports` module. `workspace_id` is required: a list of everything the caller can reach would show the reports of one workspace while another one is open. Projects in the trash are left out, and so are projects with no reports at all. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
     "operationId": "list_workspace_reports",
     "parameters": [
      {
@@ -2100,7 +2107,14 @@
         "schema": {
          "type": "array",
          "items": {
-          "$ref": "#/components/schemas/WorkspaceReportOut"
+          "anyOf": [
+           {
+            "$ref": "#/components/schemas/WorkspaceReportOut"
+           },
+           {
+            "$ref": "#/components/schemas/WorkspaceLiveReportOut"
+           }
+          ]
          },
          "title": "Response List Workspace Reports"
         }
@@ -4765,7 +4779,7 @@
      "templates"
     ],
     "summary": "Build this project from this template",
-    "description": "Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. `report` says which report of the project changes its template; without it the single document of the work does. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.",
+    "description": "Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. A template that carries a manifest of its own — one generated from the blocks of a work — is restored from it: tag types, model tasks, limits and dependencies come back as they were written instead of being guessed from the labels. For the tags of such a template its own manifest is what counts: keys are given out by the service, and the same key in an older blank is not the same tag. `report` says which report of the project changes its template; without it the single document of the work does. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.",
     "operationId": "use_project_template",
     "parameters": [
      {
@@ -5608,6 +5622,61 @@
          "type": "object",
          "additionalProperties": true,
          "title": "Response Kadai Restart"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/kadai/template": {
+   "post": {
+    "tags": [
+     "kadai"
+    ],
+    "summary": "Make a tagged blank out of the blocks of a solution",
+    "description": "Turns the block list of a solution into a reusable DOCX blank: headings are printed as headings, every other block becomes a `{{key:label}}` tag with a hint above it saying what belongs there. The file lands on the personal shelf of whoever asked (GET /api/templates), is attached to this project (GET /api/projects/{id}/templates) and is stored as an artifact of the project as well, so it can be downloaded either way. A manifest is stored beside the bytes: tag types, model tasks, limits and dependencies cannot be said in a DOCX paragraph, and without it they would be guessed from the labels when the blank is used again. Asking twice for the same blocks gives the same file and the same shelf entry: one DOCX is one template. `run` names the solution; without it the blocks of the work as a whole are taken. No model is called and nothing is charged. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 413 quota_exceeded, 422 kadai_failed.",
+    "operationId": "kadai_template",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BlankOut"
         }
        }
       }
@@ -8827,6 +8896,62 @@
     }
    }
   },
+  "/api/v1/projects/{project_id}/kadai/template": {
+   "post": {
+    "tags": [
+     "v1",
+     "kadai"
+    ],
+    "summary": "Make a tagged blank out of the blocks of a solution",
+    "description": "Turns the block list of a solution into a reusable DOCX blank: headings are printed as headings, every other block becomes a `{{key:label}}` tag with a hint above it saying what belongs there. The file lands on the personal shelf of whoever asked (GET /api/templates), is attached to this project (GET /api/projects/{id}/templates) and is stored as an artifact of the project as well, so it can be downloaded either way. A manifest is stored beside the bytes: tag types, model tasks, limits and dependencies cannot be said in a DOCX paragraph, and without it they would be guessed from the labels when the blank is used again. Asking twice for the same blocks gives the same file and the same shelf entry: one DOCX is one template. `run` names the solution; without it the blocks of the work as a whole are taken. No model is called and nothing is charged. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 413 quota_exceeded, 422 kadai_failed.",
+    "operationId": "kadai_template_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BlankOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/flowcharts/modes": {
    "get": {
     "tags": [
@@ -9728,6 +9853,51 @@
     "title": "ApiTokenOut",
     "description": "Карточка ключа. Строки ключа в ней нет и быть не может."
    },
+   "BlankOut": {
+    "properties": {
+     "template_id": {
+      "type": "string",
+      "title": "Template Id",
+      "description": "Id on the personal shelf: GET /api/templates lists it"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "What the blank is called on the shelf"
+     },
+     "tags": {
+      "type": "integer",
+      "title": "Tags",
+      "description": "How many tags the blank has"
+     },
+     "sha256": {
+      "type": "string",
+      "title": "Sha256",
+      "description": "First characters of the content hash"
+     },
+     "blob": {
+      "type": "string",
+      "title": "Blob",
+      "description": "Where to download the DOCX: /api/templates/{id}/blob"
+     },
+     "artifact": {
+      "type": "string",
+      "title": "Artifact",
+      "description": "The same DOCX as an artifact of this project: GET /api/projects/{project_id}/artifacts/{id}"
+     }
+    },
+    "type": "object",
+    "required": [
+     "template_id",
+     "name",
+     "tags",
+     "sha256",
+     "blob",
+     "artifact"
+    ],
+    "title": "BlankOut",
+    "description": "Бланк, собранный из блоков решения: где он теперь лежит и чем его взять."
+   },
    "Body_create_project": {
     "properties": {
      "workspace_id": {
@@ -10415,6 +10585,98 @@
     "title": "JobIn",
     "description": "Тело постановки задания.\n\nИмя по-английски, как у соседей (`ProjectPatchIn`, `ModelKeyIn`): оно уезжает\nв OpenAPI и становится именем типа в клиенте сайта."
    },
+   "LiveReportOut": {
+    "properties": {
+     "kind": {
+      "type": "string",
+      "const": "live",
+      "title": "Kind",
+      "description": "Written from an assignment: a solution built in blocks",
+      "default": "live"
+     },
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Run id of the solution: the value of ?run= on /kadai routes"
+     },
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stage",
+      "description": "Stage it has got to, in Russian"
+     },
+     "state": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "State",
+      "description": "State of the work: running, waiting_user, done, failed"
+     },
+     "preview_artifact_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Preview Artifact Id",
+      "description": "First page of the built document, as a PNG artifact"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At",
+      "description": "When the journal entry last changed"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "project_id",
+     "name"
+    ],
+    "title": "LiveReportOut",
+    "description": "Отчёт из задания наружу: запись решения плюс то, чем его показывают.\n\nПолей меньше, чем у шаблонного отчёта, и это не пропуск: у отчёта из задания\nнет ни бланка, ни числа тегов — работа в нём это список блоков. Зато есть\nстадия и состояние прогона, которых не бывает у шаблонного: он не идёт\nсам, а заполняется по тегу."
+   },
    "LoginIn": {
     "properties": {
      "email": {
@@ -10748,6 +11010,13 @@
    },
    "ReportOut": {
     "properties": {
+     "kind": {
+      "type": "string",
+      "const": "template",
+      "title": "Kind",
+      "description": "Built the usual way: a template with tags, tag values and a build",
+      "default": "template"
+     },
      "id": {
       "type": "string",
       "title": "Id",
@@ -11276,6 +11545,104 @@
     "title": "WishesIn",
     "description": "Пожелания человека к работе — те же три поля, что у `kadai.plan.Wishes`."
    },
+   "WorkspaceLiveReportOut": {
+    "properties": {
+     "kind": {
+      "type": "string",
+      "const": "live",
+      "title": "Kind",
+      "description": "Written from an assignment: a solution built in blocks",
+      "default": "live"
+     },
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Run id of the solution: the value of ?run= on /kadai routes"
+     },
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stage",
+      "description": "Stage it has got to, in Russian"
+     },
+     "state": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "State",
+      "description": "State of the work: running, waiting_user, done, failed"
+     },
+     "preview_artifact_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Preview Artifact Id",
+      "description": "First page of the built document, as a PNG artifact"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At",
+      "description": "When the journal entry last changed"
+     },
+     "project_name": {
+      "type": "string",
+      "title": "Project Name",
+      "description": "Name of the project this report belongs to",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "project_id",
+     "name"
+    ],
+    "title": "WorkspaceLiveReportOut",
+    "description": "Отчёт из задания, названный вместе со своей работой. Довод тот же."
+   },
    "WorkspaceNameIn": {
     "properties": {
      "name": {
@@ -11294,6 +11661,13 @@
    },
    "WorkspaceReportOut": {
     "properties": {
+     "kind": {
+      "type": "string",
+      "const": "template",
+      "title": "Kind",
+      "description": "Built the usual way: a template with tags, tag values and a build",
+      "default": "template"
+     },
      "id": {
       "type": "string",
       "title": "Id",

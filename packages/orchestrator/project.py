@@ -72,7 +72,7 @@ import re
 import secrets
 import shutil
 import zipfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 import hokoku
 import llm
@@ -477,6 +477,35 @@ def _block_json(item, number: int, source: str) -> dict:
             "label": str(raw.get("label") or ""), "source": own}
 
 
+def _с_манифестом_бланка(свой: hokoku.Manifest, бланк: dict) -> hokoku.Manifest:
+    """Манифест работы, дополненный записями манифеста бланка. → основа обновления.
+
+    Бланк, собранный из блоков, приезжает вместе со своим манифестом: в DOCX
+    выразимы только ключ и метка тега, а `type`, `prompt`, `limits`, `required`
+    и `depends_on` там сказать нечем. Эти записи и восполняются здесь.
+
+    Кто старше при совпадении ключа: **бланк**. Его манифест написан вместе с
+    его байтами и сходится с ними суммой (`template_sha256`), то есть это и есть
+    правда про теги, которые в файле стоят. Прежняя запись работы под тем же
+    ключом правдой про них не является: ключи бланков придумывает служба
+    (`b-01`, `b-02`, …), и совпадение ключа не значит совпадения тега — иначе
+    задание, написанное для «Введения» прошлого бланка, уехало бы модели на
+    «Список литературы» нынешнего.
+
+    Записи работы, которых в манифесте бланка нет, остаются: их теги в новом
+    бланке отсутствуют, и `manifest_from_template` пометит их «нет в шаблоне»,
+    сохранив задания. Это то же правило, по которому смена бланка вообще ничего
+    не удаляет.
+    """
+    try:
+        рядом = hokoku.manifest_from_json(dict(бланк))
+    except Exception as беда:                                # noqa: BLE001
+        raise OrchestratorError(f"манифест бланка не читается: {беда}") from None
+    tags = dict(свой.tags)
+    tags.update(рядом.tags)
+    return replace(свой, tags=tags)
+
+
 class Project:
     """Каталог одной работы студента: материалы, значения с версиями, манифест, журнал.
 
@@ -528,6 +557,7 @@ class Project:
     # ── создание ────────────────────────────────────────────────────────────
     @classmethod
     def create(cls, path: str, *, template: bytes | None = None, name: str = "",
+               manifest: dict | None = None,
                endpoint: str = "", cap_units: float | None = None) -> "Project":
         """Новый проект: каталог, шаблон артефактом, заготовка манифеста по тегам.
 
@@ -555,12 +585,24 @@ class Project:
         ссылались на решения, которых больше нет. «Создать» и «сменить шаблон» —
         разные намерения, и второе делает `update_template`, который решения
         человека переносит.
+
+        `manifest` — манифест, приехавший вместе с бланком (JSON
+        `hokoku.manifest_to_json`), как у `update_template`: бланк, собранный
+        из блоков, несёт `type`, `prompt`, `limits` и `depends_on` своих тегов
+        только в нём, и работа, заведённая прямо из такого бланка, без него
+        получила бы типы, угаданные по меткам.
         """
         свой = template is None
         if свой:
             template = hokoku.document_bytes(hokoku.blank_document())
         elif not isinstance(template, (bytes, bytearray)):
             raise OrchestratorError("template — байты DOCX: путей в проекте не хранится")
+        основа = None
+        if manifest is not None:
+            try:
+                основа = hokoku.manifest_from_json(dict(manifest))
+            except Exception as беда:                        # noqa: BLE001
+                raise OrchestratorError(f"манифест бланка не читается: {беда}") from None
         os.makedirs(path, exist_ok=True)
         project = cls(path)
         if os.path.isfile(project._settings_path()):
@@ -572,10 +614,11 @@ class Project:
             "name": name, "endpoint": endpoint, "template": art,
             "template_source": "blank" if свой else "given",
             "cap_units": cap_units, "created": _now()})
-        project.save_manifest(hokoku.manifest_from_template(bytes(template)))
+        project.save_manifest(hokoku.manifest_from_template(bytes(template), base=основа))
         return project
 
-    def update_template(self, template: bytes) -> hokoku.Manifest:
+    def update_template(self, template: bytes,
+                        *, manifest: dict | None = None) -> hokoku.Manifest:
         """Новый DOCX вместо прежнего; решения человека переезжают в новый манифест.
 
         Смысл целиком в `base=`: `manifest_from_template` умеет обновлять
@@ -588,16 +631,35 @@ class Project:
         Переименование тега мы не видим (оно выглядит как «убрали и добавили»);
         перенести промпт может только человек, а подсказку об этом даёт
         `hokoku.check_manifest`.
+
+        `manifest` — манифест, приехавший **вместе с бланком** (JSON, как его
+        пишет `hokoku.manifest_to_json`). Он нужен бланкам, собранным из блоков:
+        абзацем документа выражаются только ключ и метка тега, а `type`,
+        `prompt`, `limits`, `required` и `depends_on` в DOCX выразить нечем, и
+        без этой записи они восстанавливались бы догадкой по метке.
+
+        Про свои теги бланк знает точнее работы: его манифест написан вместе с
+        его байтами и сходится с ними суммой. Прежние записи работы под теми же
+        ключами при этом не правда о нём — ключи бланков придумывает служба, и
+        совпадение ключа не значит совпадения тега. Записи о тегах, которых в
+        новом бланке нет, остаются, как остаются они при всякой смене бланка.
+
+        JSON, а не `hokoku.Manifest`, потому что несёт его служба, а она про
+        типы движка отчётов не знает (то же правило разреза, что у
+        `doors.template_of_blocks`).
         """
         if not isinstance(template, (bytes, bytearray)):
             raise OrchestratorError("template — байты DOCX: путей в проекте не хранится")
+        основа = self.manifest()
+        if manifest is not None:
+            основа = _с_манифестом_бланка(основа, manifest)
         settings = self.settings()
         settings["template"] = self.put_artifact(bytes(template), name="шаблон")
         # Пустой документ, построенный нами при создании, перестал быть нашим:
         # дальше это шаблон человека, и молча заменять его больше нельзя.
         settings["template_source"] = "given"
         self.save_settings(settings)
-        m = hokoku.manifest_from_template(bytes(template), base=self.manifest())
+        m = hokoku.manifest_from_template(bytes(template), base=основа)
         self.save_manifest(m)
         return self.manifest()
 

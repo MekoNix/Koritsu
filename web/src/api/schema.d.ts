@@ -601,7 +601,7 @@ export interface paths {
         };
         /**
          * Reports of this project
-         * @description Every report of the project, oldest first: what it is called, which report of this project it is, which template it is built from and the first page of what it built last. A project carries several reports, each with its own template and its own tag values; the id of a report is what the other routes take as `report`. Viewer role. 400 invalid_id, 404 not_found, 409 in_trash.
+         * @description Every report of the project, oldest first: what it is called, which template it is built from and the first page of what it built last. A project carries several reports, each with its own template and its own tag values; the id of a report is what the other routes take as `report`. `kind` says how a report is made: `template` is the usual way — a blank with tags and tag values — and `report` names it; `live` is a report written from an assignment, a solution built in blocks, and the `/kadai` routes take its id as `run`. Reports written from an assignment are listed only for projects of the `reports` module, after the templated ones. Viewer role. 400 invalid_id, 404 not_found, 409 in_trash.
          */
         get: operations["list_project_reports"];
         put?: never;
@@ -645,7 +645,7 @@ export interface paths {
         };
         /**
          * Reports of every project in a workspace
-         * @description Every report of every project of one workspace, newest first, each named together with the project it belongs to. `workspace_id` is required: a list of everything the caller can reach would show the reports of one workspace while another one is open. Projects in the trash are left out, and so are projects with no reports at all. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
+         * @description Every report of every project of one workspace, newest first, each named together with the project it belongs to. `kind` says how a report is made: `template` is a blank with tags and tag values, `live` is a report written from an assignment — a solution built in blocks, whose id the `/kadai` routes take as `run`. Reports written from an assignment are listed for projects of the `reports` module. `workspace_id` is required: a list of everything the caller can reach would show the reports of one workspace while another one is open. Projects in the trash are left out, and so are projects with no reports at all. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
          */
         get: operations["list_workspace_reports"];
         put?: never;
@@ -1539,7 +1539,7 @@ export interface paths {
         put?: never;
         /**
          * Build this project from this template
-         * @description Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. `report` says which report of the project changes its template; without it the single document of the work does. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. A template that carries a manifest of its own — one generated from the blocks of a work — is restored from it: tag types, model tasks, limits and dependencies come back as they were written instead of being guessed from the labels. For the tags of such a template its own manifest is what counts: keys are given out by the service, and the same key in an older blank is not the same tag. `report` says which report of the project changes its template; without it the single document of the work does. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.
          */
         post: operations["use_project_template"];
         delete?: never;
@@ -1794,6 +1794,26 @@ export interface paths {
          * @description Puts the named stage and everything after it back to 'waiting' and the work back to 'running'. No model is called and nothing is charged: the run itself is started afterwards by the usual `kadai_run` job, so that a paid run still begins in exactly one place. With no stage named it takes the one that stumbled, or the one holding the work with a question. A work that is running and has stopped nowhere is refused. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 kadai_failed. `run` names the solution.
          */
         post: operations["kadai_restart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/kadai/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make a tagged blank out of the blocks of a solution
+         * @description Turns the block list of a solution into a reusable DOCX blank: headings are printed as headings, every other block becomes a `{{key:label}}` tag with a hint above it saying what belongs there. The file lands on the personal shelf of whoever asked (GET /api/templates), is attached to this project (GET /api/projects/{id}/templates) and is stored as an artifact of the project as well, so it can be downloaded either way. A manifest is stored beside the bytes: tag types, model tasks, limits and dependencies cannot be said in a DOCX paragraph, and without it they would be guessed from the labels when the blank is used again. Asking twice for the same blocks gives the same file and the same shelf entry: one DOCX is one template. `run` names the solution; without it the blocks of the work as a whole are taken. No model is called and nothing is charged. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 413 quota_exceeded, 422 kadai_failed.
+         */
+        post: operations["kadai_template"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2736,6 +2756,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/kadai/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make a tagged blank out of the blocks of a solution
+         * @description Turns the block list of a solution into a reusable DOCX blank: headings are printed as headings, every other block becomes a `{{key:label}}` tag with a hint above it saying what belongs there. The file lands on the personal shelf of whoever asked (GET /api/templates), is attached to this project (GET /api/projects/{id}/templates) and is stored as an artifact of the project as well, so it can be downloaded either way. A manifest is stored beside the bytes: tag types, model tasks, limits and dependencies cannot be said in a DOCX paragraph, and without it they would be guessed from the labels when the blank is used again. Asking twice for the same blocks gives the same file and the same shelf entry: one DOCX is one template. `run` names the solution; without it the blocks of the work as a whole are taken. No model is called and nothing is charged. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 413 quota_exceeded, 422 kadai_failed.
+         */
+        post: operations["kadai_template_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/flowcharts/modes": {
         parameters: {
             query?: never;
@@ -3094,6 +3134,42 @@ export interface components {
              * @description When it was revoked, if it was
              */
             revoked_at?: string | null;
+        };
+        /**
+         * BlankOut
+         * @description Бланк, собранный из блоков решения: где он теперь лежит и чем его взять.
+         */
+        BlankOut: {
+            /**
+             * Template Id
+             * @description Id on the personal shelf: GET /api/templates lists it
+             */
+            template_id: string;
+            /**
+             * Name
+             * @description What the blank is called on the shelf
+             */
+            name: string;
+            /**
+             * Tags
+             * @description How many tags the blank has
+             */
+            tags: number;
+            /**
+             * Sha256
+             * @description First characters of the content hash
+             */
+            sha256: string;
+            /**
+             * Blob
+             * @description Where to download the DOCX: /api/templates/{id}/blob
+             */
+            blob: string;
+            /**
+             * Artifact
+             * @description The same DOCX as an artifact of this project: GET /api/projects/{project_id}/artifacts/{id}
+             */
+            artifact: string;
         };
         /** Body_create_project */
         Body_create_project: {
@@ -3566,6 +3642,58 @@ export interface components {
             };
         };
         /**
+         * LiveReportOut
+         * @description Отчёт из задания наружу: запись решения плюс то, чем его показывают.
+         *
+         *     Полей меньше, чем у шаблонного отчёта, и это не пропуск: у отчёта из задания
+         *     нет ни бланка, ни числа тегов — работа в нём это список блоков. Зато есть
+         *     стадия и состояние прогона, которых не бывает у шаблонного: он не идёт
+         *     сам, а заполняется по тегу.
+         */
+        LiveReportOut: {
+            /**
+             * Kind
+             * @description Written from an assignment: a solution built in blocks
+             * @default live
+             * @constant
+             */
+            kind: "live";
+            /**
+             * Id
+             * @description Run id of the solution: the value of ?run= on /kadai routes
+             */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * Stage
+             * @description Stage it has got to, in Russian
+             */
+            stage?: string | null;
+            /**
+             * State
+             * @description State of the work: running, waiting_user, done, failed
+             */
+            state?: string | null;
+            /**
+             * Preview Artifact Id
+             * @description First page of the built document, as a PNG artifact
+             */
+            preview_artifact_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Updated At
+             * @description When the journal entry last changed
+             */
+            updated_at?: string | null;
+        };
+        /**
          * LoginIn
          * @description Вход. Длина пароля здесь **не** проверяется: старый пароль может быть
          *     короче нынешнего предела, и человеку надо дать войти и сменить его.
@@ -3781,6 +3909,13 @@ export interface components {
          * @description Отчёт наружу: запись журнала плюс то, что видно на его карточке.
          */
         ReportOut: {
+            /**
+             * Kind
+             * @description Built the usual way: a template with tags, tag values and a build
+             * @default template
+             * @constant
+             */
+            kind: "template";
             /**
              * Id
              * @description Run id of this report: the value of ?report=
@@ -4113,6 +4248,59 @@ export interface components {
             show_structure: boolean;
         };
         /**
+         * WorkspaceLiveReportOut
+         * @description Отчёт из задания, названный вместе со своей работой. Довод тот же.
+         */
+        WorkspaceLiveReportOut: {
+            /**
+             * Kind
+             * @description Written from an assignment: a solution built in blocks
+             * @default live
+             * @constant
+             */
+            kind: "live";
+            /**
+             * Id
+             * @description Run id of the solution: the value of ?run= on /kadai routes
+             */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * Stage
+             * @description Stage it has got to, in Russian
+             */
+            stage?: string | null;
+            /**
+             * State
+             * @description State of the work: running, waiting_user, done, failed
+             */
+            state?: string | null;
+            /**
+             * Preview Artifact Id
+             * @description First page of the built document, as a PNG artifact
+             */
+            preview_artifact_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Updated At
+             * @description When the journal entry last changed
+             */
+            updated_at?: string | null;
+            /**
+             * Project Name
+             * @description Name of the project this report belongs to
+             * @default
+             */
+            project_name: string;
+        };
+        /**
          * WorkspaceNameIn
          * @description Тело создания и переименования. Имя обрезается по краям и не бывает пустым.
          */
@@ -4131,6 +4319,13 @@ export interface components {
          *     список собран одним маршрутом.
          */
         WorkspaceReportOut: {
+            /**
+             * Kind
+             * @description Built the usual way: a template with tags, tag values and a build
+             * @default template
+             * @constant
+             */
+            kind: "template";
             /**
              * Id
              * @description Run id of this report: the value of ?report=
@@ -5548,7 +5743,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReportOut"][];
+                    "application/json": (components["schemas"]["ReportOut"] | components["schemas"]["LiveReportOut"])[];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -5644,7 +5839,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkspaceReportOut"][];
+                    "application/json": (components["schemas"]["WorkspaceReportOut"] | components["schemas"]["WorkspaceLiveReportOut"])[];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -7937,6 +8132,40 @@ export interface operations {
             };
         };
     };
+    kadai_template: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlankOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     flowcharts_modes: {
         parameters: {
             query?: never;
@@ -9934,6 +10163,40 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    kadai_template_v1: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlankOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */

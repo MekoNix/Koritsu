@@ -439,8 +439,9 @@ def request_part(manifest: hokoku.Manifest, *, keys, level: int,
             + общее +
             "Работай инструментами. Материалы проекта читаются по идентификатору "
             "(list_materials, read_material), схемы строятся из исходников "
-            "(make_flowchart, make_class_diagram, make_object_diagram), значение "
-            "тега ставится вызовом set_tag, состояние отчёта показывает preview.\n"
+            "(make_flowchart, make_class_diagram, make_object_diagram), график "
+            "по числам рисует make_chart, значение тега ставится вызовом "
+            "set_tag, состояние отчёта показывает preview.\n"
             "Каждое готовое значение ставь set_tag сразу, не копи их до конца: "
             "поставленное сохранено и обрыв его не отменит.\n"
             "Ошибка инструмента — не конец работы: в ответе написано, что не так, "

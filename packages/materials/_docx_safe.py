@@ -1,11 +1,15 @@
 """
-_docx_safe — проверка недоверенного DOCX ДО того, как его откроет парсер.
+_docx_safe — проверка недоверенного DOCX (и XLSX) ДО того, как его откроет парсер.
 
-DOCX — это zip с XML внутри, и приносит его пользователь. Без этой проверки
-достаточно одного файла на 300 КБ, чтобы разбор съел всю память машины
-(zip-бомба), или чтобы XML-парсер по `<!DOCTYPE>` полез читать `/etc/passwd`
-и ходить в сеть (XXE). Цена ошибки — не «плохой отчёт», а упавший или
-разболтавший лишнее процесс на файле, который пользователь считает методичкой.
+DOCX — это zip с XML внутри, и приносит его пользователь. Книга Excel (.xlsx,
+.xlsm) упакована так же и осматривается тем же кодом: отличается у них только
+имя главной части (`main`), а угрозы общие.
+
+Без этой проверки достаточно одного файла на 300 КБ, чтобы разбор съел всю
+память машины (zip-бомба), или чтобы XML-парсер по `<!DOCTYPE>` полез читать
+`/etc/passwd` и ходить в сеть (XXE). Цена ошибки — не «плохой отчёт», а упавший
+или разболтавший лишнее процесс на файле, который пользователь считает
+методичкой.
 
 Почему проверка своя, а не общая с `hokoku.safety`:
 
@@ -70,16 +74,22 @@ def _name_ok(name: str) -> bool:
     return not any(p in ("..", ".") or ":" in p for p in name.split("/"))
 
 
-def check_zip(data: bytes) -> dict:
+def check_zip(data: bytes, main: str = "word/document.xml", kind: str = "DOCX") -> dict:
     """
     Осмотреть zip перед разбором. Возвращает {"macros": bool} — то, о чём разбор
     обязан сказать в карточке. Всё, из-за чего разбирать нельзя, бросает
     DocxUnsafe с человеческой причиной.
+
+    `main` — часть, без которой файл не тот, за кого себя выдаёт (у Word это
+    `word/document.xml`, у книги Excel — `xl/workbook.xml`), `kind` — как формат
+    называется в сообщении человеку. Проверка одна на оба формата не для
+    экономии строк: упаковка у них общая (zip с XML), значит и бомба в них одна
+    и та же, и второй такой осмотр разошёлся бы с этим на первом же потолке.
     """
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
     except (zipfile.BadZipFile, OSError) as exc:
-        raise DocxUnsafe(f"файл не открывается как DOCX (битый zip): {exc}")
+        raise DocxUnsafe(f"файл не открывается как {kind} (битый zip): {exc}")
 
     macros = False
     with zf:
@@ -94,12 +104,12 @@ def check_zip(data: bytes) -> dict:
             # это бесплатно и снимает большую часть бомб.
             if info.file_size > MAX_MEMBER_BYTES:
                 raise DocxUnsafe(f"часть документа {info.filename!r} слишком велика")
-            if info.filename == "word/document.xml":
+            if info.filename == main:
                 has_document = True
             if info.filename.rsplit("/", 1)[-1].lower() in _VBA_NAMES:
                 macros = True
         if not has_document:
-            raise DocxUnsafe("внутри нет word/document.xml — это не документ Word")
+            raise DocxUnsafe(f"внутри нет {main} — файл только называется {kind}")
         macros = _scan(zf, infos) or macros
     return {"macros": macros}
 

@@ -30,9 +30,17 @@
  * двадцати карточек значило бы двадцать раз ответить на вопрос, заданный один
  * раз подписью над списком.
  *
- * Удаление сносит **отчёт**: его значения, их версии и его сборки. Бланк
- * остаётся приложенным к работе, а материалы и артефакты — общие, они
- * принадлежат работе и переживают любой её документ.
+ * **В ленте два вида отчётов, и различает их `kind`.** Отчёт по бланку
+ * (`template`) собирается по тегам шаблона; отчёт из задания (`live`) строится
+ * блоками по приложенному заданию и правится замечаниями. Показаны они одной
+ * лентой намеренно: для человека это один и тот же его документ, и делить их
+ * на две вкладки значило бы заставлять помнить, каким способом он его делал.
+ * Разные у них только адрес экрана, подпись под именем и то, чем их сносят.
+ *
+ * Удаление сносит **отчёт**: его значения, их версии и его сборки — а у отчёта
+ * из задания его задание, ход стадий и блоки с историей. Бланк остаётся
+ * приложенным к работе, а материалы и артефакты — общие, они принадлежат работе
+ * и переживают любой её документ.
  */
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -61,11 +69,29 @@ import {
 } from '@/features/projects/data'
 import { formatWhen, runTitle } from '@/features/projects/format'
 import { RunName } from '@/features/projects/RunName'
+import { useDeleteKadaiRun } from '@/features/kadai/data'
 import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
 
 import { ReportThumb } from './ReportThumb'
 import { useCreateProjectReport, useDeleteProjectReport, useWorkspaceReports } from './data'
 import type { WorkspaceReport } from './types'
+
+/** Перевод — так, как его отдаёт `useT`: помощникам ниже нужен именно он. */
+type T = (key: string, vars?: Record<string, string | number>) => string
+
+/**
+ * Имя карточки: своё, а иначе — то, которое рисует сайт.
+ *
+ * Отчёт из задания зовётся не по номеру: номера у него в ленте может не быть
+ * вовсе, зато имя ему даёт файл задания, и безымянным он остаётся редко.
+ */
+function имя_карточки(t: T, отчёт: WorkspaceReport): string {
+  if (отчёт.name) return отчёт.name
+  if (отчёт.kind === 'live') {
+    return отчёт.n ? t('reports.live.runName', { n: отчёт.n }) : t('reports.live.unnamed')
+  }
+  return runTitle(t, { module: 'reports', ...отчёт }, отчёт.project_name)
+}
 
 /** Что принимает окно выбора файла. То же, что у панели бланков работы. */
 const DOCX = '.docx,.dotx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -80,6 +106,10 @@ export function ReportsHomePage() {
   const reports = useWorkspaceReports(workspace.data?.id)
   const projects = useProjects(workspace.data?.id)
   const remove = useDeleteProjectReport()
+  // Отчёт из задания — не запись документа, а прогон сценария, и сносится он
+  // своим маршрутом: удаление отчёта по бланку про его блоки и ход стадий не
+  // знает вовсе.
+  const removeLive = useDeleteKadaiRun()
 
   // Отбор по работе живёт в адресе, а не в состоянии экрана: по этому адресу
   // сюда приходят с экрана отчёта и из старых закладок, и отбор, спрятанный в
@@ -87,6 +117,7 @@ export function ReportsHomePage() {
   const работа = (params.get('project') ?? '').trim()
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState(false)
+  const [fromTask, setFromTask] = useState(false)
   const [toDelete, setToDelete] = useState<WorkspaceReport | null>(null)
 
   const canEdit = canEditWorkspace(workspace.data?.role)
@@ -98,7 +129,7 @@ export function ReportsHomePage() {
     return (reports.data ?? []).filter((отчёт) => {
       if (работа && отчёт.project_id !== работа) return false
       if (!запрос) return true
-      const имя = runTitle(t, { module: 'reports', ...отчёт }, отчёт.project_name)
+      const имя = имя_карточки(t, отчёт)
       // Поиск идёт и по работе: человек чаще помнит, в какой работе писал
       // главу, чем как он её назвал.
       return имя.toLowerCase().includes(запрос) || отчёт.project_name.toLowerCase().includes(запрос)
@@ -112,21 +143,34 @@ export function ReportsHomePage() {
     setParams(новые)
   }
 
+  const сносится = remove.isPending || removeLive.isPending
   const снести = () => {
     if (!toDelete) return
-    remove.mutate(
-      { projectId: toDelete.project_id, runId: toDelete.id },
-      { onSuccess: () => setToDelete(null), onError: (e) => toast.fail(e) },
-    )
+    const это = { projectId: toDelete.project_id, runId: toDelete.id }
+    const дальше = {
+      onSuccess: () => setToDelete(null),
+      onError: (e: unknown) => toast.fail(e),
+    }
+    if (toDelete.kind === 'live') removeLive.mutate(это, дальше)
+    else remove.mutate(это, дальше)
   }
 
-  const кнопка_создания =
-    canEdit && (projects.data ?? []).length > 0 ? (
-      <Button variant="primary" onClick={() => setCreating(true)}>
-        <Icon name="plus" size={16} />
-        {t('reports.list.create')}
-      </Button>
-    ) : null
+  const есть_работы = canEdit && (projects.data ?? []).length > 0
+  const кнопка_создания = есть_работы ? (
+    <Button variant="primary" onClick={() => setCreating(true)}>
+      <Icon name="plus" size={16} />
+      {t('reports.list.create')}
+    </Button>
+  ) : null
+  // Вторая дорога к отчёту, а не второй модуль: там, где бланка нет, отчёт
+  // строится по заданию — тем же сценарием, что и решение задачи, но с
+  // документом и бланком на выходе вместо архива.
+  const кнопка_из_задания = есть_работы ? (
+    <Button variant="secondary" onClick={() => setFromTask(true)}>
+      <Icon name="plus" size={16} />
+      {t('reports.live.create')}
+    </Button>
+  ) : null
 
   return (
     <div className="flex flex-col gap-s5">
@@ -142,9 +186,10 @@ export function ReportsHomePage() {
           <p className="max-w-[60ch] text-sm text-muted">{t('reports.home.subtitle')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-s3">
-          <Button variant="secondary" asChild>
+          <Button variant="ghost" asChild>
             <Link to="/projects">{t('reports.home.toProjects')}</Link>
           </Button>
+          {кнопка_из_задания}
           {кнопка_создания}
         </div>
       </header>
@@ -219,26 +264,34 @@ export function ReportsHomePage() {
         onCreated={(projectId, reportId) => navigate(`/reports/${projectId}/${reportId}`)}
       />
 
+      <FromTaskDialog
+        open={fromTask}
+        onOpenChange={setFromTask}
+        projects={projects.data ?? []}
+        preferred={работа || последняя_работа(reports.data)}
+        onPicked={(projectId) => navigate(`/reports/${projectId}/new-live`)}
+      />
+
       <Dialog
         open={!!toDelete}
         onOpenChange={(open) => !open && setToDelete(null)}
         title={t('reports.list.deleteTitle', {
-          name: toDelete
-            ? runTitle(t, { module: 'reports', ...toDelete }, toDelete.project_name)
-            : '',
+          name: toDelete ? имя_карточки(t, toDelete) : '',
         })}
         footer={
           <>
             <Button variant="ghost" onClick={() => setToDelete(null)}>
               {t('common.action.cancel')}
             </Button>
-            <Button variant="danger" loading={remove.isPending} onClick={снести}>
+            <Button variant="danger" loading={сносится} onClick={снести}>
               {t('reports.list.delete')}
             </Button>
           </>
         }
       >
-        <p className="text-sm text-muted">{t('reports.list.deleteHint')}</p>
+        <p className="text-sm text-muted">
+          {t(toDelete?.kind === 'live' ? 'reports.live.deleteHint' : 'reports.list.deleteHint')}
+        </p>
       </Dialog>
     </div>
   )
@@ -312,6 +365,10 @@ function EmptyReports({
  * Работа названа ссылкой на саму работу, а не на отбор ленты: с карточки
  * отчёта уходят к материалам и журналу работы, а сузить ленту до одной работы
  * можно выпадающим списком, не уходя со страницы.
+ *
+ * Подпись под именем говорит то, чем отчёт живёт. У отчёта по бланку это бланк
+ * и число тегов; у отчёта из задания бланка нет, зато есть стадия сценария —
+ * по ней видно, дошёл он до документа или ещё пишется.
  */
 function ReportCard({
   report,
@@ -324,8 +381,11 @@ function ReportCard({
 }) {
   const t = useT()
   const projectId = report.project_id
-  const имя = runTitle(t, { module: 'reports', ...report }, report.project_name)
-  const адрес = `/reports/${projectId}/${report.id}`
+  const живой = report.kind === 'live'
+  const имя = имя_карточки(t, report)
+  const адрес = живой
+    ? `/reports/${projectId}/live/${report.id}`
+    : `/reports/${projectId}/${report.id}`
   // `inline=1` обязателен: без него служба отдаёт файл вложением, и картинка в
   // `<img>` не рисуется (`packages/api/modules/artifacts.py`).
   const превью = report.preview_artifact_id
@@ -357,11 +417,24 @@ function ReportCard({
           <Icon name="folder" size={12} className="shrink-0" />
           <span className="truncate">{report.project_name}</span>
         </Link>
-        <span className="truncate text-xs text-muted">
-          {report.template_name || t('reports.list.noTemplate')}
-          {' · '}
-          {t('reports.templates.tags', { n: report.tags })}
-        </span>
+        {живой ? (
+          <span className="flex min-w-0 items-center gap-1 text-xs text-muted">
+            <span className="shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5">
+              {t('reports.live.badge')}
+            </span>
+            <span className="truncate">
+              {report.stage
+                ? t('reports.live.stage', { stage: report.stage })
+                : t('reports.live.notStarted')}
+            </span>
+          </span>
+        ) : (
+          <span className="truncate text-xs text-muted">
+            {report.template_name || t('reports.list.noTemplate')}
+            {' · '}
+            {t('reports.templates.tags', { n: report.tags })}
+          </span>
+        )}
         <span className="text-xs text-muted">{formatWhen(report.created_at)}</span>
       </div>
       {canEdit && (
@@ -377,6 +450,83 @@ function ReportCard({
         </Button>
       )}
     </li>
+  )
+}
+
+/**
+ * Окно «Из задания»: в какой работе завести отчёт из задания.
+ *
+ * Спрашивается только работа. Всё остальное — задание, файлы контекста,
+ * описание отчёта словами, пресет модели — спрашивает сама форма заведения, и
+ * повторять её половину в окне значило бы задать одни и те же вопросы дважды.
+ *
+ * Своим окном, а не полем в «Создать отчёт»: там выбирают бланк, а здесь бланка
+ * нет вовсе — он на выходе, а не на входе.
+ */
+function FromTaskDialog({
+  open,
+  onOpenChange,
+  projects,
+  preferred,
+  onPicked,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  projects: { id: string; name: string }[]
+  preferred: string
+  onPicked: (projectId: string) => void
+}) {
+  const t = useT()
+  const [projectId, setProjectId] = useState('')
+  // Тот же довод, что и у окна создания: предложенную работу нельзя списывать в
+  // состояние при открытии — лента приезжает позже окна, и списанное было бы
+  // пустым.
+  const выбрана = projects.some((p) => p.id === projectId)
+    ? projectId
+    : preferred || projects[0]?.id || ''
+
+  const закрыть = (open: boolean) => {
+    if (!open) setProjectId('')
+    onOpenChange(open)
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={закрыть}
+      title={t('reports.live.createTitle')}
+      description={t('reports.live.createHint')}
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => закрыть(false)}>
+            {t('common.action.cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!выбрана}
+            onClick={() => {
+              закрыть(false)
+              onPicked(выбрана)
+            }}
+          >
+            {t('reports.live.createAction')}
+          </Button>
+        </>
+      }
+    >
+      <Select
+        label={t('reports.live.projectLabel')}
+        hint={t('reports.live.projectHint')}
+        value={выбрана}
+        onChange={(e) => setProjectId(e.target.value)}
+      >
+        {projects.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </Select>
+    </Dialog>
   )
 }
 

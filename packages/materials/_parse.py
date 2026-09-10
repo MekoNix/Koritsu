@@ -16,6 +16,7 @@ from ._docx import parse_word
 from ._image import parse_image
 from ._pdf import parse_pdf
 from ._text import looks_like_text, parse_text
+from ._xlsx import parse_excel
 from .model import KIND_UNKNOWN, Parsed
 
 # Текст и разметка. Список заведомо неполон — незнакомые расширения ловятся
@@ -38,6 +39,15 @@ PDF_EXT = {".pdf"}
 # он попадал в «неизвестный тип», то есть человек видел принятый файл, а модель
 # не получала ни строки.
 WORD_EXT = {".docx", ".docm", ".dotx", ".dotm", ".doc", ".dot"}
+# Excel: книга и книга с макросами. Разбор читает значения, а не формулы, и
+# отдаёт листы текстом (см. _xlsx).
+#
+# Старого двоичного `.xls` (до 2007 года) здесь намеренно нет: это не zip с XML,
+# а формат OLE2, и читается он только отдельной библиотекой. Принять такой файл
+# значило бы пообещать разбор, которого нет; отказ на приёме честнее — человек
+# пересохранит книгу как `.xlsx` и получит содержимое. Файл с сигнатурой OLE2,
+# названный `.xlsx`, до разбора всё-таки доходит — там об этом и сказано словами.
+EXCEL_EXT = {".xlsx", ".xlsm"}
 
 
 def ext_of(name: str) -> str:
@@ -58,7 +68,8 @@ def supported(name: str, data: bytes) -> bool:
     по содержимому — ровно как в `parse` ниже.
     """
     ext = ext_of(name)
-    if ext in PDF_EXT or ext in WORD_EXT or ext in IMAGE_EXT or ext in TEXT_EXT:
+    if (ext in PDF_EXT or ext in WORD_EXT or ext in EXCEL_EXT
+            or ext in IMAGE_EXT or ext in TEXT_EXT):
         return True
     return looks_like_text(data)
 
@@ -73,6 +84,8 @@ def parse(data: bytes, name: str, do_ocr: bool = True) -> Parsed:
         return parse_pdf(data, name=name, do_ocr=do_ocr)
     if ext in WORD_EXT:
         return parse_word(data, name=name, ext=ext)
+    if ext in EXCEL_EXT:
+        return parse_excel(data)
     if ext in IMAGE_EXT:
         return parse_image(data, ext=ext, do_ocr=do_ocr)
     if ext in TEXT_EXT:

@@ -35,8 +35,14 @@ import { FileDrop } from '@/features/projects/FileDrop'
 
 import { useContextMaterials, useKadaiCommonFiles, useSetKadaiCommonFiles } from './data'
 
-/** Что принимает разбор материалов: те же виды, что и опись работы. */
-export const ПРИНИМАЕМ = '.docx,.doc,.pdf,.txt,.md,.png,.jpg,.jpeg,.py,.cs,.cpp,.c,.h'
+/**
+ * Что принимает разбор материалов: те же виды, что и опись работы.
+ *
+ * Книги Excel (`.xlsx`, `.xlsm`) стоят здесь наравне с текстом: данные к
+ * заданию чаще приносят таблицей, чем набирают руками, а разбор кладёт их
+ * листами строк — так же, как текст любого другого файла.
+ */
+export const ПРИНИМАЕМ = '.docx,.doc,.pdf,.txt,.md,.png,.jpg,.jpeg,.xlsx,.xlsm,.py,.cs,.cpp,.c,.h'
 
 export function ContextFiles({
   projectId,

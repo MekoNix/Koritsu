@@ -355,6 +355,10 @@ export function useDeleteKadaiRun() {
     onSuccess: (_ответ, { projectId }) => {
       void qc.invalidateQueries({ queryKey: keys.kadai.runs(projectId) })
       void qc.invalidateQueries({ queryKey: keys.projects.one(projectId) })
+      // Лента отчётов лежит своим ключом, до которого сброс работы не достаёт.
+      // Прогон в работе модуля «Отчёты» стоит в ней карточкой «отчёта из
+      // задания», и снесённый обязан пропасть оттуда тем же действием.
+      void qc.invalidateQueries({ queryKey: keys.projects.workspaceReportsAll })
     },
   })
 }

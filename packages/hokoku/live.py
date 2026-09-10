@@ -28,6 +28,14 @@ live — живой режим: работа это упорядоченный �
 и `validate` разом, поднять контракт и переучить всех, кто уже пишет против
 `VALUE_TYPES`, — ради того, что и так собирается правильно.
 
+Из списка делается не только документ, но и **бланк** — `template_of`: тот же скелет,
+но с тегами `{{ключ:метка}}` вместо содержимого и с напечатанными заголовками. Он и есть
+переиспользуемая часть работы: готовый отчёт остаётся один, а бланк ложится на полку и
+дальше идёт обычным шаблонным путём (`manifest_from_template` → значения → `render`).
+Манифест едет рядом с файлом, потому что тип тега, потолки и `depends_on` в самом DOCX
+выразить нечем, а гадать о них при следующем заполнении — значит отдать картинку туда,
+где ждали абзац.
+
 Чего здесь нет намеренно: хранилища, версий, проекта и вызовов модели. Список блоков
 с версиями хранит `orchestrator`, модель зовёт он же — `live_tools()` отдаёт
 только объявления и `call_tool` над списком. `hokoku` остаётся библиотекой без
@@ -39,15 +47,16 @@ import re
 from dataclasses import dataclass, field, replace as _replace
 
 from . import docx_ops as ops
+from .manifest import Manifest, TagSpec, _TYPE_WORD, _sha256, suggest_type
 from .markdown import REF_RE
 from .model import (Blocks, Code, Diagram, Formula, HokokuError, Image, Markdown, Problem,
                     RenderResult, Table, Text, Toc)
 from .render import _empty_value, render
-from .report import HARD_LIMITS, _JobError, _check_value
+from .report import HARD_LIMITS, _JobError, _check_value, _chars
 from .sample import apply_style
 from .tags import norm_key, parse_tag
 from .template import blank_document, document_bytes
-from .validate import _TYPE_OF, _refs
+from .validate import _TYPE_OF, _ref_text, _refs
 from .wire import VALUE_TYPES, WireError, value_from_json, value_schema
 
 # Виды блоков: имена типов значений `wire` плюс «heading». Второго списка типов не
@@ -525,17 +534,7 @@ def assemble(work: Work, *, style: dict | None = None, profile=None,
 
 
 def _document(work: Work, *, profile, page, body, page_numbers):
-    kw = {}
-    if page is not None:
-        kw["page"] = page
-    if body is not None:
-        kw["body"] = body
-    if profile is not None:
-        kw.setdefault("page", profile.page)
-        kw.setdefault("body", profile.body)
-    doc = blank_document(page_numbers=page_numbers, **kw)
-    if profile is not None:
-        apply_style(doc, profile)
+    doc = _blank(profile, page=page, body=body, page_numbers=page_numbers)
     seen = set()
     for n, b in enumerate(work.blocks):
         key = norm_key(b.key)
@@ -553,6 +552,28 @@ def _document(work: Work, *, profile, page, body, page_numbers):
     return doc
 
 
+def _blank(profile, *, page=None, body=None, page_numbers: bool = True):
+    """Пустой документ под оформление работы: и синтетический шаблон сборки, и бланк
+    с тегами начинаются с него. Один вызов на двоих затем, что оформление у документа
+    и у бланка к нему обязано совпадать: разойдясь, они дали бы отчёт, собранный по
+    бланку не так, как собирался живой список, и увидел бы это человек на распечатке.
+
+    Явные `page`/`body` идут поверх снятых с образца: образец даёт умолчание, а не закон.
+    """
+    kw = {}
+    if page is not None:
+        kw["page"] = page
+    if body is not None:
+        kw["body"] = body
+    if profile is not None:
+        kw.setdefault("page", profile.page)
+        kw.setdefault("body", profile.body)
+    doc = blank_document(page_numbers=page_numbers, **kw)
+    if profile is not None:
+        apply_style(doc, profile)
+    return doc
+
+
 def _style(style: dict | None, profile) -> dict:
     """Перегрузки оформления: явные поверх снятых с образца. Забыть образец нельзя —
     подписи выйдут нашими, а не из образца, и половина работы пропадёт незаметно."""
@@ -565,6 +586,288 @@ def _style(style: dict | None, profile) -> dict:
         else:
             out[name] = val
     return out
+
+
+# ── бланк с тегами из списка блоков ───────────────────────────────────────────
+
+# Во сколько раз потолок манифеста больше фактического объёма блока и ниже какого
+# значения он не опускается. Бланк заполняют **другим** содержанием, и оно почти всегда
+# длиннее образца, а заготовка («черновик: сравнить два способа») короче любого текста,
+# который на её место напишут: потолок, снятый с образца буква в букву, отказывал бы на
+# первом же честном заполнении. Здесь он стережёт явную беду — весь отчёт, вывалившийся
+# в один тег, — и потому идёт с двойным запасом и не ниже разумного объёма раздела.
+TEMPLATE_SLACK = 2
+TEMPLATE_FLOOR = {"max_chars": 1000, "max_rows": 20, "max_cols": 8}
+
+# Сколько знаков прежнего значения уходит в пример и сколько знаков остаётся у метки.
+# Метка печатается в самом бланке рядом с тегом, и абзац во всю страницу вместо «Введение»
+# читать невозможно; пример живёт в манифесте и в комментарии — там мера та же.
+TEMPLATE_LEAD_CHARS = 140
+TEMPLATE_LABEL_CHARS = 80
+
+# Слово вида, приписываемое к метке тега. Метка едет в самом DOCX, и `manifest.suggest_type`
+# читает именно её: по метке тип тега восстанавливается даже у бланка, который увезли без
+# манифеста. Слова здесь ровно те, которые `suggest_type` знает, — второй список синонимов
+# разошёлся бы с ним на первой правке. Оглавления тут нет: тега оно не получает.
+_TYPE_LABEL_WORD = {"diagram": "схема", "image": "рисунок", "code": "листинг",
+                    "formula": "формула", "table": "таблица"}
+
+# Виды, которые печатаются в бланк как есть, а тега не получают: содержимое оглавления
+# собирает Word по стилям заголовков, а у разрыва страницы содержимого нет вовсе —
+# тег на их месте требовал бы значения, которого заполняющему взять неоткуда.
+_AS_IS_KINDS = ("toc", "page_break")
+
+# Виды, которым `render` заводит номер и на которые поэтому может указывать `{ref:}`.
+# Список свой, а не «всё, кроме текста»: у `numbered` в манифесте смысл есть только здесь.
+_NUMBERED_KINDS = ("image", "diagram", "table", "code", "formula")
+
+# Виды, у которых объём меряется знаками. У картинки и схемы знаков нет (считается одна
+# подпись), оглавление собирается само.
+_SIZED_KINDS = ("text", "markdown", "code", "table")
+
+# Виды, у которых начало прежнего значения годится в пример. Формулы здесь нет: запись
+# LaTeX состоит из фигурных скобок, а их в метку и комментарий бланка не пускают
+# (см. `_plain`), и от «\fracab» заполняющему бланк толку нет.
+_EXAMPLE_KINDS = _SIZED_KINDS + ("image", "diagram")
+
+
+@dataclass(frozen=True)
+class TemplateResult:
+    """Бланк, сделанный из списка блоков: файл, манифест к нему и сколько в нём тегов.
+
+    Три поля вместе, а не по отдельности: манифест без файла не проверить (в нём
+    `template_sha256`), файл без манифеста теряет тип, потолки и `depends_on` — того,
+    чего в DOCX не выразить, — а число тегов служба показывает человеку до того, как
+    он откроет файл.
+    """
+
+    docx: bytes
+    manifest: Manifest
+    tags: int
+
+
+def template_of(work: Work, *, profile=None) -> TemplateResult:
+    """Список блоков → переиспользуемый бланк с тегами и манифест к нему.
+
+    Отличие от `work_template` — в том, кому документ показывают. Синтетический шаблон
+    сборки это шов: в нём голые `{{ключ}}` по абзацу на блок, включая заголовки, и
+    открывать его человеку незачем. Бланк открывают, заполняют и хранят на полке, поэтому:
+
+      заголовок печатается **текстом** стилем `Heading N`, а не тегом. Заголовок — скелет
+        работы, а не место под содержимое: тегом он потребовал бы значения на каждое
+        «Введение», а оглавление, которое ищет заголовки по стилю и `outlineLvl`, до
+        заполнения не собралось бы вовсе;
+      содержательный блок — абзац `{{ключ:метка}}`, а перед ним комментарий `{# … #}` с
+        тем, что сюда писать. Комментарий движок из готового отчёта вырезает
+        (`render._strip_comments`), а манифест забирает подсказкой к ближайшему
+        следующему тегу (`manifest_from_template`), — то есть задание модели написано
+        в бланке один раз и живёт в нём само;
+      оглавление и разрыв страницы печатаются как есть (см. `_AS_IS_KINDS`).
+
+    Закладка блока (`bookmark_name`) стоит и здесь, вокруг абзаца тега: документ,
+    собранный по бланку, несёт те же именованные назначения, что и собранный из списка,
+    и превью показывает, где на странице какой блок, независимо от того, каким путём
+    документ получился.
+
+    Манифест рядом несёт то, чего в DOCX не выразить: тип, потолки, `depends_on`. Он
+    не заменяет разбор бланка, а дополняет его — `manifest_from_template(бланк,
+    base=этот манифест)` сохраняет поля и обновляет метки, если бланк правили в Word.
+
+    `profile` — оформление, снятое с образца (`sample.style_from_sample`); без него
+    бланк выходит с умолчаниями `blank_document`.
+    """
+    doc = _blank(profile)
+    имена, номера = _ref_owners(work), ref_targets(work)
+    tags: dict = {}
+    section, seen = "", set()
+    for n, b in enumerate(work.blocks):
+        key = norm_key(b.key)
+        if key in seen:
+            raise LiveError("duplicate_key", f"ключ {key!r} в списке дважды: бланк с двумя "
+                                             "одинаковыми тегами заполняется одним значением")
+        seen.add(key)
+        if b.kind == "heading":
+            section = b.text.lstrip("# ").strip()
+            first = last = _heading_paragraph(doc, b)
+        elif b.kind in _AS_IS_KINDS:
+            first, last = _as_is_paragraphs(doc, b.value)
+        else:
+            spec = _tag_spec(b, key, section=section, depends_on=имена.get(key, []),
+                             numbered_keys=номера)
+            doc.add_paragraph("{# " + spec.comment + " #}")
+            метка = "" if spec.label == key else ":" + spec.label
+            first = last = doc.add_paragraph("{{" + key + метка + "}}")._p
+            tags[key] = spec
+        ops.mark_range(first, bookmark_name(key), ops.RANGE_BOOKMARK_ID + n, end=last)
+    data = document_bytes(doc)
+    return TemplateResult(docx=data, tags=len(tags),
+                          manifest=Manifest(tags=tags, template_sha256=_sha256(data)))
+
+
+def _heading_paragraph(doc, b: Block):
+    """Заголовок текстом. Стиль `Heading N` ставится тем же вызовом, что и при сборке
+    (`docx_ops.style_heading`): по нему заголовок находит поле TOC и «Обновить
+    оглавление» в Word, а прямое форматирование нашло бы только глаз."""
+    p = doc.add_paragraph()
+    extra = ops.style_heading(doc, p._p, min(b.level or 1, 6))
+    p._p.append(ops.make_run(_printable(b.text.lstrip("# ").strip()), None, **extra))
+    return p._p
+
+
+def _as_is_paragraphs(doc, value):
+    """Оглавление и разрыв страницы прямо в бланк. → (первый абзац, последний).
+
+    Обе врезки умеют вставать только **после** заданного места (`docx_ops`), а бланк
+    строится дописыванием в конец, — отсюда временный абзац-якорь, который тут же
+    убирается: остаться он не может, любой лишний абзац это лишняя строка в готовом
+    отчёте.
+
+    Ссылка `{ref:}` из заголовка оглавления снимается: в бланке подписей ещё нет, и
+    поле REF указало бы на закладку, которой в документе не будет, — Word показал бы
+    на её месте свою ошибку. Номер рисунка в заголовке оглавления и по смыслу лишний.
+    """
+    anchor = doc.add_paragraph()._p
+    if isinstance(value, Toc):
+        title = _plain(value.title) if value.title else None
+        last = ops.add_toc(doc, anchor, value.levels, title, None)
+    else:
+        last = ops.add_page_break(anchor)
+    first = anchor.getnext()
+    anchor.getparent().remove(anchor)
+    return first, last
+
+
+def _tag_spec(b: Block, key: str, *, section: str, depends_on: list,
+              numbered_keys: dict) -> TagSpec:
+    """Запись манифеста об одном содержательном блоке.
+
+    Тип тега берётся у заготовки, а не у её значения. Раздел, который ждёт инструмента,
+    стоит в списке черновиком с названным видом («черновик code: …», см. `draft`), и
+    значение у него markdown — но в бланк он идёт местом под листинг: бланк описывает
+    не образец, а то, что на его месте будет заполняться.
+
+    `numbered` — получит ли значение номер и подпись. У написанного блока об этом
+    спрашивают его самого (`ref_targets`): подпись могла быть снята (`caption: false`),
+    и бланк, требующий её там, где её не было, сдвинул бы нумерацию всей работы.
+    Заготовка о подписи не говорит ничего, и на будущее подпись не снимается: у листинга
+    и таблицы она обычна, а вернуть её потом сложнее, чем убрать.
+
+    `prompt` — задание («что здесь писать»), `example` — начало прежнего значения,
+    `comment` — то и другое одной строкой, ровно как оно напечатано в бланке. Три поля,
+    а не одно, потому что `manifest_from_template` сравнивает `prompt` с `comment`, чтобы
+    отличить задание, правленное человеком, от взятого из бланка: совпади они дословно,
+    правка бланка молча переписывала бы правку человека.
+    """
+    заготовка = draft_kind(b.text)
+    тип = заготовка or b.kind
+    задание = draft_hint(b.text) if is_draft_text(b.text) else ""
+    пример = ("" if задание or тип not in _EXAMPLE_KINDS
+              else _cut(_plain(b.text), TEMPLATE_LEAD_CHARS))
+    метка = _tag_label(b, key, тип, section)
+    prompt = _plain(f"{метка} — {_TYPE_WORD.get(тип, тип)}"
+                    + (f"; написать: {задание}" if задание else ""))
+    comment = prompt + (f"; например: «{пример}»" if пример else "")
+    numbered = тип not in _NUMBERED_KINDS or bool(заготовка) or key in numbered_keys
+    return TagSpec(type=тип, label=метка, required=True, numbered=numbered,
+                   prompt=prompt, comment=comment, example=пример,
+                   limits=_tag_limits(b, тип), depends_on=list(depends_on))
+
+
+def _tag_label(b: Block, key: str, тип: str, section: str) -> str:
+    """Метка тега — та подсказка, которую человек читает в бланке рядом с `{{ключ}}`.
+
+    Слово вида («схема», «таблица») приписывается к названию не для красоты:
+    `manifest.suggest_type` читает метку, и по ней тип тега восстанавливается у бланка,
+    приехавшего без манифеста. Если название вид и так называет — второй раз не
+    приписываем; если приписка не помогает (в названии раньше стоит слово другого вида) —
+    оставляем название как есть: тип объявлен манифестом, а слово, обещающее в бланке не
+    то, хуже отсутствующего.
+
+    Без названия меткой становится заголовок раздела, в котором блок стоит: человеку
+    он говорит о месте больше, чем ключ.
+    """
+    метка = _cut(_plain(b.label), TEMPLATE_LABEL_CHARS) or _cut(_plain(section),
+                                                                TEMPLATE_LABEL_CHARS)
+    слово = _TYPE_LABEL_WORD.get(тип)
+    if слово and suggest_type(метка) != тип:
+        с_видом = f"{метка} ({слово})" if метка else слово.capitalize()
+        if suggest_type(с_видом) == тип:
+            метка = с_видом
+    return метка or key
+
+
+def _tag_limits(b: Block, тип: str) -> dict:
+    """Потолки тега по фактическому объёму блока, с запасом (см. `TEMPLATE_SLACK`).
+
+    Знаки считает та же функция, что и служба при сборке, и та же, что проверяет
+    `limits` манифеста (`report._chars`): второй счёт означал бы, что бланк объявляет
+    потолок, которого проверка не понимает.
+    """
+    limits: dict = {}
+    if тип in _SIZED_KINDS:
+        limits["max_chars"] = _limit(_chars(b.value), "max_chars", HARD_LIMITS["max_value_chars"])
+    if тип == "table" and isinstance(b.value, Table):
+        rows = b.value.rows or []
+        limits["max_rows"] = _limit(len(rows), "max_rows", HARD_LIMITS["max_table_rows"])
+        limits["max_cols"] = _limit(max((len(r) for r in rows), default=0), "max_cols",
+                                    HARD_LIMITS["max_table_cols"])
+    return limits
+
+
+def _limit(actual: int, name: str, hard: int) -> int:
+    return min(max(int(actual) * TEMPLATE_SLACK, TEMPLATE_FLOOR[name]), hard)
+
+
+def _ref_owners(work: Work) -> dict:
+    """Ключ блока → ключи блоков, на номера которых он ссылается (`depends_on` манифеста).
+
+    Считается по тем же целям, что и сито ссылок (`ref_targets`): номер получает не
+    всякий блок, и «зависимость» от блока без номера — это не порядок заполнения, а
+    будущий «?» в тексте. Имя ссылки бывает не ключом (`ref=` у самого значения),
+    поэтому цели перебираются по обоим именам.
+    """
+    владелец: dict = {}
+    for b in ref_targets(work).values():
+        владелец.setdefault(b.ref, b.key)
+        владелец.setdefault(b.key, b.key)
+    out: dict = {}
+    for b in work.blocks:
+        имена = [владелец[n] for n in dict.fromkeys(REF_RE.findall(_ref_text(b.value)))
+                 if n in владелец and владелец[n] != b.key]
+        if имена:
+            out[b.key] = list(dict.fromkeys(имена))
+    return out
+
+
+def _printable(text: str) -> str:
+    """Текст, который печатается в бланк как есть, без разметки бланка.
+
+    `{{…}}` в названии раздела стало бы в бланке настоящим тегом: записи в манифесте у
+    него нет, и первое же заполнение затёрло бы название пустотой. Ссылка `{ref:}`
+    остаётся — её разбирает сам `render` (`_process_static_refs`), и номер встанет на
+    место, как встал бы при сборке из списка.
+    """
+    return text.replace("{{", "").replace("}}", "").replace("{#", "").replace("{%", "")
+
+
+def _plain(text) -> str:
+    """Текст, годный стоять в метке тега и в комментарии бланка.
+
+    Фигурные скобки убираются: `}` из прежнего значения закрыл бы тег или комментарий
+    раньше времени, и остаток уехал бы в отчёт обычным текстом. `{ref:имя}` снимается
+    целиком — в бланке номера, на который она указывала, ещё нет, а имя блока человеку,
+    заполняющему бланк, ничего не говорит. Всё в одну строку: метка и комментарий
+    стоят абзацем, и перевод строки в них — второй абзац.
+    """
+    text = REF_RE.sub("", str(text or ""))
+    return " ".join(text.replace("{", "").replace("}", "").split())
+
+
+def _cut(text: str, n: int) -> str:
+    if len(text) <= n:
+        return text
+    край = text[:n].rsplit(" ", 1)[0] or text[:n]
+    return край + "…"
 
 
 # ── валидатор на списке ───────────────────────────────────────────────────────
@@ -1268,6 +1571,7 @@ __all__ = [
     "draft_mark", "draft_kind", "draft_hint", "is_draft_text",
     "insert", "replace", "remove", "move", "rename", "outline",
     "work_values", "work_template", "render_work", "assemble",
+    "TemplateResult", "template_of", "TEMPLATE_SLACK", "TEMPLATE_FLOOR",
     "validate_work", "unresolved_refs", "strip_refs",
     "live_tools", "call_tool", "list_blocks", "any_block_value_schema",
     "text_slots", "tool_slots", "texts_schema", "fill_texts",
