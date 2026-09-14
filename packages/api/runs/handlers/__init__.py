@@ -1,5 +1,5 @@
 """
-handlers — семь обработчиков заданий, по модулю на вид.
+handlers — обработчики заданий, по модулю на вид.
 
     fill_tag        один тег          нужен ключ модели
     fill_report     весь отчёт        нужен ключ модели
@@ -8,6 +8,9 @@ handlers — семь обработчиков заданий, по модулю
     kadai_run       сценарий работы   нужен ключ модели
     kadai_rework    замечание         нужен ключ модели
     board_check     проверка доски    нужен ключ модели
+    asm_run         сборка и трасса   ключ не нужен и не даётся
+    asm_memory      дамп на шаге      ключ не нужен и не даётся
+    asm_chat        агент по трассе   нужен ключ модели
 
 По модулю на вид, а не одним файлом: обработчик — это место, где служба
 разговаривает с оркестратором, и разговоры у них разные. Общее (endpoint с
@@ -26,11 +29,12 @@ from __future__ import annotations
 
 def подключить() -> None:
     """Поставить все обработчики прогонов в реестр. Идемпотентно."""
-    from . import (agent, board_check, build, fill_report,   # noqa: PLC0415
-                   fill_tag, kadai_rework, kadai_run)
+    from . import (agent, asm_chat, asm_memory, asm_run,     # noqa: PLC0415
+                   board_check, build, fill_report, fill_tag, kadai_rework,
+                   kadai_run)
 
     for модуль in (fill_tag, fill_report, agent, build, kadai_run, kadai_rework,
-                   board_check):
+                   board_check, asm_run, asm_memory, asm_chat):
         модуль._зарегистрировать()
 
 

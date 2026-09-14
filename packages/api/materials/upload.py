@@ -111,7 +111,10 @@ def заголовок_имени(имя: str, *, inline: bool = False) -> str:
     latin = "".join(з if 32 <= ord(з) < 127 and з not in '"\\' else "_" for з in имя)
     latin = latin.strip() or ИМЯ_ПО_УМОЛЧАНИЮ
     как = "inline" if inline else "attachment"
-    return f'{как}; filename="{latin}"; filename*=UTF-8\'\'{quote(имя)}'
+    # `safe=""`: косая черта в `filename*` уходит `%2F`, а не знаком пути — в
+    # `attr-char` RFC 5987 её нет, и клиент, не режущий имя сам, не получит
+    # из него каталог.
+    return f'{как}; filename="{latin}"; filename*=UTF-8\'\'{quote(имя, safe="")}'
 
 
 def проверить_длину(request: Request, предел: int) -> None:

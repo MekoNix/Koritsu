@@ -1,5 +1,6 @@
 {
   "brand": "Koritsu",
+  "beta": "Beta",
   "search": {
     "label": "Поиск",
     "placeholder": "Поиск по проектам и материалам"
@@ -37,6 +38,7 @@
     "reports": "Отчёты",
     "kadai": "Решения",
     "board": "Доска",
+    "asm": "Ассемблер",
     "flowcharts": "Блок-схемы",
     "uml": "UML диаграммы"
   },
@@ -46,6 +48,7 @@
     "reports": "Отчёты",
     "kadai": "Решения",
     "board": "Доска",
+    "asm": "Ассемблер",
     "diagrams": "Схемы",
     "flowcharts": "Блок-схемы",
     "uml": "UML диаграммы",

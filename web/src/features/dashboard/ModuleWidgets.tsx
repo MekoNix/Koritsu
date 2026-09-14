@@ -20,7 +20,7 @@ import { Link } from 'react-router-dom'
 import { useModules } from '@/api/hooks'
 import { MODULE_LINKS } from '@/app/shell/moduleLinks'
 import { useT } from '@/i18n'
-import { ErrorState, Icon, Skeleton } from '@/ui'
+import { BetaTag, ErrorState, Icon, Skeleton } from '@/ui'
 
 import { Widget } from './Widget'
 
@@ -71,8 +71,11 @@ export function ModuleWidgets() {
               size={24}
               style={link.colorVar ? { color: `var(${link.colorVar})` } : undefined}
             />
-            <span className="truncate font-display text-md font-semibold text-ink-strong">
-              {t(`shell.nav.${module.id}`)}
+            <span className="flex min-w-0 items-center gap-s2">
+              <span className="truncate font-display text-md font-semibold text-ink-strong">
+                {t(`shell.nav.${module.id}`)}
+              </span>
+              {link.beta && <BetaTag label={t('shell.beta')} />}
             </span>
             <span className="text-xs text-muted">{t(`dashboard.modules.hint.${module.id}`)}</span>
           </Link>

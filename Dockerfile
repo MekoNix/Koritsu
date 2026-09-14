@@ -28,6 +28,10 @@
 #   drawio, библиотеки   (`hokoku/images.drawio_to_png`). Подробности — ниже,
 #   Electron             отдельным слоем: там же сказано, почему `xauth`
 #                        обязателен и почему CLI зовётся `--no-sandbox`.
+#   dosbox-x, DebugX     модуль «Ассемблер» (`packages/asm`): TASM и TLINK
+#                        исполняются в DOSBox-X, трасса снимается DebugX.
+#                        Подробности — ниже, отдельным слоем. Сами TASM и
+#                        TLINK в образ не входят: они приезжают томом.
 #
 # Чего здесь нет: `git` (код приезжает слоем, а не клоном), компиляторов (все
 # зависимости ставятся колёсами) и `/web` (сайт собирает Vite снаружи и отдаёт
@@ -122,6 +126,34 @@ RUN ARCH="$(dpkg --print-architecture)" \
 # без него.
 ENV DRAWIO_DISABLE_UPDATE=true \
     ELECTRON_DISABLE_SECURITY_WARNINGS=true
+
+# ── Ассемблер: DOSBox-X и DebugX ─────────────────────────────────────────
+# Настоящий TASM — DOS-программа, и исполняет её DOSBox-X: без экрана
+# (`SDL_VIDEODRIVER=dummy` ставит `asm/dosbox.py` на каждый запуск, здесь
+# ничего не нужно), с дисками только для чтения и выходом после autoexec.
+# Пакет — из Debian (trixie, база нашего образа), а не сборка с GitHub: у
+# DOSBox-X десяток системных библиотек, и apt приносит ровно их.
+#
+# DebugX — открытый консольный отладчик FreeDOS Debug: читает команды из
+# stdin, пишет в stdout, и в пакетном DOSBox-X это ровно «сценарий → трасса».
+# Из архива берётся один `DEBUGX.COM`; распаковывает его Python, который в
+# образе и так есть, — ради одного файла `unzip` не ставится. Адрес и
+# контрольная сумма прибиты: имя архива у релизов меняется от версии к
+# версии, а разбор вывода написан по выводу именно этой (2.51).
+#
+# TASM и TLINK (Borland) — проприетарные и в образ не кладутся: каталог с
+# ними монтируется томом только для чтения (`KORITSU_ASM_TOOLS`, см.
+# `.env.example`). Без тома модуль честно показывается недоступным.
+ARG DEBUGX_URL=https://github.com/Baron-von-Riedesel/DOS-debug/releases/download/v2.51/DEBUGb.zip
+ARG DEBUGX_SHA256=08d32be6dc43b9c72c9b714de036a2411f0f942cbf4703eb1550b47fc687a481
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y dosbox-x \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL -o /tmp/debugx.zip "${DEBUGX_URL}" \
+    && echo "${DEBUGX_SHA256}  /tmp/debugx.zip" | sha256sum -c - \
+    && mkdir -p /opt/asm/debugx /opt/asm-tools \
+    && python -c "import zipfile; zipfile.ZipFile('/tmp/debugx.zip').extract('DEBUGX.COM', '/opt/asm/debugx')" \
+    && rm -f /tmp/debugx.zip
 
 # Непривилегированный пользователь с **фиксированным** UID: контейнер работает
 # не от root, и файлы на томе тоже не root'овы. Фиксированным — потому что тот

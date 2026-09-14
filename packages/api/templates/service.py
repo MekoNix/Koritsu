@@ -436,7 +436,8 @@ def выбрать(s: Session, settings: Settings, project_id: str, катало
     данные = байты(settings, шаблон)
     try:
         orchestrator.Project(каталог, report=report).update_template(
-            данные, manifest=манифест(settings, шаблон))
+            данные, manifest=манифест(settings, шаблон),
+            template_name=шаблон.name)
     except ApiError:
         raise
     except Exception:                                        # noqa: BLE001

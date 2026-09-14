@@ -69,6 +69,10 @@ class Проект:
     dir: str
     owner_id: str
     role: str
+    # Имя работы, как его видит человек сейчас: строка в базе, а не
+    # `project.json` — переименование пишет только строку. Нужно скачиванию
+    # артефакта: запасное имя файла, у которого своего нет.
+    name: str = ""
 
 
 # ── дверь к пакету проектов ──────────────────────────────────────────────────
@@ -108,7 +112,8 @@ def проект_и_роль(s: Session, settings: Settings, user_id: str,
     # квота считается на того, кто проект завёл, и в общем пространстве
     # это разные люди.
     return Проект(id=project_id, role=роль, owner_id=str(строка.owner_id),
-                  dir=str(projects.project_dir(s, settings, project_id)))
+                  dir=str(projects.project_dir(s, settings, project_id)),
+                  name=str(getattr(строка, "name", "") or ""))
 
 
 def bytes_used(s: Session, settings: Settings, owner_id: str) -> int:

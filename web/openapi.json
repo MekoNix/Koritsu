@@ -6089,7 +6089,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/StepsOut"
+         "$ref": "#/components/schemas/api__modules__board__routes__StepsOut"
         }
        }
       }
@@ -6159,7 +6159,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/StepsOut"
+         "$ref": "#/components/schemas/api__modules__board__routes__StepsOut"
         }
        }
       }
@@ -6332,7 +6332,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ChatOut"
+         "$ref": "#/components/schemas/api__modules__board__routes__ChatOut"
         }
        }
       }
@@ -6441,6 +6441,905 @@
          "additionalProperties": true,
          "type": "object",
          "title": "Response Board Ink Version"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/asm/status": {
+   "get": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Whether assembler tools are installed",
+    "description": "Says whether this server can build and trace programs: DOSBox-X, TASM, TLINK and DebugX, each on its own. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.",
+    "operationId": "asm_status",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StatusOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/asm/programs": {
+   "get": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Assembler programs of a workspace",
+    "description": "Every assembler program of one workspace, most recently edited first, with the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
+    "operationId": "asm_programs",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ProgramCardOut"
+         },
+         "title": "Response Asm Programs"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Start a new assembler program in a workspace",
+    "description": "Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.",
+    "operationId": "asm_create_program",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProgramCreateIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProgramCreatedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/asm/programs/{program_id}": {
+   "get": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "One assembler program",
+    "description": "The source with its version counter, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "asm_program",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProgramOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Rename a program",
+    "description": "Renames the program. An empty name resets it: the interface names it from the module and n again. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "asm_rename_program",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RenameIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RenameOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Delete a program",
+    "description": "Removes the program: its journal entry, source, settings, conversation and every run with its trace. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "asm_delete_program",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/asm/programs/{program_id}/source": {
+   "put": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Write the source of a program",
+    "description": "Replaces the source and bumps its version. `version` in the body is the one this edit is based on; if it is not the current one, the answer is 409 and carries the source that won. Runs already queued keep the source they were started with. Editor role. 400 invalid_id, 400 source_too_big, 403 forbidden, 404 not_found, 409 source_conflict.",
+    "operationId": "asm_put_source",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SourceIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "The source was written from somewhere else; the current source comes with the refusal",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceConflictOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/asm/programs/{program_id}/settings": {
+   "put": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Write the run settings of a program",
+    "description": "Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. A build flag is a slash and a short word (`/zi`); the step limit is capped by the server. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
+    "operationId": "asm_put_settings",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AsmSettingsModel"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AsmSettingsModel"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/asm/programs/{program_id}/runs": {
+   "post": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Build, or build and trace, a program",
+    "description": "Takes the source and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are `tasm`, `tlink` and `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.",
+    "operationId": "asm_start_run",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/RunIn"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Тело"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunStartedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}": {
+   "get": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Summary of one run",
+    "description": "The run without its steps: build result with messages, listing, segments and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "asm_run",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "run_no",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run No"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunSummaryOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/steps": {
+   "get": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "A page of trace steps",
+    "description": "Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "asm_run_steps",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "run_no",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run No"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "From"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 0
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/api__modules__asm__routes__StepsOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/debugx": {
+   "get": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Raw debugger output for a range of steps",
+    "description": "What DebugX printed for steps [from, to), as text, at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "asm_run_debugx",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "run_no",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run No"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "From"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 0
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DebugxOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/memory": {
+   "post": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Dump memory at a step of a run",
+    "description": "Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.",
+    "operationId": "asm_run_memory",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "run_no",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run No"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MemoryIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobStartedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/asm/programs/{program_id}/chat": {
+   "get": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "The conversation with the agent on a program",
+    "description": "Every message exchanged with the agent on this program, oldest first. The question and the answer land here together when the `asm_chat` job is done. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "asm_chat",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/api__modules__asm__routes__ChatOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Ask the agent about a program",
+    "description": "Queues an `asm_chat` job: the agent answers in words, looking at the source, the build messages and the trace of the run at the step named, and at what the message is anchored to. `endpoint` names the model provider preset that pays for it. Editor role. 400 endpoint_required, 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found.",
+    "operationId": "asm_send_chat",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ChatIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobStartedOut"
         }
        }
       }
@@ -10119,7 +11018,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/StepsOut"
+         "$ref": "#/components/schemas/api__modules__board__routes__StepsOut"
         }
        }
       }
@@ -10190,7 +11089,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/StepsOut"
+         "$ref": "#/components/schemas/api__modules__board__routes__StepsOut"
         }
        }
       }
@@ -10366,7 +11265,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/ChatOut"
+         "$ref": "#/components/schemas/api__modules__board__routes__ChatOut"
         }
        }
       }
@@ -10478,6 +11377,920 @@
          "additionalProperties": true,
          "type": "object",
          "title": "Response Board Ink Version V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/asm/status": {
+   "get": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Whether assembler tools are installed",
+    "description": "Says whether this server can build and trace programs: DOSBox-X, TASM, TLINK and DebugX, each on its own. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.",
+    "operationId": "asm_status_v1",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StatusOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/asm/programs": {
+   "get": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Assembler programs of a workspace",
+    "description": "Every assembler program of one workspace, most recently edited first, with the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
+    "operationId": "asm_programs_v1",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ProgramCardOut"
+         },
+         "title": "Response Asm Programs V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Start a new assembler program in a workspace",
+    "description": "Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.",
+    "operationId": "asm_create_program_v1",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProgramCreateIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProgramCreatedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/asm/programs/{program_id}": {
+   "get": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "One assembler program",
+    "description": "The source with its version counter, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "asm_program_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProgramOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Rename a program",
+    "description": "Renames the program. An empty name resets it: the interface names it from the module and n again. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "asm_rename_program_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RenameIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RenameOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Delete a program",
+    "description": "Removes the program: its journal entry, source, settings, conversation and every run with its trace. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "asm_delete_program_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/asm/programs/{program_id}/source": {
+   "put": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Write the source of a program",
+    "description": "Replaces the source and bumps its version. `version` in the body is the one this edit is based on; if it is not the current one, the answer is 409 and carries the source that won. Runs already queued keep the source they were started with. Editor role. 400 invalid_id, 400 source_too_big, 403 forbidden, 404 not_found, 409 source_conflict.",
+    "operationId": "asm_put_source_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SourceIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "The source was written from somewhere else; the current source comes with the refusal",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SourceConflictOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/asm/programs/{program_id}/settings": {
+   "put": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Write the run settings of a program",
+    "description": "Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. A build flag is a slash and a short word (`/zi`); the step limit is capped by the server. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
+    "operationId": "asm_put_settings_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AsmSettingsModel"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AsmSettingsModel"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs": {
+   "post": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Build, or build and trace, a program",
+    "description": "Takes the source and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are `tasm`, `tlink` and `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.",
+    "operationId": "asm_start_run_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/RunIn"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Тело"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunStartedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}": {
+   "get": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Summary of one run",
+    "description": "The run without its steps: build result with messages, listing, segments and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "asm_run_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "run_no",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run No"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunSummaryOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/steps": {
+   "get": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "A page of trace steps",
+    "description": "Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "asm_run_steps_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "run_no",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run No"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "From"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 0
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/api__modules__asm__routes__StepsOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/debugx": {
+   "get": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Raw debugger output for a range of steps",
+    "description": "What DebugX printed for steps [from, to), as text, at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "asm_run_debugx_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "run_no",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run No"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "From"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 0
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DebugxOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/memory": {
+   "post": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Dump memory at a step of a run",
+    "description": "Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.",
+    "operationId": "asm_run_memory_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "run_no",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run No"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MemoryIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobStartedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/asm/programs/{program_id}/chat": {
+   "get": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "The conversation with the agent on a program",
+    "description": "Every message exchanged with the agent on this program, oldest first. The question and the answer land here together when the `asm_chat` job is done. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "asm_chat_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/api__modules__asm__routes__ChatOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Ask the agent about a program",
+    "description": "Queues an `asm_chat` job: the agent answers in words, looking at the source, the build messages and the trace of the run at the step named, and at what the message is anchored to. `endpoint` names the model provider preset that pays for it. Editor role. 400 endpoint_required, 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found.",
+    "operationId": "asm_send_chat_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ChatIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JobStartedOut"
         }
        }
       }
@@ -11396,6 +13209,69 @@
     "title": "ApiTokenOut",
     "description": "Карточка ключа. Строки ключа в ней нет и быть не может."
    },
+   "AsmSettingsModel": {
+    "properties": {
+     "stdin": {
+      "type": "string",
+      "maxLength": 65536,
+      "title": "Stdin",
+      "description": "Everything the program will read from standard input, set in advance: a run does not pause for typing.",
+      "default": ""
+     },
+     "step_limit": {
+      "type": "integer",
+      "minimum": 1.0,
+      "title": "Step Limit",
+      "description": "How many steps the trace may take before it stops",
+      "default": 100000
+     },
+     "mode32": {
+      "type": "boolean",
+      "title": "Mode32",
+      "description": "Trace 32-bit registers as well",
+      "default": false
+     },
+     "tasm_flags": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "maxItems": 16,
+      "title": "Tasm Flags",
+      "description": "Command line flags of TASM, each of the form /x"
+     },
+     "tlink_flags": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "maxItems": 16,
+      "title": "Tlink Flags",
+      "description": "Command line flags of TLINK, each of the form /x"
+     },
+     "breakpoints": {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array",
+      "maxItems": 1000,
+      "title": "Breakpoints",
+      "description": "Source lines with a breakpoint, from 1"
+     },
+     "watches": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "maxItems": 100,
+      "title": "Watches",
+      "description": "Watch expressions, as the page shows them"
+     }
+    },
+    "type": "object",
+    "title": "AsmSettingsModel",
+    "description": "Настройки прогона программы. Заменяются целиком."
+   },
    "BlankOut": {
     "properties": {
      "template_id": {
@@ -11619,31 +13495,19 @@
     ],
     "title": "Body_create_project_v1"
    },
-   "ChatMessageOut": {
+   "BuildMessageOut": {
     "properties": {
-     "role": {
+     "severity": {
       "type": "string",
-      "title": "Role",
-      "description": "`you` for the person, `tutor` for the agent"
+      "title": "Severity",
+      "default": ""
      },
-     "text": {
+     "tool": {
       "type": "string",
-      "title": "Text",
-      "description": "The message; formulas as LaTeX between dollars"
+      "title": "Tool",
+      "default": ""
      },
-     "at": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "At",
-      "description": "When it was written"
-     },
-     "scene_version": {
+     "line": {
       "anyOf": [
        {
         "type": "integer"
@@ -11652,31 +13516,122 @@
         "type": "null"
        }
       ],
-      "title": "Scene Version",
-      "description": "Scene version the person's message was sent with"
+      "title": "Line"
+     },
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "BuildMessageOut"
+   },
+   "BuildOut": {
+    "properties": {
+     "ok": {
+      "type": "boolean",
+      "title": "Ok",
+      "default": false
+     },
+     "log": {
+      "type": "string",
+      "title": "Log",
+      "description": "What TASM and TLINK printed",
+      "default": ""
+     },
+     "messages": {
+      "items": {
+       "$ref": "#/components/schemas/BuildMessageOut"
+      },
+      "type": "array",
+      "title": "Messages"
+     },
+     "listing": {
+      "items": {
+       "$ref": "#/components/schemas/ListingLineOut"
+      },
+      "type": "array",
+      "title": "Listing"
+     },
+     "segments": {
+      "items": {
+       "$ref": "#/components/schemas/SegmentOut"
+      },
+      "type": "array",
+      "title": "Segments"
+     },
+     "symbols": {
+      "items": {
+       "$ref": "#/components/schemas/SymbolOut"
+      },
+      "type": "array",
+      "title": "Symbols"
+     }
+    },
+    "type": "object",
+    "title": "BuildOut"
+   },
+   "ChatIn": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Text"
+     },
+     "anchor": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Anchor",
+      "description": "What the message is about: {kind: line, line} | {kind: register, name} | {kind: flag, name} | {kind: cell, seg, off} | {kind: doc, id} | {kind: run} | {kind: text, window, text, line_from, line_to} — text is the selected text as is, at most 4000 characters; window is one of source, listing, output, debugx, build; line_from/line_to are source lines or null"
+     },
+     "step": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Step",
+      "description": "Step the trace cursor stands on"
+     },
+     "run_no": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Run No",
+      "description": "Run to look at; the last one if null"
+     },
+     "endpoint": {
+      "type": "string",
+      "maxLength": 64,
+      "title": "Endpoint",
+      "description": "Model provider preset the answer is paid with",
+      "default": ""
      }
     },
     "type": "object",
     "required": [
-     "role",
      "text"
     ],
-    "title": "ChatMessageOut",
-    "description": "Одно сообщение переписки с репетитором."
-   },
-   "ChatOut": {
-    "properties": {
-     "messages": {
-      "items": {
-       "$ref": "#/components/schemas/ChatMessageOut"
-      },
-      "type": "array",
-      "title": "Messages"
-     }
-    },
-    "type": "object",
-    "title": "ChatOut",
-    "description": "Переписка с репетитором целиком, старые сообщения первыми."
+    "title": "ChatIn"
    },
    "ConditionIn": {
     "properties": {
@@ -11784,6 +13739,18 @@
     "type": "object",
     "title": "ContextOut",
     "description": "Общие файлы работы глазами одного решения."
+   },
+   "DebugxOut": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "description": "Raw DebugX output of those steps",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "DebugxOut"
    },
    "DiagramBuiltOut": {
     "properties": {
@@ -12094,6 +14061,32 @@
     "title": "DiagramSource",
     "description": "Один исходник схемы: как назывался файл и что в нём было."
    },
+   "DumpOut": {
+    "properties": {
+     "step": {
+      "type": "integer",
+      "title": "Step",
+      "default": 0
+     },
+     "seg": {
+      "type": "string",
+      "title": "Seg",
+      "default": ""
+     },
+     "off": {
+      "type": "string",
+      "title": "Off",
+      "default": ""
+     },
+     "hex": {
+      "type": "string",
+      "title": "Hex",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "DumpOut"
+   },
    "ErrorBody": {
     "properties": {
      "code": {
@@ -12256,7 +14249,7 @@
      "kind": {
       "type": "string",
       "title": "Kind",
-      "description": "What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, board_check, probe"
+      "description": "What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, board_check, asm_run, asm_memory, asm_chat, probe"
      },
      "project_id": {
       "anyOf": [
@@ -12283,6 +14276,62 @@
     ],
     "title": "JobIn",
     "description": "Тело постановки задания.\n\nИмя по-английски, как у соседей (`ProjectPatchIn`, `ModelKeyIn`): оно уезжает\nв OpenAPI и становится именем типа в клиенте сайта."
+   },
+   "JobStartedOut": {
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "title": "Job Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "job_id"
+    ],
+    "title": "JobStartedOut"
+   },
+   "ListingLineOut": {
+    "properties": {
+     "line": {
+      "type": "integer",
+      "title": "Line",
+      "default": 0
+     },
+     "segment": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Segment"
+     },
+     "offset": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Offset"
+     },
+     "bytes": {
+      "type": "string",
+      "title": "Bytes",
+      "default": ""
+     },
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "ListingLineOut"
    },
    "LiveReportOut": {
     "properties": {
@@ -12376,6 +14425,32 @@
     "title": "LiveReportOut",
     "description": "Отчёт из задания наружу: запись решения плюс то, чем его показывают.\n\nПолей меньше, чем у шаблонного отчёта, и это не пропуск: у отчёта из задания\nнет ни бланка, ни числа тегов — работа в нём это список блоков. Зато есть\nстадия и состояние прогона, которых не бывает у шаблонного: он не идёт\nсам, а заполняется по тегу."
    },
+   "LoadOut": {
+    "properties": {
+     "psp": {
+      "type": "string",
+      "title": "Psp",
+      "default": ""
+     },
+     "cs": {
+      "type": "string",
+      "title": "Cs",
+      "default": ""
+     },
+     "ds": {
+      "type": "string",
+      "title": "Ds",
+      "default": ""
+     },
+     "ss": {
+      "type": "string",
+      "title": "Ss",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "LoadOut"
+   },
    "LoginIn": {
     "properties": {
      "email": {
@@ -12396,6 +14471,32 @@
     ],
     "title": "LoginIn",
     "description": "Вход. Длина пароля здесь **не** проверяется: старый пароль может быть\nкороче нынешнего предела, и человеку надо дать войти и сменить его."
+   },
+   "MemWriteOut": {
+    "properties": {
+     "seg": {
+      "type": "string",
+      "title": "Seg",
+      "default": ""
+     },
+     "off": {
+      "type": "string",
+      "title": "Off",
+      "default": ""
+     },
+     "old": {
+      "type": "string",
+      "title": "Old",
+      "default": ""
+     },
+     "new": {
+      "type": "string",
+      "title": "New",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "MemWriteOut"
    },
    "MemberIn": {
     "properties": {
@@ -12430,6 +14531,58 @@
      "role"
     ],
     "title": "MemberRoleIn"
+   },
+   "MemoryIn": {
+    "properties": {
+     "step": {
+      "type": "integer",
+      "minimum": 0.0,
+      "title": "Step",
+      "description": "Step to dump the memory at"
+     },
+     "ranges": {
+      "items": {
+       "$ref": "#/components/schemas/MemoryRangeIn"
+      },
+      "type": "array",
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Ranges"
+     }
+    },
+    "type": "object",
+    "required": [
+     "step",
+     "ranges"
+    ],
+    "title": "MemoryIn"
+   },
+   "MemoryRangeIn": {
+    "properties": {
+     "seg": {
+      "type": "string",
+      "title": "Seg",
+      "description": "Segment, hex"
+     },
+     "off": {
+      "type": "string",
+      "title": "Off",
+      "description": "Offset, hex"
+     },
+     "len": {
+      "type": "integer",
+      "maximum": 4096.0,
+      "minimum": 1.0,
+      "title": "Len"
+     }
+    },
+    "type": "object",
+    "required": [
+     "seg",
+     "off",
+     "len"
+    ],
+    "title": "MemoryRangeIn"
    },
    "ModelKeyIn": {
     "properties": {
@@ -12497,6 +14650,205 @@
     "type": "object",
     "title": "ProfileIn",
     "description": "Правка своего профиля: `PATCH /auth/me`.\n\n**Все поля необязательные, и это договор, а не удобство.** Тело правки\nописывает изменение, а не человека целиком: пропущенное поле означает «не\nтрогать», а не «стереть». Поэтому же тут `None` — «поле не пришло», и ни\nодно поле не имеет `None` осмысленным значением.\n\nФорма нарочно расширяемая: сюда же дописываются настройки агента и модели\nпо умолчанию (`default_endpoint`, `agent_overwrite`). Новое поле добавляется\nстрокой здесь и строкой в `правка_профиля` — второго маршрута «поменять ещё\nодну мелочь профиля» заводить не надо."
+   },
+   "ProgramCardOut": {
+    "properties": {
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "program_id": {
+      "type": "string",
+      "title": "Program Id",
+      "description": "Run id of this program in its project"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Which program of its project, from 1"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At",
+      "description": "When the source was last written"
+     },
+     "last_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Status",
+      "description": "Status of the last run: queued, building, running, done, build_error, step_limit, timeout or crashed. Null when the program was never run."
+     }
+    },
+    "type": "object",
+    "required": [
+     "project_id",
+     "program_id",
+     "name",
+     "n"
+    ],
+    "title": "ProgramCardOut",
+    "description": "Программа в ленте пространства."
+   },
+   "ProgramCreateIn": {
+    "properties": {
+     "workspace_id": {
+      "type": "string",
+      "title": "Workspace Id",
+      "description": "Which workspace the program goes to. The work it lands in is chosen by the service."
+     },
+     "name": {
+      "type": "string",
+      "maxLength": 200,
+      "title": "Name",
+      "description": "What to call it. Empty is fine: the interface names it",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "workspace_id"
+    ],
+    "title": "ProgramCreateIn",
+    "description": "Тело заведения программы: в каком пространстве и как звать."
+   },
+   "ProgramCreatedOut": {
+    "properties": {
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "program_id": {
+      "type": "string",
+      "title": "Program Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N"
+     }
+    },
+    "type": "object",
+    "required": [
+     "project_id",
+     "program_id",
+     "name",
+     "n"
+    ],
+    "title": "ProgramCreatedOut"
+   },
+   "ProgramOut": {
+    "properties": {
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "program_id": {
+      "type": "string",
+      "title": "Program Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N"
+     },
+     "source": {
+      "type": "string",
+      "title": "Source",
+      "default": ""
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version",
+      "description": "Version counter of the source. Pass it back in PUT source: a stale one loses to whoever wrote first.",
+      "default": 0
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At",
+      "description": "When the source was written"
+     },
+     "settings": {
+      "$ref": "#/components/schemas/AsmSettingsModel"
+     },
+     "breakpoints": {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array",
+      "title": "Breakpoints"
+     },
+     "watches": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Watches"
+     },
+     "last_run_no": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Run No",
+      "description": "Number of the last run, null when never run"
+     }
+    },
+    "type": "object",
+    "required": [
+     "project_id",
+     "program_id",
+     "name",
+     "n",
+     "settings"
+    ],
+    "title": "ProgramOut",
+    "description": "Программа целиком: исходник с версией, настройки, последний прогон."
    },
    "ProjectPatchIn": {
     "properties": {
@@ -12809,6 +15161,39 @@
     "title": "RegisterIn",
     "description": "Регистрация. Длина пароля проверяется формой, а не обработчиком: беда\nформы уезжает клиенту с адресом поля (`where: body.password`).\n\nНик — обязательное поле: именно он показывается\nвместо почты, и завести человека без него значит завести его безымянным.\nГраницы и знаки ника формой НЕ проверяются намеренно: `422\nvalidation_failed` не отличить от беды в почте, а сайту нужен отдельный код\n`invalid_nickname`, чтобы показать подсказку под нужным полем. Форма здесь\nсторожит только длину строки — от тела запроса в мегабайт."
    },
+   "RenameIn": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 200,
+      "title": "Name",
+      "description": "New name. Empty resets it to the default name"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "title": "RenameIn"
+   },
+   "RenameOut": {
+    "properties": {
+     "program_id": {
+      "type": "string",
+      "title": "Program Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     }
+    },
+    "type": "object",
+    "required": [
+     "program_id",
+     "name"
+    ],
+    "title": "RenameOut"
+   },
    "ReportIn": {
     "properties": {
      "template_id": {
@@ -12970,6 +15355,150 @@
     "title": "RollbackIn",
     "description": "Тело возврата: номер версии, к которой возвращаемся.\n\nТело, а не путь, потому что возврат — действие над тегом, а не обращение к\nверсии: `POST …/values/{key}/versions/{n}` читалось бы как «создать версию\nномер n», чего служба не умеет и не должна."
    },
+   "RunIn": {
+    "properties": {
+     "mode": {
+      "type": "string",
+      "enum": [
+       "build",
+       "run"
+      ],
+      "title": "Mode",
+      "description": "`build` assembles and links only, `run` also traces",
+      "default": "run"
+     }
+    },
+    "type": "object",
+    "title": "RunIn"
+   },
+   "RunStartedOut": {
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "title": "Job Id"
+     },
+     "run_no": {
+      "type": "integer",
+      "title": "Run No"
+     }
+    },
+    "type": "object",
+    "required": [
+     "job_id",
+     "run_no"
+    ],
+    "title": "RunStartedOut"
+   },
+   "RunSummaryOut": {
+    "properties": {
+     "run_no": {
+      "type": "integer",
+      "title": "Run No"
+     },
+     "job_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Job Id"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status",
+      "description": "queued, building or running while the job goes; done, build_error, step_limit, timeout or crashed after"
+     },
+     "source": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source",
+      "description": "The source this run was built from. Line numbers in build messages, the listing and steps refer to it"
+     },
+     "build": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/BuildOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "load": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/LoadOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "stdin": {
+      "type": "string",
+      "title": "Stdin",
+      "default": ""
+     },
+     "step_limit": {
+      "type": "integer",
+      "title": "Step Limit",
+      "default": 0
+     },
+     "mode32": {
+      "type": "boolean",
+      "title": "Mode32",
+      "default": false
+     },
+     "totals": {
+      "$ref": "#/components/schemas/TotalsOut"
+     },
+     "truncated": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TruncationOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "dumps": {
+      "items": {
+       "$ref": "#/components/schemas/DumpOut"
+      },
+      "type": "array",
+      "title": "Dumps"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     }
+    },
+    "additionalProperties": true,
+    "type": "object",
+    "required": [
+     "run_no",
+     "status"
+    ],
+    "title": "RunSummaryOut",
+    "description": "Итог прогона без шагов, или его ход, пока итога нет.\n\nПоля, которые ядро допишет сверх перечисленных, уезжают как есть: итог\nчитается с тома, и форма его — договор ядра с сайтом, а не выбор службы."
+   },
    "SceneConflictOut": {
     "properties": {
      "error": {
@@ -13073,6 +15602,32 @@
     "type": "object",
     "title": "SceneOut",
     "description": "Рабочая сцена доски, её версия и то, что с неё уже распознали."
+   },
+   "SegmentOut": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "default": ""
+     },
+     "cls": {
+      "type": "string",
+      "title": "Cls",
+      "default": ""
+     },
+     "start": {
+      "type": "string",
+      "title": "Start",
+      "default": ""
+     },
+     "length": {
+      "type": "string",
+      "title": "Length",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "SegmentOut"
    },
    "SessionOut": {
     "properties": {
@@ -13229,6 +15784,112 @@
     "title": "SolutionOut",
     "description": "Решение наружу: запись журнала плюс то, что видно на его карточке."
    },
+   "SourceConflictOut": {
+    "properties": {
+     "error": {
+      "$ref": "#/components/schemas/ErrorBody"
+     },
+     "source": {
+      "type": "string",
+      "title": "Source",
+      "default": ""
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "error"
+    ],
+    "title": "SourceConflictOut",
+    "description": "Ответ `409`: отказ и рядом исходник, который победил."
+   },
+   "SourceIn": {
+    "properties": {
+     "source": {
+      "type": "string",
+      "maxLength": 262144,
+      "title": "Source"
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version",
+      "description": "The version this edit is based on. A version that is not the current one answers 409 with the current source.",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "source"
+    ],
+    "title": "SourceIn"
+   },
+   "SourceOut": {
+    "properties": {
+     "version": {
+      "type": "integer",
+      "title": "Version"
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "version"
+    ],
+    "title": "SourceOut"
+   },
+   "StatusOut": {
+    "properties": {
+     "available": {
+      "type": "boolean",
+      "title": "Available",
+      "description": "Whether programs can be built and traced here. False is a state of the machine, not an error of the request."
+     },
+     "dosbox": {
+      "type": "boolean",
+      "title": "Dosbox",
+      "description": "DOSBox-X is found"
+     },
+     "tasm": {
+      "type": "boolean",
+      "title": "Tasm",
+      "description": "TASM.EXE is in the tools directory"
+     },
+     "tlink": {
+      "type": "boolean",
+      "title": "Tlink",
+      "description": "TLINK.EXE is in the tools directory"
+     },
+     "debugx": {
+      "type": "boolean",
+      "title": "Debugx",
+      "description": "DEBUGX.COM is found"
+     }
+    },
+    "type": "object",
+    "required": [
+     "available",
+     "dosbox",
+     "tasm",
+     "tlink",
+     "debugx"
+    ],
+    "title": "StatusOut",
+    "description": "Есть ли на машине то, чем собирается и трассируется программа."
+   },
    "StepLineIn": {
     "properties": {
      "id": {
@@ -13274,70 +15935,44 @@
     "title": "StepLineIn",
     "description": "Одна строка решения так, как её прислала страница."
    },
-   "StepOut": {
+   "StepNextOut": {
     "properties": {
-     "n": {
-      "type": "integer",
-      "title": "N",
-      "description": "Reading order, from 1"
-     },
-     "id": {
+     "cs": {
       "type": "string",
-      "title": "Id",
-      "description": "Short id of the line; the tutor names this"
-     },
-     "latex": {
-      "type": "string",
-      "title": "Latex",
-      "description": "The line in LaTeX, without the dollar signs. Empty on a line nobody has read: such a line stays in the list and reaches the tutor as unavailable content.",
+      "title": "Cs",
       "default": ""
      },
-     "source": {
+     "ip": {
       "type": "string",
-      "title": "Source",
-      "description": "Where the LaTeX came from",
+      "title": "Ip",
       "default": ""
      },
-     "confirmed": {
-      "type": "boolean",
-      "title": "Confirmed",
-      "description": "Whether this line has content to show: true when its LaTeX is not empty. There is no confirming step on the board - the person sees what was read under their own writing and corrects the strokes - so this answers whether there is anything here for the tutor to see, and nothing else.",
-      "default": false
-     },
-     "elements": {
-      "items": {
-       "type": "string"
-      },
-      "type": "array",
-      "title": "Elements",
-      "description": "Ids of the scene objects this line is drawn with"
-     },
-     "frame": {
+     "line": {
       "anyOf": [
        {
-        "type": "string"
+        "type": "integer"
        },
        {
         "type": "null"
        }
       ],
-      "title": "Frame",
-      "description": "Id of the frame this line belongs to, null when it belongs to none. A frame is a caption over a group of lines, not a step of the solution."
+      "title": "Line"
      },
-     "frame_name": {
+     "asm": {
       "type": "string",
-      "title": "Frame Name",
-      "description": "What that frame is called",
+      "title": "Asm",
+      "default": ""
+     },
+     "bytes": {
+      "type": "string",
+      "title": "Bytes",
       "default": ""
      }
     },
+    "additionalProperties": true,
     "type": "object",
-    "required": [
-     "n",
-     "id"
-    ],
-    "title": "StepOut",
-    "description": "Одна строка решения так, как её читает интерфейс."
+    "title": "StepNextOut",
+    "description": "Команда, которая выполнится следующей."
    },
    "StepsIn": {
     "properties": {
@@ -13354,56 +15989,6 @@
     "type": "object",
     "title": "StepsIn",
     "description": "Тело записи строк: готовые строки в порядке чтения."
-   },
-   "StepsOut": {
-    "properties": {
-     "steps": {
-      "items": {
-       "$ref": "#/components/schemas/StepOut"
-      },
-      "type": "array",
-      "title": "Steps"
-     },
-     "scene_version": {
-      "type": "integer",
-      "title": "Scene Version",
-      "description": "Version of the scene these lines were read off",
-      "default": 0
-     },
-     "latex_material": {
-      "type": "string",
-      "title": "Latex Material",
-      "description": "Id of the `<board>.latex.md` material of this solution, the one the model sees along with the rest of the context folder. Empty until the lines are first built.",
-      "default": ""
-     },
-     "unrecognized": {
-      "type": "integer",
-      "title": "Unrecognized",
-      "description": "How many lines nobody has read: lines with empty LaTeX. Such a line stays in the list and reaches the tutor as unavailable content: a verdict cannot be `correct` while the board carries writing nobody has read.",
-      "default": 0
-     },
-     "stale": {
-      "type": "boolean",
-      "title": "Stale",
-      "description": "True when the board has been drawn on since these lines were read. A check refuses on a stale board rather than checking yesterday's text.",
-      "default": false
-     },
-     "at": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "At",
-      "description": "When they were read"
-     }
-    },
-    "type": "object",
-    "title": "StepsOut",
-    "description": "Строки решения и то, не отстали ли они от доски."
    },
    "StrokeIn": {
     "properties": {
@@ -13446,6 +16031,43 @@
     ],
     "title": "StrokeIn",
     "description": "Один росчерк: где вело перо и когда."
+   },
+   "SymbolOut": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "default": ""
+     },
+     "segment": {
+      "type": "string",
+      "title": "Segment",
+      "default": ""
+     },
+     "offset": {
+      "type": "string",
+      "title": "Offset",
+      "default": ""
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind",
+      "default": ""
+     },
+     "size": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Size"
+     }
+    },
+    "type": "object",
+    "title": "SymbolOut"
    },
    "TagPromptIn": {
     "properties": {
@@ -13566,6 +16188,55 @@
     ],
     "title": "TemplateOut",
     "description": "Карточка шаблона. Пути на томе в ней нет и быть не может."
+   },
+   "TotalsOut": {
+    "properties": {
+     "steps": {
+      "type": "integer",
+      "title": "Steps",
+      "description": "Steps executed in the whole run",
+      "default": 0
+     },
+     "ms": {
+      "type": "integer",
+      "title": "Ms",
+      "default": 0
+     },
+     "exit_code": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Exit Code"
+     }
+    },
+    "type": "object",
+    "title": "TotalsOut"
+   },
+   "TruncationOut": {
+    "properties": {
+     "head": {
+      "type": "integer",
+      "title": "Head",
+      "default": 0
+     },
+     "skipped": {
+      "type": "integer",
+      "title": "Skipped",
+      "default": 0
+     },
+     "tail": {
+      "type": "integer",
+      "title": "Tail",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "title": "TruncationOut"
    },
    "UmlIn": {
     "properties": {
@@ -14103,6 +16774,407 @@
     ],
     "title": "WorkspaceReportOut",
     "description": "Тот же отчёт, но названный вместе со своей работой.\n\nСписок пространства смешивает отчёты разных работ в одну ленту, и без имени\nработы две «Главы 1» из разных курсовых на экране неразличимы. Имя\nприезжает вместе с отчётом, а не спрашивается по `project_id` отдельным\nзапросом на карточку: это и был бы тот самый N+1, ради ухода от которого\nсписок собран одним маршрутом."
+   },
+   "api__modules__asm__routes__ChatMessageOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "user",
+       "assistant"
+      ],
+      "title": "Role"
+     },
+     "text": {
+      "type": "string",
+      "title": "Text"
+     },
+     "anchor": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Anchor"
+     },
+     "step": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Step"
+     },
+     "run_no": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Run No"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "role",
+     "text"
+    ],
+    "title": "ChatMessageOut"
+   },
+   "api__modules__asm__routes__ChatOut": {
+    "properties": {
+     "messages": {
+      "items": {
+       "$ref": "#/components/schemas/api__modules__asm__routes__ChatMessageOut"
+      },
+      "type": "array",
+      "title": "Messages"
+     }
+    },
+    "type": "object",
+    "title": "ChatOut"
+   },
+   "api__modules__asm__routes__StepOut": {
+    "properties": {
+     "i": {
+      "type": "integer",
+      "title": "I"
+     },
+     "cs": {
+      "type": "string",
+      "title": "Cs",
+      "default": ""
+     },
+     "ip": {
+      "type": "string",
+      "title": "Ip",
+      "default": ""
+     },
+     "line": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Line"
+     },
+     "asm": {
+      "type": "string",
+      "title": "Asm",
+      "default": ""
+     },
+     "bytes": {
+      "type": "string",
+      "title": "Bytes",
+      "default": ""
+     },
+     "reg": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object",
+      "title": "Reg"
+     },
+     "reg32": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "string"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reg32"
+     },
+     "changed": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Changed"
+     },
+     "mem": {
+      "items": {
+       "$ref": "#/components/schemas/MemWriteOut"
+      },
+      "type": "array",
+      "title": "Mem"
+     },
+     "out": {
+      "type": "string",
+      "title": "Out",
+      "default": ""
+     },
+     "stdin_pos": {
+      "type": "integer",
+      "title": "Stdin Pos",
+      "default": 0
+     },
+     "next": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/StepNextOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "additionalProperties": true,
+    "type": "object",
+    "required": [
+     "i"
+    ],
+    "title": "StepOut",
+    "description": "Один шаг трассы: выполненная команда и состояние после неё.\n\nШаг 0 — начальное состояние. Поля сверх перечисленных уезжают как есть:\nшаг — строка `trace.jsonl`, форму которой держит ядро."
+   },
+   "api__modules__asm__routes__StepsOut": {
+    "properties": {
+     "from": {
+      "type": "integer",
+      "title": "From"
+     },
+     "to": {
+      "type": "integer",
+      "title": "To"
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total",
+      "description": "Steps executed in the whole run"
+     },
+     "truncated": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TruncationOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "steps": {
+      "items": {
+       "$ref": "#/components/schemas/api__modules__asm__routes__StepOut"
+      },
+      "type": "array",
+      "title": "Steps"
+     }
+    },
+    "type": "object",
+    "required": [
+     "from",
+     "to",
+     "total"
+    ],
+    "title": "StepsOut"
+   },
+   "api__modules__board__routes__ChatMessageOut": {
+    "properties": {
+     "role": {
+      "type": "string",
+      "title": "Role",
+      "description": "`you` for the person, `tutor` for the agent"
+     },
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "description": "The message; formulas as LaTeX between dollars"
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At",
+      "description": "When it was written"
+     },
+     "scene_version": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scene Version",
+      "description": "Scene version the person's message was sent with"
+     }
+    },
+    "type": "object",
+    "required": [
+     "role",
+     "text"
+    ],
+    "title": "ChatMessageOut",
+    "description": "Одно сообщение переписки с репетитором."
+   },
+   "api__modules__board__routes__ChatOut": {
+    "properties": {
+     "messages": {
+      "items": {
+       "$ref": "#/components/schemas/api__modules__board__routes__ChatMessageOut"
+      },
+      "type": "array",
+      "title": "Messages"
+     }
+    },
+    "type": "object",
+    "title": "ChatOut",
+    "description": "Переписка с репетитором целиком, старые сообщения первыми."
+   },
+   "api__modules__board__routes__StepOut": {
+    "properties": {
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Reading order, from 1"
+     },
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Short id of the line; the tutor names this"
+     },
+     "latex": {
+      "type": "string",
+      "title": "Latex",
+      "description": "The line in LaTeX, without the dollar signs. Empty on a line nobody has read: such a line stays in the list and reaches the tutor as unavailable content.",
+      "default": ""
+     },
+     "source": {
+      "type": "string",
+      "title": "Source",
+      "description": "Where the LaTeX came from",
+      "default": ""
+     },
+     "confirmed": {
+      "type": "boolean",
+      "title": "Confirmed",
+      "description": "Whether this line has content to show: true when its LaTeX is not empty. There is no confirming step on the board - the person sees what was read under their own writing and corrects the strokes - so this answers whether there is anything here for the tutor to see, and nothing else.",
+      "default": false
+     },
+     "elements": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Elements",
+      "description": "Ids of the scene objects this line is drawn with"
+     },
+     "frame": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Frame",
+      "description": "Id of the frame this line belongs to, null when it belongs to none. A frame is a caption over a group of lines, not a step of the solution."
+     },
+     "frame_name": {
+      "type": "string",
+      "title": "Frame Name",
+      "description": "What that frame is called",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "n",
+     "id"
+    ],
+    "title": "StepOut",
+    "description": "Одна строка решения так, как её читает интерфейс."
+   },
+   "api__modules__board__routes__StepsOut": {
+    "properties": {
+     "steps": {
+      "items": {
+       "$ref": "#/components/schemas/api__modules__board__routes__StepOut"
+      },
+      "type": "array",
+      "title": "Steps"
+     },
+     "scene_version": {
+      "type": "integer",
+      "title": "Scene Version",
+      "description": "Version of the scene these lines were read off",
+      "default": 0
+     },
+     "latex_material": {
+      "type": "string",
+      "title": "Latex Material",
+      "description": "Id of the `<board>.latex.md` material of this solution, the one the model sees along with the rest of the context folder. Empty until the lines are first built.",
+      "default": ""
+     },
+     "unrecognized": {
+      "type": "integer",
+      "title": "Unrecognized",
+      "description": "How many lines nobody has read: lines with empty LaTeX. Such a line stays in the list and reaches the tutor as unavailable content: a verdict cannot be `correct` while the board carries writing nobody has read.",
+      "default": 0
+     },
+     "stale": {
+      "type": "boolean",
+      "title": "Stale",
+      "description": "True when the board has been drawn on since these lines were read. A check refuses on a stale board rather than checking yesterday's text.",
+      "default": false
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At",
+      "description": "When they were read"
+     }
+    },
+    "type": "object",
+    "title": "StepsOut",
+    "description": "Строки решения и то, не отстали ли они от доски."
    }
   }
  },

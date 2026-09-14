@@ -290,7 +290,8 @@ def развести(проект: orchestrator.Project, строки: list[Proj
         if есть_каталог(проект, запись.id):
             continue
         try:
-            проект.create_report(запись.id, template=бланк_работы(проект))
+            проект.create_report(запись.id, template=бланк_работы(проект),
+                                 template_name=имя_бланка_работы(проект))
         except orchestrator.OrchestratorError:
             беды.exception("работа %s: документ отчёта %s не завёлся",
                            проект.path, запись.id)
@@ -307,6 +308,16 @@ def бланк_работы(проект: orchestrator.Project) -> bytes | None:
         return orchestrator.Project(проект.path).template()
     except orchestrator.OrchestratorError:
         return None
+
+
+def имя_бланка_работы(проект: orchestrator.Project) -> str:
+    """Имя для скачивания бланка корневого документа или пустая строка.
+
+    Нужно документу, заведённому по бланку работы: байты у них одни, и имя
+    бланка, под которым его принесли, переезжает вместе с байтами.
+    """
+    корень = orchestrator.Project(проект.path)
+    return корень.artifact_name(str(корень.settings().get("template") or ""))
 
 
 def бланк_отчёта(s, проект: orchestrator.Project, project_id: str,
@@ -447,7 +458,8 @@ def завести_отчёт(project_id: str, тело: ReportIn, request: Requ
             шаблоны.выбрать(s, settings, p.id, проект.path, бланк_ид)
     else:
         try:
-            проект.create_report(запись.id, template=данные)
+            проект.create_report(запись.id, template=данные,
+                                 template_name=шаблон.name if данные else "")
         except orchestrator.OrchestratorError:
             # В тексте беды оркестратора бывает путь на томе — наружу он не
             # уезжает.

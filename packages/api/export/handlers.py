@@ -57,7 +57,8 @@ import materials as _materials
 from ..errors import ApiError
 
 # Имя архива. Только для читаемости вызова `put_artifact` и для описи внутри:
-# у артефакта имени нет, скачивается он под своим идентификатором.
+# имени для скачивания архиву не дают, и он скачивается под именем работы
+# (`modules/artifacts.py`).
 ARCHIVE_NAME = "export.zip"
 
 EXPORT_TOO_LARGE = "export_too_large"

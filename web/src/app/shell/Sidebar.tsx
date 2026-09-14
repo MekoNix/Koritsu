@@ -26,7 +26,7 @@ import { Link, NavLink } from 'react-router-dom'
 import { useModules } from '@/api/hooks'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
-import { Button, Icon, Skeleton, type IconName } from '@/ui'
+import { BetaTag, Button, Icon, Skeleton, type IconName } from '@/ui'
 
 import { WorkspaceSwitcher } from '@/features/workspace/WorkspaceSwitcher'
 
@@ -40,6 +40,8 @@ type Item = {
   colorVar?: string
   /** `/` совпадает со всем — точное совпадение нужно только дашборду. */
   end?: boolean
+  /** Подпись метки «Beta» рядом с названием, если модуль ещё обкатывается. */
+  beta?: string
 }
 
 export type SidebarProps = {
@@ -68,6 +70,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         // остаётся запасным вариантом для модуля, которого ещё нет в словаре.
         label: t(`shell.nav.${m.id}`) === `shell.nav.${m.id}` ? m.title : t(`shell.nav.${m.id}`),
         ...(link.colorVar ? { colorVar: link.colorVar } : {}),
+        ...(link.beta ? { beta: t('shell.beta') } : {}),
       },
     ]
   })
@@ -153,7 +156,7 @@ function NavItem({ item, collapsed }: { item: Item; collapsed: boolean }) {
     <NavLink
       to={item.to}
       end={item.end}
-      title={collapsed ? item.label : undefined}
+      title={collapsed ? (item.beta ? `${item.label} · ${item.beta}` : item.label) : undefined}
       className={({ isActive }) =>
         cn(
           'flex items-center gap-s3 whitespace-nowrap rounded-sm px-2.5 py-2 text-sm font-medium no-underline',
@@ -171,6 +174,7 @@ function NavItem({ item, collapsed }: { item: Item; collapsed: boolean }) {
         style={item.colorVar ? { color: `var(${item.colorVar})` } : undefined}
       />
       {!collapsed && <span className="truncate">{item.label}</span>}
+      {!collapsed && item.beta && <BetaTag label={item.beta} className="ml-auto" />}
     </NavLink>
   )
 }

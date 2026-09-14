@@ -23,7 +23,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { errorText } from '@/api'
 import { useCurrentWorkspace } from '@/api/hooks'
 import { useT } from '@/i18n'
-import { Button, Dialog, EmptyState, ErrorState, Icon, Input, SkeletonLines } from '@/ui'
+import { BetaTag, Button, Dialog, EmptyState, ErrorState, Icon, Input, SkeletonLines } from '@/ui'
 import { canEditWorkspace } from '@/features/projects/data'
 import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
 
@@ -77,8 +77,9 @@ export function BoardListPage() {
       <header className="flex flex-wrap items-end justify-between gap-s3">
         <div className="min-w-0">
           <WorkspaceCaption ws={workspace.data} className="mb-1" />
-          <h1 className="font-display text-2xl font-semibold text-ink-strong">
+          <h1 className="flex items-center gap-s2 font-display text-2xl font-semibold text-ink-strong">
             {t('board.home.title')}
+            <BetaTag label={t('shell.beta')} />
           </h1>
           <p className="max-w-[64ch] text-sm text-muted">{t('board.home.subtitle')}</p>
         </div>

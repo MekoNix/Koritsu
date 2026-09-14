@@ -90,6 +90,13 @@ KADAI_REWORK = "kadai_rework"
 # (`check` / `hint` / `drill`) полем задания. Не `agent`: тот заполняет теги
 # бланка и на работе без манифеста отказывается ещё до вызова модели.
 BOARD_CHECK = "board_check"
+# Модуль «Ассемблер». Три вида, а не один с полем: у сборки с трассой и у дампа
+# памяти нет модели и нет секрета, а у переписки с агентом есть — флаг
+# `needs_secret` ставится на вид, и вид с полем «иногда модель» получал бы
+# секрет и там, где запускается чужая программа в эмуляторе.
+ASM_RUN = "asm_run"
+ASM_MEMORY = "asm_memory"
+ASM_CHAT = "asm_chat"
 
 # Последний вид — `probe`, проба самой очереди. Обработчик его ничего не делает с
 # проектом и ничем не платит; он отвечает тем, что ему дали, и умеет по просьбе
@@ -101,7 +108,17 @@ BOARD_CHECK = "board_check"
 PROBE = "probe"
 
 ВИДЫ = (FILL_TAG, FILL_REPORT, AGENT, BUILD, PARSE, EXPORT,
-        KADAI_RUN, KADAI_REWORK, BOARD_CHECK, PROBE)
+        KADAI_RUN, KADAI_REWORK, BOARD_CHECK, ASM_RUN, ASM_MEMORY, ASM_CHAT,
+        PROBE)
+
+# Виды, по которым уведомление в колокольчике не заводится ни при каком исходе.
+# `asm_memory` ставит не человек, а окна «Дамп» и «Стек», когда им не хватает
+# памяти на шаге, — десятки за сеанс, и каждое «задание завершено» было бы
+# строкой о том, чего человек не заказывал; итог он видит в самом окне.
+# Списком рядом с `ВИДЫ`, а не флагом регистрации: реестр обработчиков
+# наполняется только у воркера, а отмена ждущего задания заводит уведомление в
+# процессе службы, где обработчики не загружены.
+БЕЗ_УВЕДОМЛЕНИЯ = frozenset({ASM_MEMORY})
 
 UNKNOWN_JOB_KIND = "unknown_job_kind"
 
@@ -181,7 +198,8 @@ def load_handlers() -> None:
     from ..export import handlers as экспорт     # export
     from ..materials import jobs as разбор       # parse
     from ..runs import handlers as прогоны       # fill_tag, fill_report, agent,
-                                                 #    build, kadai_run, kadai_rework
+                                                 #    build, kadai_run, kadai_rework,
+                                                 #    board_check, asm_*
 
     прогоны.подключить()                              # прогоны, см. `runs/handlers/`
     разбор._зарегистрировать()                        # `parse`, см. `materials/jobs.py`
@@ -248,6 +266,11 @@ def needs_secret(kind: str) -> bool:
     return False if рег is None else рег.needs_secret
 
 
+def notifies(kind: str) -> bool:
+    """Заводится ли уведомление, когда задание этого вида кончилось."""
+    return kind not in БЕЗ_УВЕДОМЛЕНИЯ
+
+
 def _забыть_всё() -> None:
     """Очистить реестр. Только для тестов: обработчик, зарегистрированный одним
     тестом, не должен доживать до следующего."""
@@ -256,7 +279,7 @@ def _забыть_всё() -> None:
 
 __all__ = ["register", "load_handlers", "known", "check_kind", "registration",
            "handler_for", "registered", "needs_project", "needs_secret",
-           "Регистрация", "Обработчик", "ВИДЫ",
+           "notifies", "Регистрация", "Обработчик", "ВИДЫ", "БЕЗ_УВЕДОМЛЕНИЯ",
            "UNKNOWN_JOB_KIND", "FILL_TAG", "FILL_REPORT", "AGENT", "BUILD",
            "PARSE", "EXPORT", "KADAI_RUN", "KADAI_REWORK", "BOARD_CHECK",
-           "PROBE"]
+           "ASM_RUN", "ASM_MEMORY", "ASM_CHAT", "PROBE"]

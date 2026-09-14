@@ -1,0 +1,17 @@
+T 6
+T
+QT 3
+T
+hello worldRX
+T 9
+T 5
+R CX 2
+T
+wxR CX 4
+R
+RX
+U CS:0 L 10
+D DS:0 L 40
+T
+T
+Q

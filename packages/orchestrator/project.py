@@ -169,6 +169,34 @@ _WRITE_ATTEMPTS = 100
 # половины работы.
 ПАПКА_ДОКУМЕНТОВ = "reports"
 
+# Где рядом с артефактами лежат их имена для скачивания: `artifacts/names/<id>.json`.
+# Каталог, как и `notices/`, в опись артефактов не попадает — его имя не имеет
+# формы идентификатора (`Project.artifacts`).
+ПАПКА_ИМЁН = "names"
+
+# Сколько знаков имени для скачивания хранится. Файловые системы держат 255
+# байт на имя, а кириллица в UTF-8 — два байта на знак; запас оставлен под
+# расширение, которое дописывает отдающий.
+ДЛИНА_ИМЕНИ_АРТЕФАКТА = 120
+
+_УПРАВЛЯЮЩИЕ_RE = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2066-\u2069]")
+
+
+def _имя_файла_артефакта(сырое) -> str:
+    """Имя для скачивания → последняя часть пути без управляющих знаков. Пусто — нет имени.
+
+    Режется здесь, при записи и при чтении, а не только в заголовке ответа:
+    имя загруженного бланка пришло от человека, и в хранилище работы оно обязано
+    лежать уже безвредным — читать его будет не одна служба. Знаки направления
+    письма (`U+202E`) убираются вместе с управляющими: ими `фото<U+202E>fdp.exe`
+    выглядит в «Загрузках» как PDF.
+    """
+    if not isinstance(сырое, str):
+        return ""
+    имя = _УПРАВЛЯЮЩИЕ_RE.sub("", сырое.replace("\\", "/")).rsplit("/", 1)[-1]
+    имя = имя.strip().strip(".").strip()
+    return имя[:ДЛИНА_ИМЕНИ_АРТЕФАКТА].strip()
+
 # Что в настройках принадлежит документу, а не работе. Список закрытый: всё
 # остальное (потолок расхода, пресет по умолчанию, имя работы) одно на работу, и
 # копия этого в каждом документе разошлась бы с оригиналом. Имени документа
@@ -568,7 +596,8 @@ class Project:
     @classmethod
     def create(cls, path: str, *, template: bytes | None = None, name: str = "",
                manifest: dict | None = None,
-               endpoint: str = "", cap_units: float | None = None) -> "Project":
+               endpoint: str = "", cap_units: float | None = None,
+               template_name: str = "") -> "Project":
         """Новый проект: каталог, шаблон артефактом, заготовка манифеста по тегам.
 
         Манифест строится сразу, а не при первом обращении: без него нельзя ни
@@ -619,7 +648,10 @@ class Project:
             raise OrchestratorError(
                 f"в {project.path} уже есть проект: создание стёрло бы его манифест. "
                 "Сменить шаблон — update_template")
-        art = project.put_artifact(bytes(template), name="шаблон")
+        # `template_name` — имя файла бланка, как его принесли; скачивают бланк
+        # под ним (`put_artifact(filename=)`).
+        art = project.put_artifact(bytes(template), name="шаблон",
+                                   filename=template_name)
         project._write_json(project._settings_path(), {
             "name": name, "endpoint": endpoint, "template": art,
             "template_source": "blank" if свой else "given",
@@ -628,7 +660,8 @@ class Project:
         return project
 
     def update_template(self, template: bytes,
-                        *, manifest: dict | None = None) -> hokoku.Manifest:
+                        *, manifest: dict | None = None,
+                        template_name: str = "") -> hokoku.Manifest:
         """Новый DOCX вместо прежнего; решения человека переезжают в новый манифест.
 
         Смысл целиком в `base=`: `manifest_from_template` умеет обновлять
@@ -664,7 +697,8 @@ class Project:
         if manifest is not None:
             основа = _с_манифестом_бланка(основа, manifest)
         settings = self.settings()
-        settings["template"] = self.put_artifact(bytes(template), name="шаблон")
+        settings["template"] = self.put_artifact(bytes(template), name="шаблон",
+                                                 filename=template_name)
         # Пустой документ, построенный нами при создании, перестал быть нашим:
         # дальше это шаблон человека, и молча заменять его больше нельзя.
         settings["template_source"] = "given"
@@ -692,7 +726,8 @@ class Project:
                       if os.path.isdir(os.path.join(корень, имя)))
 
     def create_report(self, report: str, *,
-                      template: bytes | None = None) -> "Project":
+                      template: bytes | None = None,
+                      template_name: str = "") -> "Project":
         """Новый документ работы: каталог, бланк артефактом, заготовка манифеста.
 
         Повторяет `create`, но не зовёт его: `create` заводит **работу** —
@@ -718,7 +753,8 @@ class Project:
             raise OrchestratorError("template — байты DOCX: путей в проекте не хранится")
         # Артефакт кладётся в общее хранилище работы: тот же бланк, выбранный в
         # двух отчётах, — один файл на томе, а не два.
-        art = self.put_artifact(bytes(template), name="шаблон")
+        art = self.put_artifact(bytes(template), name="шаблон",
+                                filename=template_name)
         os.makedirs(каталог, exist_ok=True)
         документ = Project(self.path, report=имя)
         документ._write_json(документ._settings_path(), {
@@ -1241,12 +1277,24 @@ class Project:
             return []
         return [str(mid) for mid in (self.state(CONDITION_STATE).get("past") or ())]
 
-    def put_artifact(self, data: bytes, *, name: str = "", notices=()) -> str:
+    def put_artifact(self, data: bytes, *, name: str = "", notices=(),
+                     filename: str = "") -> str:
         """Байты в хранилище артефактов → идентификатор.
 
         Адресация по содержимому, а не по имени: `name` нигде не участвует и
         принимается только для читаемости вызова. Одинаковые байты дважды —
         один артефакт, поэтому повторная сборка схемы не плодит мусор.
+
+        `filename` — имя, под которым артефакт скачивает человек: исходное имя
+        загруженного бланка, имя отчёта или работы у собранного документа. Это
+        не `name`: там стоят слова для отладки («первая страница», «схема»), и
+        в папке «Загрузки» по ним свой документ не узнать. Имя лежит рядом с
+        артефактом (`artifacts/names/<id>.json`), по файлу на артефакт, а не
+        общей описью: служба и исполнитель заданий пишут артефакты одной работы
+        разом, и опись, переписываемая целиком, теряла бы чужое имя. Пустое имя
+        прежнего не стирает; непустое заменяет — те же байты, названные заново,
+        скачиваются под последним именем. Путём имя не бывает: от него остаётся
+        последняя часть без управляющих знаков (`artifact_name`).
 
         `notices` — замечания того, кто артефакт построил (`kyotsu.Notice`;
         сегодня это `fragmos`: «в схему не вошло: goto case»). Они кладутся
@@ -1266,7 +1314,39 @@ class Project:
             os.makedirs(folder, exist_ok=True)
             self._write_json(os.path.join(folder, f"{art}.json"),
                              [n.to_dict() for n in notices])
+        имя = _имя_файла_артефакта(filename)
+        if имя:
+            folder = os.path.join(self._artifacts_dir(), ПАПКА_ИМЁН)
+            os.makedirs(folder, exist_ok=True)
+            self._write_json(os.path.join(folder, f"{art}.json"), {"name": имя})
         return art
+
+    def artifact_name(self, art_id: str) -> str:
+        """Имя, под которым артефакт скачивают, или пустая строка.
+
+        Ищется там же и в том же порядке, что байты (`resolve_artifact`):
+        идентификатор материала — имя материала, артефакта — записанное при
+        `put_artifact(filename=)`. Пусто — имени не давали (артефакты,
+        положенные до появления имён, схемы, картинки превью); как назвать файл
+        тогда, решает тот, кто его отдаёт.
+        """
+        art_id = str(art_id)
+        if not hokoku.wire.ARTIFACT_RE.match(art_id) or ".." in art_id:
+            return ""
+        try:
+            return _имя_файла_артефакта(self.store().get(art_id).name)
+        except materials.MaterialsError:
+            pass                                # не материал — ищем у артефактов
+        путь = os.path.join(self._artifacts_dir(), ПАПКА_ИМЁН, f"{art_id}.json")
+        try:
+            запись = self._read_json(путь, None)
+        except (OSError, ValueError):
+            # Битая запись имени не должна стоить человеку файла: скачивание
+            # отдаст его под запасным именем.
+            return ""
+        if not isinstance(запись, dict):
+            return ""
+        return _имя_файла_артефакта(запись.get("name"))
 
     def artifacts(self) -> list[str]:
         """Идентификаторы всего, что лежит в хранилище артефактов. По порядку.

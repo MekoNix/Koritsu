@@ -79,7 +79,7 @@ def собрать(ctx) -> dict:
     проект = ctx.project
     итог = orchestrator.build(проект, keys=ключи, outputs=выходы,
                               name=str(payload.get("name") or "") or None,
-                              store=True)
+                              store=True, filename=имя_документа(ctx))
     отчёт = итог.get("report") or {}
     if не_собралось(отчёт):
         # Беда самой сборки (шаблон подменён, задание не то) приходит полем
@@ -107,6 +107,32 @@ def собрать(ctx) -> dict:
             "problems": len(итог.get("problems") or ()),
             "errors": list(отчёт.get("errors") or ()),
             "unfilled": list(отчёт.get("unfilled") or ())}
+
+
+def имя_документа(ctx) -> str:
+    """Под каким именем скачивают собранное: имя отчёта, иначе имя работы.
+
+    Берётся из базы, а не из `payload.name`: поле задания пишет клиент, а имя
+    для «Загрузок» — то, под которым человек видит отчёт в списке. У отчёта без
+    своего имени (интерфейс называет его «Отчёт 2» на своём языке) файл
+    получает имя работы. Беда базы сборку не срывает: файл уйдёт под запасным
+    именем, которое ставит скачивание (`modules/artifacts.py`).
+    """
+    from ...projects.models import Project, ProjectRun        # noqa: PLC0415
+
+    запуск = ctx.report or ctx.solution
+    try:
+        with ctx.session_scope() as s:
+            if запуск:
+                запись = s.get(ProjectRun, запуск)
+                if (запись is not None and запись.project_id == ctx.job.project_id
+                        and (запись.name or "").strip()):
+                    return запись.name.strip()
+            работа = s.get(Project, ctx.job.project_id) if ctx.job.project_id else None
+            return str(getattr(работа, "name", "") or "").strip()
+    except Exception:                                        # noqa: BLE001
+        беды.exception("сборка %s: имя документа не прочиталось", ctx.job_id)
+        return ""
 
 
 def запомнить_превью(ctx, проект, pdf: str | None, *, запуск: str) -> str:

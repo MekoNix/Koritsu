@@ -20,12 +20,19 @@ export type ModuleLink = {
   icon: IconName
   /** Переменная цвета модуля из темы (`--mod-*`), если он у неё есть. */
   colorVar?: string
+  /**
+   * Модуль открыт, но ещё обкатывается: у названия в сайдбаре, на плитке дашборда и в
+   * заголовке его страницы стоит метка «Beta». Признак сайта, а не службы: служба решает,
+   * показывать ли модуль вообще, а насколько он доведён — вопрос подписи на экране.
+   */
+  beta?: boolean
 }
 
 export const MODULE_LINKS: Record<string, ModuleLink> = {
   reports: { path: '/reports', icon: 'file', colorVar: '--mod-reports' },
   kadai: { path: '/kadai', icon: 'tasks', colorVar: '--mod-kadai' },
-  board: { path: '/board', icon: 'board', colorVar: '--mod-board' },
+  board: { path: '/board', icon: 'board', colorVar: '--mod-board', beta: true },
+  asm: { path: '/asm', icon: 'queue', colorVar: '--mod-asm', beta: true },
   flowcharts: { path: '/flowcharts', icon: 'flowchart', colorVar: '--mod-flowcharts' },
   uml: { path: '/uml', icon: 'uml', colorVar: '--mod-uml' },
 }

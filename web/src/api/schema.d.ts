@@ -2040,6 +2040,242 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/asm/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether assembler tools are installed
+         * @description Says whether this server can build and trace programs: DOSBox-X, TASM, TLINK and DebugX, each on its own. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.
+         */
+        get: operations["asm_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/asm/programs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assembler programs of a workspace
+         * @description Every assembler program of one workspace, most recently edited first, with the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
+         */
+        get: operations["asm_programs"];
+        put?: never;
+        /**
+         * Start a new assembler program in a workspace
+         * @description Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.
+         */
+        post: operations["asm_create_program"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/asm/programs/{program_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One assembler program
+         * @description The source with its version counter, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["asm_program"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a program
+         * @description Removes the program: its journal entry, source, settings, conversation and every run with its trace. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        delete: operations["asm_delete_program"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a program
+         * @description Renames the program. An empty name resets it: the interface names it from the module and n again. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        patch: operations["asm_rename_program"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/asm/programs/{program_id}/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Write the source of a program
+         * @description Replaces the source and bumps its version. `version` in the body is the one this edit is based on; if it is not the current one, the answer is 409 and carries the source that won. Runs already queued keep the source they were started with. Editor role. 400 invalid_id, 400 source_too_big, 403 forbidden, 404 not_found, 409 source_conflict.
+         */
+        put: operations["asm_put_source"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/asm/programs/{program_id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Write the run settings of a program
+         * @description Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. A build flag is a slash and a short word (`/zi`); the step limit is capped by the server. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
+         */
+        put: operations["asm_put_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/asm/programs/{program_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build, or build and trace, a program
+         * @description Takes the source and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are `tasm`, `tlink` and `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.
+         */
+        post: operations["asm_start_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Summary of one run
+         * @description The run without its steps: build result with messages, listing, segments and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["asm_run"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A page of trace steps
+         * @description Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["asm_run_steps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/debugx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Raw debugger output for a range of steps
+         * @description What DebugX printed for steps [from, to), as text, at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["asm_run_debugx"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dump memory at a step of a run
+         * @description Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.
+         */
+        post: operations["asm_run_memory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/asm/programs/{program_id}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The conversation with the agent on a program
+         * @description Every message exchanged with the agent on this program, oldest first. The question and the answer land here together when the `asm_chat` job is done. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["asm_chat"];
+        put?: never;
+        /**
+         * Ask the agent about a program
+         * @description Queues an `asm_chat` job: the agent answers in words, looking at the source, the build messages and the trace of the run at the step named, and at what the message is anchored to. `endpoint` names the model provider preset that pays for it. Editor role. 400 endpoint_required, 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found.
+         */
+        post: operations["asm_send_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/flowcharts/modes": {
         parameters: {
             query?: never;
@@ -3216,6 +3452,242 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/asm/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether assembler tools are installed
+         * @description Says whether this server can build and trace programs: DOSBox-X, TASM, TLINK and DebugX, each on its own. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.
+         */
+        get: operations["asm_status_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/asm/programs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assembler programs of a workspace
+         * @description Every assembler program of one workspace, most recently edited first, with the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
+         */
+        get: operations["asm_programs_v1"];
+        put?: never;
+        /**
+         * Start a new assembler program in a workspace
+         * @description Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.
+         */
+        post: operations["asm_create_program_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/asm/programs/{program_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One assembler program
+         * @description The source with its version counter, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["asm_program_v1"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a program
+         * @description Removes the program: its journal entry, source, settings, conversation and every run with its trace. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        delete: operations["asm_delete_program_v1"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a program
+         * @description Renames the program. An empty name resets it: the interface names it from the module and n again. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        patch: operations["asm_rename_program_v1"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/asm/programs/{program_id}/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Write the source of a program
+         * @description Replaces the source and bumps its version. `version` in the body is the one this edit is based on; if it is not the current one, the answer is 409 and carries the source that won. Runs already queued keep the source they were started with. Editor role. 400 invalid_id, 400 source_too_big, 403 forbidden, 404 not_found, 409 source_conflict.
+         */
+        put: operations["asm_put_source_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/asm/programs/{program_id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Write the run settings of a program
+         * @description Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. A build flag is a slash and a short word (`/zi`); the step limit is capped by the server. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
+         */
+        put: operations["asm_put_settings_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build, or build and trace, a program
+         * @description Takes the source and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are `tasm`, `tlink` and `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.
+         */
+        post: operations["asm_start_run_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Summary of one run
+         * @description The run without its steps: build result with messages, listing, segments and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["asm_run_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A page of trace steps
+         * @description Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["asm_run_steps_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/debugx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Raw debugger output for a range of steps
+         * @description What DebugX printed for steps [from, to), as text, at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["asm_run_debugx_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dump memory at a step of a run
+         * @description Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.
+         */
+        post: operations["asm_run_memory_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/asm/programs/{program_id}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The conversation with the agent on a program
+         * @description Every message exchanged with the agent on this program, oldest first. The question and the answer land here together when the `asm_chat` job is done. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["asm_chat_v1"];
+        put?: never;
+        /**
+         * Ask the agent about a program
+         * @description Queues an `asm_chat` job: the agent answers in words, looking at the source, the build messages and the trace of the run at the step named, and at what the message is anchored to. `endpoint` names the model provider preset that pays for it. Editor role. 400 endpoint_required, 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found.
+         */
+        post: operations["asm_send_chat_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/flowcharts/modes": {
         parameters: {
             query?: never;
@@ -3576,6 +4048,50 @@ export interface components {
             revoked_at?: string | null;
         };
         /**
+         * AsmSettingsModel
+         * @description Настройки прогона программы. Заменяются целиком.
+         */
+        AsmSettingsModel: {
+            /**
+             * Stdin
+             * @description Everything the program will read from standard input, set in advance: a run does not pause for typing.
+             * @default
+             */
+            stdin: string;
+            /**
+             * Step Limit
+             * @description How many steps the trace may take before it stops
+             * @default 100000
+             */
+            step_limit: number;
+            /**
+             * Mode32
+             * @description Trace 32-bit registers as well
+             * @default false
+             */
+            mode32: boolean;
+            /**
+             * Tasm Flags
+             * @description Command line flags of TASM, each of the form /x
+             */
+            tasm_flags?: string[];
+            /**
+             * Tlink Flags
+             * @description Command line flags of TLINK, each of the form /x
+             */
+            tlink_flags?: string[];
+            /**
+             * Breakpoints
+             * @description Source lines with a breakpoint, from 1
+             */
+            breakpoints?: number[];
+            /**
+             * Watches
+             * @description Watch expressions, as the page shows them
+             */
+            watches?: string[];
+        };
+        /**
          * BlankOut
          * @description Бланк, собранный из блоков решения: где он теперь лежит и чем его взять.
          */
@@ -3699,39 +4215,75 @@ export interface components {
             /** Template Id */
             template_id?: string | null;
         };
-        /**
-         * ChatMessageOut
-         * @description Одно сообщение переписки с репетитором.
-         */
-        ChatMessageOut: {
+        /** BuildMessageOut */
+        BuildMessageOut: {
             /**
-             * Role
-             * @description `you` for the person, `tutor` for the agent
+             * Severity
+             * @default
              */
-            role: string;
+            severity: string;
+            /**
+             * Tool
+             * @default
+             */
+            tool: string;
+            /** Line */
+            line?: number | null;
             /**
              * Text
-             * @description The message; formulas as LaTeX between dollars
+             * @default
              */
             text: string;
-            /**
-             * At
-             * @description When it was written
-             */
-            at?: string | null;
-            /**
-             * Scene Version
-             * @description Scene version the person's message was sent with
-             */
-            scene_version?: number | null;
         };
-        /**
-         * ChatOut
-         * @description Переписка с репетитором целиком, старые сообщения первыми.
-         */
-        ChatOut: {
+        /** BuildOut */
+        BuildOut: {
+            /**
+             * Ok
+             * @default false
+             */
+            ok: boolean;
+            /**
+             * Log
+             * @description What TASM and TLINK printed
+             * @default
+             */
+            log: string;
             /** Messages */
-            messages?: components["schemas"]["ChatMessageOut"][];
+            messages?: components["schemas"]["BuildMessageOut"][];
+            /** Listing */
+            listing?: components["schemas"]["ListingLineOut"][];
+            /** Segments */
+            segments?: components["schemas"]["SegmentOut"][];
+            /** Symbols */
+            symbols?: components["schemas"]["SymbolOut"][];
+        };
+        /** ChatIn */
+        ChatIn: {
+            /** Text */
+            text: string;
+            /**
+             * Anchor
+             * @description What the message is about: {kind: line, line} | {kind: register, name} | {kind: flag, name} | {kind: cell, seg, off} | {kind: doc, id} | {kind: run} | {kind: text, window, text, line_from, line_to} — text is the selected text as is, at most 4000 characters; window is one of source, listing, output, debugx, build; line_from/line_to are source lines or null
+             */
+            anchor?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Step
+             * @description Step the trace cursor stands on
+             */
+            step?: number | null;
+            /**
+             * Run No
+             * @description Run to look at; the last one if null
+             */
+            run_no?: number | null;
+            /**
+             * Endpoint
+             * @description Model provider preset the answer is paid with
+             * @default
+             */
+            endpoint: string;
         };
         /**
          * ConditionIn
@@ -3803,6 +4355,15 @@ export interface components {
              * @description Files attached to the project as a whole, in upload order; `selected` says which of them this solution shows the model
              */
             common?: components["schemas"]["ContextFileOut"][];
+        };
+        /** DebugxOut */
+        DebugxOut: {
+            /**
+             * Text
+             * @description Raw DebugX output of those steps
+             * @default
+             */
+            text: string;
         };
         /**
          * DiagramBuiltOut
@@ -4035,6 +4596,29 @@ export interface components {
              */
             source: string;
         };
+        /** DumpOut */
+        DumpOut: {
+            /**
+             * Step
+             * @default 0
+             */
+            step: number;
+            /**
+             * Seg
+             * @default
+             */
+            seg: string;
+            /**
+             * Off
+             * @default
+             */
+            off: string;
+            /**
+             * Hex
+             * @default
+             */
+            hex: string;
+        };
         /**
          * ErrorBody
          * @description Тело ошибки: что случилось и, если это применимо, где.
@@ -4159,7 +4743,7 @@ export interface components {
         JobIn: {
             /**
              * Kind
-             * @description What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, board_check, probe
+             * @description What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, board_check, asm_run, asm_memory, asm_chat, probe
              */
             kind: string;
             /**
@@ -4174,6 +4758,33 @@ export interface components {
             payload?: {
                 [key: string]: unknown;
             };
+        };
+        /** JobStartedOut */
+        JobStartedOut: {
+            /** Job Id */
+            job_id: string;
+        };
+        /** ListingLineOut */
+        ListingLineOut: {
+            /**
+             * Line
+             * @default 0
+             */
+            line: number;
+            /** Segment */
+            segment?: string | null;
+            /** Offset */
+            offset?: string | null;
+            /**
+             * Bytes
+             * @default
+             */
+            bytes: string;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
         };
         /**
          * LiveReportOut
@@ -4227,6 +4838,29 @@ export interface components {
              */
             updated_at?: string | null;
         };
+        /** LoadOut */
+        LoadOut: {
+            /**
+             * Psp
+             * @default
+             */
+            psp: string;
+            /**
+             * Cs
+             * @default
+             */
+            cs: string;
+            /**
+             * Ds
+             * @default
+             */
+            ds: string;
+            /**
+             * Ss
+             * @default
+             */
+            ss: string;
+        };
         /**
          * LoginIn
          * @description Вход. Длина пароля здесь **не** проверяется: старый пароль может быть
@@ -4237,6 +4871,29 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /** MemWriteOut */
+        MemWriteOut: {
+            /**
+             * Seg
+             * @default
+             */
+            seg: string;
+            /**
+             * Off
+             * @default
+             */
+            off: string;
+            /**
+             * Old
+             * @default
+             */
+            old: string;
+            /**
+             * New
+             * @default
+             */
+            new: string;
         };
         /**
          * MemberIn
@@ -4256,6 +4913,31 @@ export interface components {
         MemberRoleIn: {
             /** Role */
             role: string;
+        };
+        /** MemoryIn */
+        MemoryIn: {
+            /**
+             * Step
+             * @description Step to dump the memory at
+             */
+            step: number;
+            /** Ranges */
+            ranges: components["schemas"]["MemoryRangeIn"][];
+        };
+        /** MemoryRangeIn */
+        MemoryRangeIn: {
+            /**
+             * Seg
+             * @description Segment, hex
+             */
+            seg: string;
+            /**
+             * Off
+             * @description Offset, hex
+             */
+            off: string;
+            /** Len */
+            len: number;
         };
         /**
          * ModelKeyIn
@@ -4304,6 +4986,109 @@ export interface components {
              * @description Whether the agent may overwrite values edited by hand
              */
             agent_overwrite?: boolean | null;
+        };
+        /**
+         * ProgramCardOut
+         * @description Программа в ленте пространства.
+         */
+        ProgramCardOut: {
+            /** Project Id */
+            project_id: string;
+            /**
+             * Program Id
+             * @description Run id of this program in its project
+             */
+            program_id: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * N
+             * @description Which program of its project, from 1
+             */
+            n: number;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Updated At
+             * @description When the source was last written
+             */
+            updated_at?: string | null;
+            /**
+             * Last Status
+             * @description Status of the last run: queued, building, running, done, build_error, step_limit, timeout or crashed. Null when the program was never run.
+             */
+            last_status?: string | null;
+        };
+        /**
+         * ProgramCreateIn
+         * @description Тело заведения программы: в каком пространстве и как звать.
+         */
+        ProgramCreateIn: {
+            /**
+             * Workspace Id
+             * @description Which workspace the program goes to. The work it lands in is chosen by the service.
+             */
+            workspace_id: string;
+            /**
+             * Name
+             * @description What to call it. Empty is fine: the interface names it
+             * @default
+             */
+            name: string;
+        };
+        /** ProgramCreatedOut */
+        ProgramCreatedOut: {
+            /** Project Id */
+            project_id: string;
+            /** Program Id */
+            program_id: string;
+            /** Name */
+            name: string;
+            /** N */
+            n: number;
+        };
+        /**
+         * ProgramOut
+         * @description Программа целиком: исходник с версией, настройки, последний прогон.
+         */
+        ProgramOut: {
+            /** Project Id */
+            project_id: string;
+            /** Program Id */
+            program_id: string;
+            /** Name */
+            name: string;
+            /** N */
+            n: number;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Version
+             * @description Version counter of the source. Pass it back in PUT source: a stale one loses to whoever wrote first.
+             * @default 0
+             */
+            version: number;
+            /**
+             * At
+             * @description When the source was written
+             */
+            at?: string | null;
+            settings: components["schemas"]["AsmSettingsModel"];
+            /** Breakpoints */
+            breakpoints?: number[];
+            /** Watches */
+            watches?: string[];
+            /**
+             * Last Run No
+             * @description Number of the last run, null when never run
+             */
+            last_run_no?: number | null;
         };
         /**
          * ProjectPatchIn
@@ -4511,6 +5296,21 @@ export interface components {
             /** Nickname */
             nickname: string;
         };
+        /** RenameIn */
+        RenameIn: {
+            /**
+             * Name
+             * @description New name. Empty resets it to the default name
+             */
+            name: string;
+        };
+        /** RenameOut */
+        RenameOut: {
+            /** Program Id */
+            program_id: string;
+            /** Name */
+            name: string;
+        };
         /**
          * ReportIn
          * @description Тело создания отчёта: по какому бланку и как его звать.
@@ -4613,6 +5413,71 @@ export interface components {
              */
             n: number;
         };
+        /** RunIn */
+        RunIn: {
+            /**
+             * Mode
+             * @description `build` assembles and links only, `run` also traces
+             * @default run
+             * @enum {string}
+             */
+            mode: "build" | "run";
+        };
+        /** RunStartedOut */
+        RunStartedOut: {
+            /** Job Id */
+            job_id: string;
+            /** Run No */
+            run_no: number;
+        };
+        /**
+         * RunSummaryOut
+         * @description Итог прогона без шагов, или его ход, пока итога нет.
+         *
+         *     Поля, которые ядро допишет сверх перечисленных, уезжают как есть: итог
+         *     читается с тома, и форма его — договор ядра с сайтом, а не выбор службы.
+         */
+        RunSummaryOut: {
+            /** Run No */
+            run_no: number;
+            /** Job Id */
+            job_id?: string | null;
+            /**
+             * Status
+             * @description queued, building or running while the job goes; done, build_error, step_limit, timeout or crashed after
+             */
+            status: string;
+            /**
+             * Source
+             * @description The source this run was built from. Line numbers in build messages, the listing and steps refer to it
+             */
+            source?: string | null;
+            build?: components["schemas"]["BuildOut"] | null;
+            load?: components["schemas"]["LoadOut"] | null;
+            /**
+             * Stdin
+             * @default
+             */
+            stdin: string;
+            /**
+             * Step Limit
+             * @default 0
+             */
+            step_limit: number;
+            /**
+             * Mode32
+             * @default false
+             */
+            mode32: boolean;
+            totals?: components["schemas"]["TotalsOut"];
+            truncated?: components["schemas"]["TruncationOut"] | null;
+            /** Dumps */
+            dumps?: components["schemas"]["DumpOut"][];
+            /** Error */
+            error?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * SceneConflictOut
          * @description Ответ `409`: та же форма отказа, и рядом с ней — сцена, которая победила.
@@ -4696,6 +5561,29 @@ export interface components {
              * @description When it was last written
              */
             at?: string | null;
+        };
+        /** SegmentOut */
+        SegmentOut: {
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Cls
+             * @default
+             */
+            cls: string;
+            /**
+             * Start
+             * @default
+             */
+            start: string;
+            /**
+             * Length
+             * @default
+             */
+            length: string;
         };
         /**
          * SessionOut
@@ -4806,6 +5694,72 @@ export interface components {
             condition_name: string;
         };
         /**
+         * SourceConflictOut
+         * @description Ответ `409`: отказ и рядом исходник, который победил.
+         */
+        SourceConflictOut: {
+            error: components["schemas"]["ErrorBody"];
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Version
+             * @default 0
+             */
+            version: number;
+        };
+        /** SourceIn */
+        SourceIn: {
+            /** Source */
+            source: string;
+            /**
+             * Version
+             * @description The version this edit is based on. A version that is not the current one answers 409 with the current source.
+             * @default 0
+             */
+            version: number;
+        };
+        /** SourceOut */
+        SourceOut: {
+            /** Version */
+            version: number;
+            /** At */
+            at?: string | null;
+        };
+        /**
+         * StatusOut
+         * @description Есть ли на машине то, чем собирается и трассируется программа.
+         */
+        StatusOut: {
+            /**
+             * Available
+             * @description Whether programs can be built and traced here. False is a state of the machine, not an error of the request.
+             */
+            available: boolean;
+            /**
+             * Dosbox
+             * @description DOSBox-X is found
+             */
+            dosbox: boolean;
+            /**
+             * Tasm
+             * @description TASM.EXE is in the tools directory
+             */
+            tasm: boolean;
+            /**
+             * Tlink
+             * @description TLINK.EXE is in the tools directory
+             */
+            tlink: boolean;
+            /**
+             * Debugx
+             * @description DEBUGX.COM is found
+             */
+            debugx: boolean;
+        };
+        /**
          * StepLineIn
          * @description Одна строка решения так, как её прислала страница.
          */
@@ -4840,54 +5794,34 @@ export interface components {
             source: string;
         };
         /**
-         * StepOut
-         * @description Одна строка решения так, как её читает интерфейс.
+         * StepNextOut
+         * @description Команда, которая выполнится следующей.
          */
-        StepOut: {
+        StepNextOut: {
             /**
-             * N
-             * @description Reading order, from 1
-             */
-            n: number;
-            /**
-             * Id
-             * @description Short id of the line; the tutor names this
-             */
-            id: string;
-            /**
-             * Latex
-             * @description The line in LaTeX, without the dollar signs. Empty on a line nobody has read: such a line stays in the list and reaches the tutor as unavailable content.
+             * Cs
              * @default
              */
-            latex: string;
+            cs: string;
             /**
-             * Source
-             * @description Where the LaTeX came from
+             * Ip
              * @default
              */
-            source: string;
+            ip: string;
+            /** Line */
+            line?: number | null;
             /**
-             * Confirmed
-             * @description Whether this line has content to show: true when its LaTeX is not empty. There is no confirming step on the board - the person sees what was read under their own writing and corrects the strokes - so this answers whether there is anything here for the tutor to see, and nothing else.
-             * @default false
-             */
-            confirmed: boolean;
-            /**
-             * Elements
-             * @description Ids of the scene objects this line is drawn with
-             */
-            elements?: string[];
-            /**
-             * Frame
-             * @description Id of the frame this line belongs to, null when it belongs to none. A frame is a caption over a group of lines, not a step of the solution.
-             */
-            frame?: string | null;
-            /**
-             * Frame Name
-             * @description What that frame is called
+             * Asm
              * @default
              */
-            frame_name: string;
+            asm: string;
+            /**
+             * Bytes
+             * @default
+             */
+            bytes: string;
+        } & {
+            [key: string]: unknown;
         };
         /**
          * StepsIn
@@ -4899,43 +5833,6 @@ export interface components {
              * @description The lines of the solution, top to bottom. Reading order is the order of this list: which line stands above which is a fact about the drawing, and the page is the one looking at it.
              */
             lines?: components["schemas"]["StepLineIn"][];
-        };
-        /**
-         * StepsOut
-         * @description Строки решения и то, не отстали ли они от доски.
-         */
-        StepsOut: {
-            /** Steps */
-            steps?: components["schemas"]["StepOut"][];
-            /**
-             * Scene Version
-             * @description Version of the scene these lines were read off
-             * @default 0
-             */
-            scene_version: number;
-            /**
-             * Latex Material
-             * @description Id of the `<board>.latex.md` material of this solution, the one the model sees along with the rest of the context folder. Empty until the lines are first built.
-             * @default
-             */
-            latex_material: string;
-            /**
-             * Unrecognized
-             * @description How many lines nobody has read: lines with empty LaTeX. Such a line stays in the list and reaches the tutor as unavailable content: a verdict cannot be `correct` while the board carries writing nobody has read.
-             * @default 0
-             */
-            unrecognized: number;
-            /**
-             * Stale
-             * @description True when the board has been drawn on since these lines were read. A check refuses on a stale board rather than checking yesterday's text.
-             * @default false
-             */
-            stale: boolean;
-            /**
-             * At
-             * @description When they were read
-             */
-            at?: string | null;
         };
         /**
          * StrokeIn
@@ -4957,6 +5854,31 @@ export interface components {
              * @description Milliseconds of each point, the same length as `x`. May be left out; timing sharpens recognition but is not required by it.
              */
             t?: number[] | null;
+        };
+        /** SymbolOut */
+        SymbolOut: {
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Segment
+             * @default
+             */
+            segment: string;
+            /**
+             * Offset
+             * @default
+             */
+            offset: string;
+            /**
+             * Kind
+             * @default
+             */
+            kind: string;
+            /** Size */
+            size?: number | null;
         };
         /**
          * TagPromptIn
@@ -5037,6 +5959,40 @@ export interface components {
              * @description Whether this is the template the work is built from. Only listed for templates attached to a project: on the personal shelf the question has no meaning.
              */
             active?: boolean | null;
+        };
+        /** TotalsOut */
+        TotalsOut: {
+            /**
+             * Steps
+             * @description Steps executed in the whole run
+             * @default 0
+             */
+            steps: number;
+            /**
+             * Ms
+             * @default 0
+             */
+            ms: number;
+            /** Exit Code */
+            exit_code?: number | null;
+        };
+        /** TruncationOut */
+        TruncationOut: {
+            /**
+             * Head
+             * @default 0
+             */
+            head: number;
+            /**
+             * Skipped
+             * @default 0
+             */
+            skipped: number;
+            /**
+             * Tail
+             * @default 0
+             */
+            tail: number;
         };
         /**
          * UmlIn
@@ -5392,6 +6348,227 @@ export interface components {
              * @default
              */
             project_name: string;
+        };
+        /** ChatMessageOut */
+        api__modules__asm__routes__ChatMessageOut: {
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Text */
+            text: string;
+            /** Anchor */
+            anchor?: {
+                [key: string]: unknown;
+            } | null;
+            /** Step */
+            step?: number | null;
+            /** Run No */
+            run_no?: number | null;
+            /** Created At */
+            created_at?: string | null;
+        };
+        /** ChatOut */
+        api__modules__asm__routes__ChatOut: {
+            /** Messages */
+            messages?: components["schemas"]["api__modules__asm__routes__ChatMessageOut"][];
+        };
+        /**
+         * StepOut
+         * @description Один шаг трассы: выполненная команда и состояние после неё.
+         *
+         *     Шаг 0 — начальное состояние. Поля сверх перечисленных уезжают как есть:
+         *     шаг — строка `trace.jsonl`, форму которой держит ядро.
+         */
+        api__modules__asm__routes__StepOut: {
+            /** I */
+            i: number;
+            /**
+             * Cs
+             * @default
+             */
+            cs: string;
+            /**
+             * Ip
+             * @default
+             */
+            ip: string;
+            /** Line */
+            line?: number | null;
+            /**
+             * Asm
+             * @default
+             */
+            asm: string;
+            /**
+             * Bytes
+             * @default
+             */
+            bytes: string;
+            /** Reg */
+            reg?: {
+                [key: string]: string;
+            };
+            /** Reg32 */
+            reg32?: {
+                [key: string]: string;
+            } | null;
+            /** Changed */
+            changed?: string[];
+            /** Mem */
+            mem?: components["schemas"]["MemWriteOut"][];
+            /**
+             * Out
+             * @default
+             */
+            out: string;
+            /**
+             * Stdin Pos
+             * @default 0
+             */
+            stdin_pos: number;
+            next?: components["schemas"]["StepNextOut"] | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** StepsOut */
+        api__modules__asm__routes__StepsOut: {
+            /** From */
+            from: number;
+            /** To */
+            to: number;
+            /**
+             * Total
+             * @description Steps executed in the whole run
+             */
+            total: number;
+            truncated?: components["schemas"]["TruncationOut"] | null;
+            /** Steps */
+            steps?: components["schemas"]["api__modules__asm__routes__StepOut"][];
+        };
+        /**
+         * ChatMessageOut
+         * @description Одно сообщение переписки с репетитором.
+         */
+        api__modules__board__routes__ChatMessageOut: {
+            /**
+             * Role
+             * @description `you` for the person, `tutor` for the agent
+             */
+            role: string;
+            /**
+             * Text
+             * @description The message; formulas as LaTeX between dollars
+             */
+            text: string;
+            /**
+             * At
+             * @description When it was written
+             */
+            at?: string | null;
+            /**
+             * Scene Version
+             * @description Scene version the person's message was sent with
+             */
+            scene_version?: number | null;
+        };
+        /**
+         * ChatOut
+         * @description Переписка с репетитором целиком, старые сообщения первыми.
+         */
+        api__modules__board__routes__ChatOut: {
+            /** Messages */
+            messages?: components["schemas"]["api__modules__board__routes__ChatMessageOut"][];
+        };
+        /**
+         * StepOut
+         * @description Одна строка решения так, как её читает интерфейс.
+         */
+        api__modules__board__routes__StepOut: {
+            /**
+             * N
+             * @description Reading order, from 1
+             */
+            n: number;
+            /**
+             * Id
+             * @description Short id of the line; the tutor names this
+             */
+            id: string;
+            /**
+             * Latex
+             * @description The line in LaTeX, without the dollar signs. Empty on a line nobody has read: such a line stays in the list and reaches the tutor as unavailable content.
+             * @default
+             */
+            latex: string;
+            /**
+             * Source
+             * @description Where the LaTeX came from
+             * @default
+             */
+            source: string;
+            /**
+             * Confirmed
+             * @description Whether this line has content to show: true when its LaTeX is not empty. There is no confirming step on the board - the person sees what was read under their own writing and corrects the strokes - so this answers whether there is anything here for the tutor to see, and nothing else.
+             * @default false
+             */
+            confirmed: boolean;
+            /**
+             * Elements
+             * @description Ids of the scene objects this line is drawn with
+             */
+            elements?: string[];
+            /**
+             * Frame
+             * @description Id of the frame this line belongs to, null when it belongs to none. A frame is a caption over a group of lines, not a step of the solution.
+             */
+            frame?: string | null;
+            /**
+             * Frame Name
+             * @description What that frame is called
+             * @default
+             */
+            frame_name: string;
+        };
+        /**
+         * StepsOut
+         * @description Строки решения и то, не отстали ли они от доски.
+         */
+        api__modules__board__routes__StepsOut: {
+            /** Steps */
+            steps?: components["schemas"]["api__modules__board__routes__StepOut"][];
+            /**
+             * Scene Version
+             * @description Version of the scene these lines were read off
+             * @default 0
+             */
+            scene_version: number;
+            /**
+             * Latex Material
+             * @description Id of the `<board>.latex.md` material of this solution, the one the model sees along with the rest of the context folder. Empty until the lines are first built.
+             * @default
+             */
+            latex_material: string;
+            /**
+             * Unrecognized
+             * @description How many lines nobody has read: lines with empty LaTeX. Such a line stays in the list and reaches the tutor as unavailable content: a verdict cannot be `correct` while the board carries writing nobody has read.
+             * @default 0
+             */
+            unrecognized: number;
+            /**
+             * Stale
+             * @description True when the board has been drawn on since these lines were read. A check refuses on a stale board rather than checking yesterday's text.
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * At
+             * @description When they were read
+             */
+            at?: string | null;
         };
     };
     responses: never;
@@ -9449,7 +10626,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StepsOut"];
+                    "application/json": components["schemas"]["api__modules__board__routes__StepsOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -9487,7 +10664,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StepsOut"];
+                    "application/json": components["schemas"]["api__modules__board__routes__StepsOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -9593,7 +10770,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChatOut"];
+                    "application/json": components["schemas"]["api__modules__board__routes__ChatOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -9687,6 +10864,524 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_programs: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgramCardOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_create_program: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProgramCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgramCreatedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_program: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgramOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_delete_program: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_rename_program: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenameOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_put_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceOut"];
+                };
+            };
+            /** @description The source was written from somewhere else; the current source comes with the refusal */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceConflictOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_put_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AsmSettingsModel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AsmSettingsModel"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_start_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RunIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunStartedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                run_no: number;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunSummaryOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_run_steps: {
+        parameters: {
+            query?: {
+                from?: number;
+                to?: number | null;
+            };
+            header?: never;
+            path: {
+                program_id: string;
+                run_no: number;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["api__modules__asm__routes__StepsOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_run_debugx: {
+        parameters: {
+            query?: {
+                from?: number;
+                to?: number | null;
+            };
+            header?: never;
+            path: {
+                program_id: string;
+                run_no: number;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebugxOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_run_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                run_no: number;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStartedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["api__modules__asm__routes__ChatOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_send_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStartedOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -12005,7 +13700,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StepsOut"];
+                    "application/json": components["schemas"]["api__modules__board__routes__StepsOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -12043,7 +13738,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StepsOut"];
+                    "application/json": components["schemas"]["api__modules__board__routes__StepsOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -12149,7 +13844,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChatOut"];
+                    "application/json": components["schemas"]["api__modules__board__routes__ChatOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -12243,6 +13938,524 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_programs_v1: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgramCardOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_create_program_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProgramCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgramCreatedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_program_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgramOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_delete_program_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_rename_program_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenameOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_put_source_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceOut"];
+                };
+            };
+            /** @description The source was written from somewhere else; the current source comes with the refusal */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceConflictOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_put_settings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AsmSettingsModel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AsmSettingsModel"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_start_run_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RunIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunStartedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_run_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                run_no: number;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunSummaryOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_run_steps_v1: {
+        parameters: {
+            query?: {
+                from?: number;
+                to?: number | null;
+            };
+            header?: never;
+            path: {
+                program_id: string;
+                run_no: number;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["api__modules__asm__routes__StepsOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_run_debugx_v1: {
+        parameters: {
+            query?: {
+                from?: number;
+                to?: number | null;
+            };
+            header?: never;
+            path: {
+                program_id: string;
+                run_no: number;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DebugxOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_run_memory_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                run_no: number;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStartedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_chat_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["api__modules__asm__routes__ChatOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    asm_send_chat_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                program_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStartedOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */

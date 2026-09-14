@@ -47,6 +47,7 @@ const config: Config = {
         'mod-reports': 'var(--mod-reports)',
         'mod-kadai': 'var(--mod-kadai)',
         'mod-board': 'var(--mod-board)',
+        'mod-asm': 'var(--mod-asm)',
       },
       borderRadius: {
         sm: 'var(--radius-sm)',

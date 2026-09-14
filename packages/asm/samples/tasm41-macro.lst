@@ -1,0 +1,79 @@
+Turbo Assembler	 Version 4.1	    09/14/26 16:49:21	    Page 1
+PROG.ASM
+
+
+
+      1	0000			     .model small
+      2	0000			     .stack 100h
+      3				     print macro msg
+      4					     mov  ah, 09h
+      5					     mov  dx, offset msg
+      6					     int  21h
+      7					     endm
+      8	0000			     .data
+      9	0000  14*(00)		     buf     db	20 dup(0)
+     10	0014  01 02 03 04 05 06	07+  long    db	1, 2, 3, 4, 5, 6, 7, 8,	9, 10, 11, 12
+     11	      08 09 0A 0B 0C
+     12	0020  48 65 6C 6C 6F 2C	20+  hello   db	'Hello,	world from TASM	listing	test$'
+     13	      77 6F 72 6C 64 20	66+
+     14	      72 6F 6D 20 54 41	53+
+     15	      4D 20 6C 69 73 74	69+
+     16	      6E 67 20 74 65 73	74+
+     17	      24
+     18	0044  1234 5678		     w	     dw	1234h, 5678h
+     19
+     20	0048			     .code
+     21	0000  B8 0000s		     start:  mov  ax, @data
+     22	0003  8E D8			     mov  ds, ax
+     23					     print hello
+1    24	0005  B4 09			     mov  ah, 09h
+1    25	0007  BA 0020r			     mov  dx, offset hello
+1    26	000A  CD 21			     int  21h
+     27
+     28	000C  B9 0003			     mov  cx, 3
+     29	000F  E2 FE		     again:  loop again
+     30	0011  B8 4C00			     mov  ax, 4C00h
+     31	0014  CD 21			     int  21h
+     32				     end start
+Turbo Assembler	 Version 4.1	    09/14/26 16:49:21	    Page 2
+Symbol Table
+
+
+
+
+Symbol Name			  Type	 Value
+
+??DATE				  Text	 "09/14/26"
+??FILENAME			  Text	 "PROG	  "
+??TIME				  Text	 "16:49:21"
+??VERSION			  Number 040A
+@32BIT				  Text	 0
+@CODE				  Text	 _TEXT
+@CODESIZE			  Text	 0
+@CPU				  Text	 0101H
+@CURSEG				  Text	 _TEXT
+@DATA				  Text	 DGROUP
+@DATASIZE			  Text	 0
+@FILENAME			  Text	 PROG
+@INTERFACE			  Text	 000H
+@MODEL				  Text	 2
+@STACK				  Text	 DGROUP
+@WORDSIZE			  Text	 2
+AGAIN				  Near	 _TEXT:000F
+BUF				  Byte	 DGROUP:0000
+HELLO				  Byte	 DGROUP:0020
+LONG				  Byte	 DGROUP:0014
+START				  Near	 _TEXT:0000
+W				  Word	 DGROUP:0044
+
+Macro Name
+
+PRINT
+
+Groups & Segments		  Bit Size Align  Combine Class
+
+DGROUP				  Group
+  STACK				  16  0100 Para	  Stack	  STACK
+  _DATA				  16  0048 Word	  Public  DATA
+_TEXT				  16  0016 Word	  Public  CODE
+

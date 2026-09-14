@@ -102,7 +102,7 @@ def _diagram_notices(project, stored: dict) -> list:
 
 def build(project, *, keys=None, outputs=("docx",), on_error: str = "skip",
           name: str | None = None, style: dict | None = None,
-          store: bool = False) -> dict:
+          store: bool = False, filename: str = "") -> dict:
     """Прогон целиком: значения → проверка → `build_report` → файлы в `out/`.
 
     `store=True` — тот самый переезд, которого этот код ждал: собранное едет не
@@ -130,13 +130,17 @@ def build(project, *, keys=None, outputs=("docx",), on_error: str = "skip",
     job = job_of(project, keys=keys, outputs=outputs, on_error=on_error,
                  name=name, style=style)
     if store:
-        # Имя и вид приходят от `build_report` и здесь не нужны: артефакт
+        # Имя и вид приходят от `build_report` и в адрес не входят: артефакт
         # адресуется содержимым, а не именем (`Project.put_artifact`). Имя всё
-        # же передаём — оно читается в отладке и ни на что не влияет.
+        # же передаём — оно читается в отладке.
+        #
+        # `filename` — имя, под которым собранное скачивают (имя отчёта или
+        # работы), одно на DOCX и PDF: это один документ в двух видах, и
+        # расширение по содержимому дописывает тот, кто файл отдаёт.
         report = hokoku.build_report(
             job, resolve_artifact=project.resolve_artifact,
             store_artifact=lambda имя, данные, вид: project.put_artifact(
-                данные, name=имя))
+                данные, name=имя, filename=filename))
         return {"ok": bool(report.get("ok")), "problems": problems,
                 "report": report, "workdir": None}
     report = hokoku.build_report(job, resolve_artifact=project.resolve_artifact,

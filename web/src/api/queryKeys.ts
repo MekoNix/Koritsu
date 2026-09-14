@@ -184,6 +184,22 @@ export const keys = {
     chat: (projectId: string, boardId: string) =>
       ['projects', 'one', projectId, 'board-chat', boardId] as const,
   },
+  // Ассемблер. Устроен как доска: программа — решение работы, и её ключи
+  // начинаются с `projects.one`, чтобы сброс работы гасил их заодно. Список
+  // программ пространства и готовность инструментов — свой корень: работы в них нет.
+  asm: {
+    status: ['asm', 'status'] as const,
+    programsAll: ['asm', 'programs'] as const,
+    programs: (workspaceId: string) => ['asm', 'programs', workspaceId] as const,
+    program: (projectId: string, programId: string) =>
+      ['projects', 'one', projectId, 'asm-program', programId] as const,
+    run: (projectId: string, programId: string, runNo: number) =>
+      ['projects', 'one', projectId, 'asm-run', programId, runNo] as const,
+    debugx: (projectId: string, programId: string, runNo: number, from: number, to: number) =>
+      ['projects', 'one', projectId, 'asm-debugx', programId, runNo, from, to] as const,
+    chat: (projectId: string, programId: string) =>
+      ['projects', 'one', projectId, 'asm-chat', programId] as const,
+  },
   // Настройки аккаунта.
   modelKeys: ['model-keys'] as const,
   /** Свои шаблоны отчётов: их читают и настройки, и диалог «Новая работа». */

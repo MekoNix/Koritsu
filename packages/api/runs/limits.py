@@ -133,6 +133,12 @@ UNKNOWN_PLAN = "unknown_plan"
     "kadai_run": "price_kadai_run",
     "kadai_rework": "price_kadai_rework",
     "board_check": "price_board_check",
+    "asm_run": "price_asm_run",
+    "asm_memory": "price_asm_memory",
+    # Переписка с агентом по трассе — один вызов модели того же размера, что
+    # чат доски, и цена у неё та же самая: полем доски, а не вторым числом,
+    # которое однажды разошлось бы с первым.
+    "asm_chat": "price_board_check",
     "probe": "price_probe",
 }
 

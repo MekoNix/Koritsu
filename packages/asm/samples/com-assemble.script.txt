@@ -1,0 +1,33 @@
+N PROG.COM
+A 100
+mov ah,9
+mov dx,200
+int 21
+mov ah,1
+int 21
+mov [210],al
+mov dl,al
+mov ah,2
+int 21
+mov ah,0a
+mov dx,220
+int 21
+mov cx,3
+inc byte ptr [211]
+loop 11e
+mov ax,4c05
+int 21
+
+A 200
+db 'Hi',0d,0a,'$'
+
+A 210
+db 0,0
+
+A 220
+db 8,0,0,0,0,0,0,0,0,0
+
+RCX
+130
+W
+Q

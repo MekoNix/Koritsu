@@ -1,0 +1,82 @@
+Turbo Assembler	 Version 4.1	    09/14/26 16:47:16	    Page 1
+PROG.ASM
+
+
+
+      1				     ; sum.asm ? читает	цифру N	и выводит сумму	первых N элементов массива
+      2	0000			     .model small
+      3	0000			     .stack 100h
+      4	0000			     .data
+      5	0000  03 07 0C 05 09	     arr     db	3, 7, 12, 5, 9
+      6	0005  4E 20 3D 20 24	     prompt  db	'N = $'
+      7	000A  0D 0A 53 75 6D 20	3D+  res     db	13, 10,	'Sum = $'
+      8	      20 24
+      9	0013			     .code
+     10	0000  B8 0000s		     start:  mov  ax, @data
+     11	0003  8E D8			     mov  ds, ax
+     12	0005  B4 09			     mov  ah, 09h
+     13	0007  BA 0005r			     mov  dx, offset prompt
+     14	000A  CD 21			     int  21h
+     15	000C  B4 01			     mov  ah, 01h	 ; ввод	символа	-> AL
+     16	000E  CD 21			     int  21h
+     17	0010  2C 30			     sub  al, '0'
+     18	0012  32 E4			     xor  ah, ah
+     19	0014  8B C8			     mov  cx, ax	 ; CX =	N
+     20	0016  33 DB			     xor  bx, bx	 ; BX =	сумма
+     21	0018  BE 0000r			     mov  si, offset arr
+     22	001B  8A 04		     next:   mov  al, [si]
+     23	001D  02 D8			     add  bl, al
+     24	001F  46			     inc  si
+     25	0020  E2 F9			     loop next
+     26	0022  B4 09			     mov  ah, 09h
+     27	0024  BA 000Ar			     mov  dx, offset res
+     28	0027  CD 21			     int  21h
+     29	0029  8B C3			     mov  ax, bx
+     30	002B  B2 0A			     mov  dl, 10
+     31	002D  F6 F2			     div  dl		 ; AL =	десятки, AH = единицы
+     32	002F  8B D0			     mov  dx, ax
+     33	0031  81 C2 3030		     add  dx, 3030h
+     34	0035  B4 02			     mov  ah, 02h
+     35	0037  CD 21			     int  21h		 ; печать DL (десятки)
+     36	0039  8A D6			     mov  dl, dh
+     37	003B  CD 21			     int  21h		 ; печать единиц
+     38	003D  B8 4C00			     mov  ax, 4C00h
+     39	0040  CD 21			     int  21h
+     40				     end start
+Turbo Assembler	 Version 4.1	    09/14/26 16:47:16	    Page 2
+Symbol Table
+
+
+
+
+Symbol Name			  Type	 Value
+
+??DATE				  Text	 "09/14/26"
+??FILENAME			  Text	 "PROG	  "
+??TIME				  Text	 "16:47:16"
+??VERSION			  Number 040A
+@32BIT				  Text	 0
+@CODE				  Text	 _TEXT
+@CODESIZE			  Text	 0
+@CPU				  Text	 0101H
+@CURSEG				  Text	 _TEXT
+@DATA				  Text	 DGROUP
+@DATASIZE			  Text	 0
+@FILENAME			  Text	 PROG
+@INTERFACE			  Text	 000H
+@MODEL				  Text	 2
+@STACK				  Text	 DGROUP
+@WORDSIZE			  Text	 2
+ARR				  Byte	 DGROUP:0000
+NEXT				  Near	 _TEXT:001B
+PROMPT				  Byte	 DGROUP:0005
+RES				  Byte	 DGROUP:000A
+START				  Near	 _TEXT:0000
+
+Groups & Segments		  Bit Size Align  Combine Class
+
+DGROUP				  Group
+  STACK				  16  0100 Para	  Stack	  STACK
+  _DATA				  16  0013 Word	  Public  DATA
+_TEXT				  16  0042 Word	  Public  CODE
+

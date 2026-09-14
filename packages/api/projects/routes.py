@@ -315,8 +315,10 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
                       EDITOR, where="body.workspace_id")
     байты = None
     манифест_рядом = None
+    имя_бланка = ""
     if template is not None and template.filename:
         байты = template.file.read()
+        имя_бланка = template.filename
     if (template_id or "").strip():
         if байты is not None:
             raise ApiError(BAD_TEMPLATE,
@@ -334,14 +336,17 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
         # бланка, собранного из блоков, типы и задания тегов записаны только в
         # нём, и без него новая работа угадывала бы их по меткам.
         манифест_рядом = шаблоны.манифест(settings, шаблон)
+        имя_бланка = шаблон.name
     p = завести_работу(s, settings, ws, user, name=name, module=module,
-                       template=байты, manifest=манифест_рядом)
+                       template=байты, manifest=манифест_рядом,
+                       template_name=имя_бланка)
     return карточка(p, settings, теги=True, workspace_name=ws.name)
 
 
 def завести_работу(s, settings: Settings, ws: Workspace, user, *,
                    name: str = "", module: str = "",
                    template: bytes | None = None, manifest=None,
+                   template_name: str = "",
                    where: str = "body.module") -> Project:
     """Строка работы в базе и её каталог на томе. → строка, ещё не карточка.
 
@@ -355,6 +360,9 @@ def завести_работу(s, settings: Settings, ws: Workspace, user, *,
     берётся из строки, а строка при беде на диске откатится сама (сессия на
     запрос, `db.session`). Обратный порядок оставил бы на томе каталог, о
     котором база не знает.
+
+    `template_name` — имя бланка, как его принесли (имя загруженного файла или
+    шаблона с полки): под ним бланк скачивают из работы.
     """
     p = Project(workspace_id=ws.id, owner_id=user.id,
                 name=name.strip() or "Project",
@@ -370,7 +378,8 @@ def завести_работу(s, settings: Settings, ws: Workspace, user, *,
     os.makedirs(каталог, exist_ok=True)
     try:
         orchestrator.Project.create(каталог, template=template, name=p.name,
-                                    manifest=manifest)
+                                    manifest=manifest,
+                                    template_name=template_name)
     except Exception:                                   # noqa: BLE001
         # Подробности — в журнал: в тексте беды оркестратора стоит путь на томе,
         # а клиенту про раскладку тома знать нечего.

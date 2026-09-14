@@ -42,6 +42,11 @@ services:
     env_file: [.env]
     volumes:
       - koritsu-data:/data
+      # TASM и TLINK для модуля «Ассемблер»: проприетарные, в образ не входят и
+      # приезжают каталогом с машины, только для чтения. Служба смотрит, есть ли
+      # они (`/api/asm/status`); прогоны идут в воркере. Каталога нет — Docker
+      # заведёт пустой, и модуль покажется недоступным.
+      - ${KORITSU_ASM_TOOLS_HOST:-./asm-tools}:/opt/asm-tools:ro
     # Порт не публикуется: снаружи в него ходит только Caddy, по внутренней
     # сети. `ports:` здесь означал бы сайт, доступный мимо TLS и мимо Anubis.
     expose: ["8000"]
@@ -71,6 +76,8 @@ services:
     env_file: [.env]
     volumes:
       - koritsu-data:/data
+      # Тот же каталог TASM/TLINK, что у `api`: сборку и трассу исполняет воркер.
+      - ${KORITSU_ASM_TOOLS_HOST:-./asm-tools}:/opt/asm-tools:ro
     mem_limit: 3g
     cpus: 1.5
     # SIGTERM для воркера — «доделай начатое и не бери новых» (`jobs/worker.py`).

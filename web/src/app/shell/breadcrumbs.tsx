@@ -61,6 +61,7 @@ const BY_PREFIX: [string, string][] = [
   ['/reports', 'shell.page.reports'],
   ['/kadai', 'shell.page.kadai'],
   ['/board', 'shell.page.board'],
+  ['/asm', 'shell.page.asm'],
   ['/settings', 'shell.page.settings'],
   ['/workspace', 'workspace.title'],
   ['/admin', 'shell.page.admin'],
