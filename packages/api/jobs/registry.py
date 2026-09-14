@@ -86,8 +86,12 @@ PARSE = "parse"
 EXPORT = "export"
 KADAI_RUN = "kadai_run"
 KADAI_REWORK = "kadai_rework"
+# Проверка решения на доске: один вызов модели по снимку сцены, три режима
+# (`check` / `hint` / `drill`) полем задания. Не `agent`: тот заполняет теги
+# бланка и на работе без манифеста отказывается ещё до вызова модели.
+BOARD_CHECK = "board_check"
 
-# Девятый вид — `probe`, проба самой очереди. Обработчик его ничего не делает с
+# Последний вид — `probe`, проба самой очереди. Обработчик его ничего не делает с
 # проектом и ничем не платит; он отвечает тем, что ему дали, и умеет по просьбе
 # поспать, сообщить о ходе работы и упасть. Нужен затем, что «воркер жив» —
 # утверждение, которое иначе проверяется только настоящей работой человека:
@@ -97,7 +101,7 @@ KADAI_REWORK = "kadai_rework"
 PROBE = "probe"
 
 ВИДЫ = (FILL_TAG, FILL_REPORT, AGENT, BUILD, PARSE, EXPORT,
-        KADAI_RUN, KADAI_REWORK, PROBE)
+        KADAI_RUN, KADAI_REWORK, BOARD_CHECK, PROBE)
 
 UNKNOWN_JOB_KIND = "unknown_job_kind"
 
@@ -223,7 +227,7 @@ def registered() -> Iterable[str]:
 def needs_project(kind: str) -> bool:
     """Нужен ли этому виду проект. Неизвестному обработчику — да.
 
-    Умолчание строгое намеренно: все восемь основных видов привязаны к проекту, и
+    Умолчание строгое намеренно: все основные виды привязаны к проекту, и
     задание без проекта — исключение, которое обработчик обязан объявить сам.
     Мягкое умолчание («не знаю — значит не нужен») пустило бы задание без
     проверки роли, то есть мимо единственной проверки доступа, какая у очереди
@@ -254,4 +258,5 @@ __all__ = ["register", "load_handlers", "known", "check_kind", "registration",
            "handler_for", "registered", "needs_project", "needs_secret",
            "Регистрация", "Обработчик", "ВИДЫ",
            "UNKNOWN_JOB_KIND", "FILL_TAG", "FILL_REPORT", "AGENT", "BUILD",
-           "PARSE", "EXPORT", "KADAI_RUN", "KADAI_REWORK", "PROBE"]
+           "PARSE", "EXPORT", "KADAI_RUN", "KADAI_REWORK", "BOARD_CHECK",
+           "PROBE"]

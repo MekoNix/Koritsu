@@ -132,6 +132,7 @@ UNKNOWN_PLAN = "unknown_plan"
     "agent": "price_agent",
     "kadai_run": "price_kadai_run",
     "kadai_rework": "price_kadai_rework",
+    "board_check": "price_board_check",
     "probe": "price_probe",
 }
 

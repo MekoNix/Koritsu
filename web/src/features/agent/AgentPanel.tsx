@@ -39,7 +39,7 @@ import { ModelPicker } from '@/features/reports/runControls'
 import { AgentHistory } from './AgentHistory'
 import { AgentRunView } from './AgentRunView'
 import { closeAgentPanel, openAgentPanel, toggleAgentPanel, useAgentPanelOpen } from './panelStore'
-import { projectFromPath, reportFromPath } from './context'
+import { hasOwnTutor, projectFromPath, reportFromPath } from './context'
 import { TASK_MAX } from './types'
 import { useAgentRun, type AgentRunState } from './useAgentRun'
 
@@ -53,6 +53,10 @@ export function AgentPanel() {
   useActionHotkey('agent', toggleAgentPanel)
   const сочетание = useHotkeyBinding('agent')
 
+  // Раздел со своим репетитором общую панель не показывает: у него своё
+  // задание очереди и своя цена, а это — задание вида `agent`, которое там
+  // откажется ещё до вызова модели.
+  const своя = hasOwnTutor(location.pathname)
   const изАдреса = projectFromPath(location.pathname)
   const [выбранный, setВыбранный] = useState<string | null>(null)
   const projectId = изАдреса ?? выбранный
@@ -73,6 +77,8 @@ export function AgentPanel() {
 
   // Прогон — на верхнем уровне: он обязан пережить закрытие панели.
   const run = useAgentRun(projectId, endpoint, переписывать, report)
+
+  if (своя) return null
 
   return (
     <RadixDialog.Root

@@ -90,8 +90,16 @@ def test_broken_zip_is_not_an_empty_document(store):
 
 
 def test_zip_without_document_xml_is_refused(store, docx_file):
+    """Zip без главной части — не документ, и отказ называет её по имени.
+
+    Проверка упаковки одна на DOCX и на книгу Excel, и главную часть ей
+    называют (`word/document.xml`, `xl/workbook.xml`): без имени в тексте
+    человек с книгой в руках читал бы отказ про Word.
+    """
     m = store.add(repack(docx_file, drop=("word/document.xml",)), name="подделка.docx")
-    assert m.count == 0 and any("не документ Word" in n for n in m.notes)
+    assert m.count == 0
+    assert any("внутри нет word/document.xml" in n and "называется DOCX" in n
+               for n in m.notes)
 
 
 def test_old_doc_says_what_to_do(store):

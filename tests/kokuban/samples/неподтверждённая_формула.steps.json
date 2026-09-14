@@ -1,0 +1,40 @@
+[
+ {
+  "n": 1,
+  "id": "1ba138",
+  "latex": "x^{2}+2x-8=0",
+  "source": "myscript",
+  "confirmed": true,
+  "elements": [
+   "nf-02",
+   "nf-03"
+  ],
+  "frame": "nf-01",
+  "frame_name": "Шаг 1 — привести к каноническому виду"
+ },
+ {
+  "n": 2,
+  "id": "580f1d",
+  "latex": "",
+  "source": "",
+  "confirmed": false,
+  "elements": [
+   "nf-05",
+   "nf-06"
+  ],
+  "frame": "nf-04",
+  "frame_name": "Шаг 2 — дискриминант"
+ },
+ {
+  "n": 3,
+  "id": "a3dc37",
+  "latex": "",
+  "source": "",
+  "confirmed": false,
+  "elements": [
+   "nf-07"
+  ],
+  "frame": "nf-04",
+  "frame_name": "Шаг 2 — дискриминант"
+ }
+]

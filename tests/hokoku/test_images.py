@@ -22,17 +22,30 @@ def test_drawio_png_is_cached_by_content(monkeypatch, png):
     calls = []
     monkeypatch.setattr(shutil, "which", lambda name: "/bin/true" if name == "drawio" else None)
 
-    def fake_run(cmd, **kw):
-        calls.append(cmd)
-        with open(cmd[cmd.index("-o") + 1], "wb") as f:
-            f.write(png)
-        class R:
-            returncode, stdout, stderr = 0, "", ""
-        return R()
+    class Подделка:
+        """Столько от `Popen`, сколько читает вызов: PNG на месте и пустой вывод.
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+        Процесс заводится своей группой и снимается по таймауту целиком, поэтому
+        запускается он `Popen`, а не `run`: подделка повторяет ту же пару
+        `Popen` — `communicate`, иначе проверка ушла бы мимо настоящего вызова.
+        """
+
+        returncode = 0
+
+        def __init__(self, cmd, **kw):
+            calls.append(cmd)
+            with open(cmd[cmd.index("-o") + 1], "wb") as f:
+                f.write(png)
+
+        def communicate(self, timeout=None):
+            return "", ""
+
+    monkeypatch.setattr(subprocess, "Popen", Подделка)
     try:
         assert images.drawio_to_png("<mxfile>a</mxfile>") == png
+        # Оба флага Electron на месте: без песочницы он падает в контейнере, без
+        # `--disable-dev-shm-usage` виснет на схеме крупнее мегапикселя.
+        assert {"--no-sandbox", "--disable-dev-shm-usage"} <= set(calls[0])
         assert images.drawio_to_png("<mxfile>a</mxfile>") == png
         assert len(calls) == 1                                  # второй раз drawio не запускался
         images.drawio_to_png("<mxfile>b</mxfile>")

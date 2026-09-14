@@ -1,0 +1,831 @@
+{
+ "type": "excalidraw",
+ "version": 2,
+ "source": "koritsu/board",
+ "elements": [
+  {
+   "id": "ko-01",
+   "type": "frame",
+   "x": 80.0,
+   "y": 0.0,
+   "width": 620.0,
+   "height": 260.0,
+   "angle": 0,
+   "strokeColor": "#1e1e1e",
+   "backgroundColor": "transparent",
+   "fillStyle": "solid",
+   "strokeWidth": 2,
+   "strokeStyle": "solid",
+   "roughness": 1,
+   "opacity": 100,
+   "groupIds": [],
+   "frameId": null,
+   "roundness": null,
+   "seed": 1858869808,
+   "version": 1,
+   "versionNonce": 1012088669,
+   "isDeleted": false,
+   "boundElements": null,
+   "updated": 1,
+   "link": null,
+   "locked": false,
+   "name": "Шаг 1 — привести к каноническому виду"
+  },
+  {
+   "id": "ko-02",
+   "type": "freedraw",
+   "x": 120.0,
+   "y": 40.0,
+   "width": 190.0,
+   "height": 46.0,
+   "angle": 0,
+   "strokeColor": "#1e1e1e",
+   "backgroundColor": "transparent",
+   "fillStyle": "solid",
+   "strokeWidth": 2,
+   "strokeStyle": "solid",
+   "roughness": 1,
+   "opacity": 100,
+   "groupIds": [
+    "ko-группа-02"
+   ],
+   "frameId": "ko-01",
+   "roundness": null,
+   "seed": 1667638154,
+   "version": 1,
+   "versionNonce": 1673467091,
+   "isDeleted": false,
+   "boundElements": null,
+   "updated": 1,
+   "link": null,
+   "locked": false,
+   "points": [
+    [
+     0.0,
+     38.48
+    ],
+    [
+     19.0,
+     14.86
+    ],
+    [
+     38.0,
+     6.74
+    ],
+    [
+     57.0,
+     29.16
+    ],
+    [
+     76.0,
+     38.72
+    ],
+    [
+     95.0,
+     9.07
+    ],
+    [
+     114.0,
+     4.72
+    ],
+    [
+     133.0,
+     6.74
+    ],
+    [
+     152.0,
+     16.26
+    ],
+    [
+     171.0,
+     8.78
+    ],
+    [
+     190.0,
+     13.13
+    ]
+   ],
+   "pressures": [],
+   "simulatePressure": true,
+   "lastCommittedPoint": [
+    190.0,
+    13.13
+   ],
+   "customData": {
+    "kind": "formula",
+    "latex": "x^{2}+2x=8",
+    "latexConfirmed": true,
+    "latexSource": "myscript",
+    "recognizedAt": "2026-09-06T18:00:00Z"
+   }
+  },
+  {
+   "id": "ko-03",
+   "type": "freedraw",
+   "x": 310.0,
+   "y": 40.0,
+   "width": 190.0,
+   "height": 46.0,
+   "angle": 0,
+   "strokeColor": "#1e1e1e",
+   "backgroundColor": "transparent",
+   "fillStyle": "solid",
+   "strokeWidth": 2,
+   "strokeStyle": "solid",
+   "roughness": 1,
+   "opacity": 100,
+   "groupIds": [
+    "ko-группа-02"
+   ],
+   "frameId": "ko-01",
+   "roundness": null,
+   "seed": 1130326148,
+   "version": 1,
+   "versionNonce": 1912283049,
+   "isDeleted": false,
+   "boundElements": null,
+   "updated": 1,
+   "link": null,
+   "locked": false,
+   "points": [
+    [
+     0.0,
+     38.48
+    ],
+    [
+     19.0,
+     14.86
+    ],
+    [
+     38.0,
+     6.74
+    ],
+    [
+     57.0,
+     29.16
+    ],
+    [
+     76.0,
+     38.72
+    ],
+    [
+     95.0,
+     9.07
+    ],
+    [
+     114.0,
+     4.72
+    ],
+    [
+     133.0,
+     6.74
+    ],
+    [
+     152.0,
+     16.26
+    ],
+    [
+     171.0,
+     8.78
+    ],
+    [
+     190.0,
+     17.86
+    ]
+   ],
+   "pressures": [],
+   "simulatePressure": true,
+   "lastCommittedPoint": [
+    190.0,
+    17.86
+   ]
+  },
+  {
+   "id": "ko-04",
+   "type": "freedraw",
+   "x": 120.0,
+   "y": 130.0,
+   "width": 190.0,
+   "height": 46.0,
+   "angle": 0,
+   "strokeColor": "#1e1e1e",
+   "backgroundColor": "transparent",
+   "fillStyle": "solid",
+   "strokeWidth": 2,
+   "strokeStyle": "solid",
+   "roughness": 1,
+   "opacity": 100,
+   "groupIds": [
+    "ko-группа-04"
+   ],
+   "frameId": "ko-01",
+   "roundness": null,
+   "seed": 550798617,
+   "version": 1,
+   "versionNonce": 1855590332,
+   "isDeleted": false,
+   "boundElements": null,
+   "updated": 1,
+   "link": null,
+   "locked": false,
+   "points": [
+    [
+     0.0,
+     38.48
+    ],
+    [
+     15.83,
+     16.55
+    ],
+    [
+     31.67,
+     5.36
+    ],
+    [
+     47.5,
+     34.01
+    ],
+    [
+     63.33,
+     41.2
+    ],
+    [
+     79.17,
+     16.55
+    ],
+    [
+     95.0,
+     9.07
+    ],
+    [
+     110.83,
+     5.01
+    ],
+    [
+     126.67,
+     35.09
+    ],
+    [
+     142.5,
+     5.01
+    ],
+    [
+     158.33,
+     12.99
+    ],
+    [
+     174.17,
+     6.89
+    ],
+    [
+     190.0,
+     13.13
+    ]
+   ],
+   "pressures": [],
+   "simulatePressure": true,
+   "lastCommittedPoint": [
+    190.0,
+    13.13
+   ],
+   "customData": {
+    "kind": "formula",
+    "latex": "x^{2}+2x-8=0",
+    "latexConfirmed": true,
+    "latexSource": "myscript",
+    "recognizedAt": "2026-09-06T18:00:00Z"
+   }
+  },
+  {
+   "id": "ko-05",
+   "type": "freedraw",
+   "x": 310.0,
+   "y": 130.0,
+   "width": 190.0,
+   "height": 46.0,
+   "angle": 0,
+   "strokeColor": "#1e1e1e",
+   "backgroundColor": "transparent",
+   "fillStyle": "solid",
+   "strokeWidth": 2,
+   "strokeStyle": "solid",
+   "roughness": 1,
+   "opacity": 100,
+   "groupIds": [
+    "ko-группа-04"
+   ],
+   "frameId": "ko-01",
+   "roundness": null,
+   "seed": 1352207673,
+   "version": 1,
+   "versionNonce": 1465453724,
+   "isDeleted": false,
+   "boundElements": null,
+   "updated": 1,
+   "link": null,
+   "locked": false,
+   "points": [
+    [
+     0.0,
+     38.48
+    ],
+    [
+     15.83,
+     16.55
+    ],
+    [
+     31.67,
+     5.36
+    ],
+    [
+     47.5,
+     34.01
+    ],
+    [
+     63.33,
+     41.2
+    ],
+    [
+     79.17,
+     16.55
+    ],
+    [
+     95.0,
+     9.07
+    ],
+    [
+     110.83,
+     5.01
+    ],
+    [
+     126.67,
+     35.09
+    ],
+    [
+     142.5,
+     5.01
+    ],
+    [
+     158.33,
+     12.99
+    ],
+    [
+     174.17,
+     6.89
+    ],
+    [
+     190.0,
+     17.86
+    ]
+   ],
+   "pressures": [],
+   "simulatePressure": true,
+   "lastCommittedPoint": [
+    190.0,
+    17.86
+   ]
+  },
+  {
+   "id": "ko-06",
+   "type": "frame",
+   "x": 80.0,
+   "y": 290.0,
+   "width": 620.0,
+   "height": 170.0,
+   "angle": 0,
+   "strokeColor": "#1e1e1e",
+   "backgroundColor": "transparent",
+   "fillStyle": "solid",
+   "strokeWidth": 2,
+   "strokeStyle": "solid",
+   "roughness": 1,
+   "opacity": 100,
+   "groupIds": [],
+   "frameId": null,
+   "roundness": null,
+   "seed": 351203311,
+   "version": 1,
+   "versionNonce": 458423190,
+   "isDeleted": false,
+   "boundElements": null,
+   "updated": 1,
+   "link": null,
+   "locked": false,
+   "name": "Шаг 2 — дискриминант"
+  },
+  {
+   "id": "ko-07",
+   "type": "freedraw",
+   "x": 120.0,
+   "y": 330.0,
+   "width": 190.0,
+   "height": 46.0,
+   "angle": 0,
+   "strokeColor": "#1e1e1e",
+   "backgroundColor": "transparent",
+   "fillStyle": "solid",
+   "strokeWidth": 2,
+   "strokeStyle": "solid",
+   "roughness": 1,
+   "opacity": 100,
+   "groupIds": [
+    "ko-группа-07"
+   ],
+   "frameId": "ko-06",
+   "roundness": null,
+   "seed": 1529832779,
+   "version": 1,
+   "versionNonce": 708829466,
+   "isDeleted": false,
+   "boundElements": null,
+   "updated": 1,
+   "link": null,
+   "locked": false,
+   "points": [
+    [
+     0.0,
+     5.36
+    ],
+    [
+     5.94,
+     6.64
+    ],
+    [
+     11.88,
+     41.05
+    ],
+    [
+     17.81,
+     15.48
+    ],
+    [
+     23.75,
+     4.61
+    ],
+    [
+     29.69,
+     40.18
+    ],
+    [
+     35.62,
+     36.72
+    ],
+    [
+     41.56,
+     6.05
+    ],
+    [
+     47.5,
+     5.01
+    ],
+    [
+     53.44,
+     31.07
+    ],
+    [
+     59.38,
+     27.85
+    ],
+    [
+     65.31,
+     8.35
+    ],
+    [
+     71.25,
+     39.98
+    ],
+    [
+     77.19,
+     25.83
+    ],
+    [
+     83.12,
+     29.17
+    ],
+    [
+     89.06,
+     28.95
+    ],
+    [
+     95.0,
+     9.07
+    ],
+    [
+     100.94,
+     7.08
+    ],
+    [
+     106.88,
+     8.49
+    ],
+    [
+     112.81,
+     20.47
+    ],
+    [
+     118.75,
+     41.3
+    ],
+    [
+     124.69,
+     41.34
+    ],
+    [
+     130.62,
+     7.68
+    ],
+    [
+     136.56,
+     25.06
+    ],
+    [
+     142.5,
+     40.26
+    ],
+    [
+     148.44,
+     41.15
+    ],
+    [
+     154.38,
+     33.26
+    ],
+    [
+     160.31,
+     18.97
+    ],
+    [
+     166.25,
+     9.48
+    ],
+    [
+     172.19,
+     38.36
+    ],
+    [
+     178.12,
+     29.17
+    ],
+    [
+     184.06,
+     14.66
+    ],
+    [
+     190.0,
+     13.13
+    ]
+   ],
+   "pressures": [],
+   "simulatePressure": true,
+   "lastCommittedPoint": [
+    190.0,
+    13.13
+   ],
+   "customData": {
+    "kind": "formula",
+    "latex": "D=2^{2}-4\\cdot 1\\cdot 8=4-32=-28",
+    "latexConfirmed": true,
+    "latexSource": "myscript",
+    "recognizedAt": "2026-09-06T18:00:00Z"
+   }
+  },
+  {
+   "id": "ko-08",
+   "type": "freedraw",
+   "x": 310.0,
+   "y": 330.0,
+   "width": 190.0,
+   "height": 46.0,
+   "angle": 0,
+   "strokeColor": "#1e1e1e",
+   "backgroundColor": "transparent",
+   "fillStyle": "solid",
+   "strokeWidth": 2,
+   "strokeStyle": "solid",
+   "roughness": 1,
+   "opacity": 100,
+   "groupIds": [
+    "ko-группа-07"
+   ],
+   "frameId": "ko-06",
+   "roundness": null,
+   "seed": 79534057,
+   "version": 1,
+   "versionNonce": 556738412,
+   "isDeleted": false,
+   "boundElements": null,
+   "updated": 1,
+   "link": null,
+   "locked": false,
+   "points": [
+    [
+     0.0,
+     5.36
+    ],
+    [
+     5.94,
+     6.64
+    ],
+    [
+     11.88,
+     41.05
+    ],
+    [
+     17.81,
+     15.48
+    ],
+    [
+     23.75,
+     4.61
+    ],
+    [
+     29.69,
+     40.18
+    ],
+    [
+     35.62,
+     36.72
+    ],
+    [
+     41.56,
+     6.05
+    ],
+    [
+     47.5,
+     5.01
+    ],
+    [
+     53.44,
+     31.07
+    ],
+    [
+     59.38,
+     27.85
+    ],
+    [
+     65.31,
+     8.35
+    ],
+    [
+     71.25,
+     39.98
+    ],
+    [
+     77.19,
+     25.83
+    ],
+    [
+     83.12,
+     29.17
+    ],
+    [
+     89.06,
+     28.95
+    ],
+    [
+     95.0,
+     9.07
+    ],
+    [
+     100.94,
+     7.08
+    ],
+    [
+     106.88,
+     8.49
+    ],
+    [
+     112.81,
+     20.47
+    ],
+    [
+     118.75,
+     41.3
+    ],
+    [
+     124.69,
+     41.34
+    ],
+    [
+     130.62,
+     7.68
+    ],
+    [
+     136.56,
+     25.06
+    ],
+    [
+     142.5,
+     40.26
+    ],
+    [
+     148.44,
+     41.15
+    ],
+    [
+     154.38,
+     33.26
+    ],
+    [
+     160.31,
+     18.97
+    ],
+    [
+     166.25,
+     9.48
+    ],
+    [
+     172.19,
+     38.36
+    ],
+    [
+     178.12,
+     29.17
+    ],
+    [
+     184.06,
+     14.66
+    ],
+    [
+     190.0,
+     17.86
+    ]
+   ],
+   "pressures": [],
+   "simulatePressure": true,
+   "lastCommittedPoint": [
+    190.0,
+    17.86
+   ]
+  },
+  {
+   "id": "ko-09",
+   "type": "frame",
+   "x": 80.0,
+   "y": 490.0,
+   "width": 620.0,
+   "height": 125.0,
+   "angle": 0,
+   "strokeColor": "#1e1e1e",
+   "backgroundColor": "transparent",
+   "fillStyle": "solid",
+   "strokeWidth": 2,
+   "strokeStyle": "solid",
+   "roughness": 1,
+   "opacity": 100,
+   "groupIds": [],
+   "frameId": null,
+   "roundness": null,
+   "seed": 147505053,
+   "version": 1,
+   "versionNonce": 1032535384,
+   "isDeleted": false,
+   "boundElements": null,
+   "updated": 1,
+   "link": null,
+   "locked": false,
+   "name": "Шаг 3 — вывод"
+  },
+  {
+   "id": "ko-10",
+   "type": "text",
+   "x": 120.0,
+   "y": 530.0,
+   "width": 216.0,
+   "height": 25.0,
+   "angle": 0,
+   "strokeColor": "#1e1e1e",
+   "backgroundColor": "transparent",
+   "fillStyle": "solid",
+   "strokeWidth": 2,
+   "strokeStyle": "solid",
+   "roughness": 1,
+   "opacity": 100,
+   "groupIds": [],
+   "frameId": "ko-09",
+   "roundness": null,
+   "seed": 1295092219,
+   "version": 1,
+   "versionNonce": 1065645546,
+   "isDeleted": false,
+   "boundElements": null,
+   "updated": 1,
+   "link": null,
+   "locked": false,
+   "text": "D < 0, значит корней нет",
+   "originalText": "D < 0, значит корней нет",
+   "fontSize": 20,
+   "fontFamily": 1,
+   "textAlign": "left",
+   "verticalAlign": "top",
+   "containerId": null,
+   "lineHeight": 1.25,
+   "autoResize": true
+  }
+ ],
+ "appState": {
+  "gridSize": null,
+  "viewBackgroundColor": "#ffffff"
+ },
+ "files": {}
+}

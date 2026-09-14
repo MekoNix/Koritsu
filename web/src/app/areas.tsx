@@ -39,6 +39,7 @@ const ЗАГРУЗЧИКИ: Record<string, () => Promise<RouteObject[]>> = {
   projects: () => import('@/features/projects/routes').then((m) => m.projectsRoutes),
   reports: () => import('@/features/reports/routes').then((m) => m.reportsRoutes),
   kadai: () => import('@/features/kadai/routes').then((m) => m.kadaiRoutes),
+  board: () => import('@/features/board/routes').then((m) => m.boardRoutes),
   flowcharts: () => import('@/features/diagrams/routes').then((m) => m.diagramsRoutes),
   uml: () => import('@/features/diagrams/routes').then((m) => m.diagramsRoutes),
   diagrams: () => import('@/features/diagrams/routes').then((m) => m.diagramsRoutes),

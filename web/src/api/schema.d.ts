@@ -601,7 +601,7 @@ export interface paths {
         };
         /**
          * Reports of this project
-         * @description Every report of the project, oldest first: what it is called, which template it is built from and the first page of what it built last. A project carries several reports, each with its own template and its own tag values; the id of a report is what the other routes take as `report`. `kind` says how a report is made: `template` is the usual way — a blank with tags and tag values — and `report` names it; `live` is a report written from an assignment, a solution built in blocks, and the `/kadai` routes take its id as `run`. Reports written from an assignment are listed only for projects of the `reports` module, after the templated ones. Viewer role. 400 invalid_id, 404 not_found, 409 in_trash.
+         * @description Every report of the project, oldest first: what it is called, which template it is built from and the first page of what it built last. A project carries several reports, each with its own template and its own tag values; the id of a report is what the other routes take as `report`. `kind` says how a report is made: `template` is the usual way (a blank with tags and tag values), and `report` names it; `live` is a report written from an assignment, a solution built in blocks, and the `/kadai` routes take its id as `run`. Reports written from an assignment are listed only for projects of the `reports` module, after the templated ones. Viewer role. 400 invalid_id, 404 not_found, 409 in_trash.
          */
         get: operations["list_project_reports"];
         put?: never;
@@ -645,7 +645,7 @@ export interface paths {
         };
         /**
          * Reports of every project in a workspace
-         * @description Every report of every project of one workspace, newest first, each named together with the project it belongs to. `kind` says how a report is made: `template` is a blank with tags and tag values, `live` is a report written from an assignment — a solution built in blocks, whose id the `/kadai` routes take as `run`. Reports written from an assignment are listed for projects of the `reports` module. `workspace_id` is required: a list of everything the caller can reach would show the reports of one workspace while another one is open. Projects in the trash are left out, and so are projects with no reports at all. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
+         * @description Every report of every project of one workspace, newest first, each named together with the project it belongs to. `kind` says how a report is made: `template` is a blank with tags and tag values, `live` is a report written from an assignment: a solution built in blocks, whose id the `/kadai` routes take as `run`. Reports written from an assignment are listed for projects of the `reports` module. `workspace_id` is required: a list of everything the caller can reach would show the reports of one workspace while another one is open. Projects in the trash are left out, and so are projects with no reports at all. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
          */
         get: operations["list_workspace_reports"];
         put?: never;
@@ -689,7 +689,7 @@ export interface paths {
         };
         /**
          * Providers that accept a key
-         * @description Lists the model providers a key can be stored for, and where a key for each would come from: `own` (yours), `shared` (the one the service runs on) or `none` (nothing to pay with). 401 unauthenticated.
+         * @description Lists the providers a key can be stored for, and where a key for each would come from: `own` (yours), `shared` (the one the service runs on) or `none` (nothing to pay with). `kind` says what the key is for: `model` pays for a model run, `ink` recognises handwriting on a board. An ink provider never answers `shared`: its tariff counts socket openings, so a board runs on the person's own key or not at all. 401 unauthenticated.
          */
         get: operations["list_key_providers"];
         put?: never;
@@ -1539,7 +1539,7 @@ export interface paths {
         put?: never;
         /**
          * Build this project from this template
-         * @description Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. A template that carries a manifest of its own — one generated from the blocks of a work — is restored from it: tag types, model tasks, limits and dependencies come back as they were written instead of being guessed from the labels. For the tags of such a template its own manifest is what counts: keys are given out by the service, and the same key in an older blank is not the same tag. `report` says which report of the project changes its template; without it the single document of the work does. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.
+         * @description Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. A template that carries a manifest of its own (one generated from the blocks of a work) is restored from it: tag types, model tasks, limits and dependencies come back as they were written instead of being guessed from the labels. For the tags of such a template its own manifest is what counts: keys are given out by the service, and the same key in an older blank is not the same tag. `report` says which report of the project changes its template; without it the single document of the work does. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.
          */
         post: operations["use_project_template"];
         delete?: never;
@@ -1722,7 +1722,7 @@ export interface paths {
         get?: never;
         /**
          * Set the assignment of this solution: text, file, or both
-         * @description Writes the assignment of the task. `text` is the assignment in words — typed into the form, or corrected after a scan has been read — and it is what the work is solved by. `material_id` names an already parsed material of this project as the file the assignment came from; the file keeps its pictures and shows what was read. Text wins over file: a correction takes effect at once, without a second upload, and there is exactly one assignment in a solution — no previous version stays behind to be marked and explained. Until one of the two is set, a `kadai_run` job refuses: there is nothing to solve. Writing the same values twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of the file, without its extension. Naming another file drops the stored text: it belonged to the previous one. Editor role. 400 invalid_id, 400 invalid_value (neither text nor material), 403 forbidden, 404 not_found.
+         * @description Writes the assignment of the task. `text` is the assignment in words - typed into the form, or corrected after a scan has been read - and it is what the work is solved by. `material_id` names an already parsed material of this project as the file the assignment came from; the file keeps its pictures and shows what was read. Text wins over file: a correction takes effect at once, without a second upload, and there is exactly one assignment in a solution - no previous version stays behind to be marked and explained. Until one of the two is set, a `kadai_run` job refuses: there is nothing to solve. Writing the same values twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of the file, without its extension. Naming another file drops the stored text: it belonged to the previous one. Editor role. 400 invalid_id, 400 invalid_value (neither text nor material), 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_condition"];
         post?: never;
@@ -1814,6 +1814,226 @@ export interface paths {
          * @description Turns the block list of a solution into a reusable DOCX blank: headings are printed as headings, every other block becomes a `{{key:label}}` tag with a hint above it saying what belongs there. The file lands on the personal shelf of whoever asked (GET /api/templates), is attached to this project (GET /api/projects/{id}/templates) and is stored as an artifact of the project as well, so it can be downloaded either way. A manifest is stored beside the bytes: tag types, model tasks, limits and dependencies cannot be said in a DOCX paragraph, and without it they would be guessed from the labels when the blank is used again. Asking twice for the same blocks gives the same file and the same shelf entry: one DOCX is one template. `run` names the solution; without it the blocks of the work as a whole are taken. No model is called and nothing is charged. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 413 quota_exceeded, 422 kadai_failed.
          */
         post: operations["kadai_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/board/boards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Boards of every project in a workspace
+         * @description Every board of one workspace, newest first, each named together with the work it is a solution of. This is the list the board screen is made of: a board is opened and started without picking a work first. `workspace_id` is required: a list of everything the caller can reach would show the boards of one workspace while another one is open. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
+         */
+        get: operations["board_workspace_boards"];
+        put?: never;
+        /**
+         * Start a new board in a workspace
+         * @description Starts a board without naming a work: a journal entry and its own directory on the volume, with its own assignment, its own context folder and its own scene. The work it lands in is the workspace board work, created on the first board if it is not there yet. Nothing is drawn and nothing is charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.
+         */
+        post: operations["board_workspace_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/board/boards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Boards of this project
+         * @description Every board of the project, oldest first: what it is called, which board of this project it is, how many lines the last recognition read off it and when a tutor last checked it. A board is one solution of the work: it carries its own assignment, its own context folder and its own run history, and its id is what the other routes take as `run`. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["board_boards"];
+        put?: never;
+        /**
+         * Start a new board in this project
+         * @description Starts a board: a journal entry and its own directory on the volume, with its own assignment, its own context folder and its own scene. Nothing is drawn and nothing is charged here. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        post: operations["board_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/board/boards/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete one board of this project
+         * @description Removes a board: its journal entry, its scene, the lines read off it and its assignment. Its context files are unbound from it; files attached to the project as a whole are left alone, and so are artifacts: a snapshot is addressed by its content and may still be what a finished check refers to. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        delete: operations["board_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/board/scene": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The working scene of this board
+         * @description The drawing as it was last written, and the version counter to pass back when writing. An empty scene with version 0 is the answer for a board nobody has drawn on yet, which is not an error: the page opens before the first stroke. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["board_scene"];
+        /**
+         * Write the working scene of this board
+         * @description Replaces the drawing and bumps its version. `version` in the body is the one this edit is based on; if it is not the current one, the answer is 409 and carries the scene that won, so two tabs of one board lose an edit loudly rather than silently. Editor role. 400 invalid_id, 400 invalid_value, 400 scene_too_big, 403 forbidden, 404 not_found, 409 scene_conflict.
+         */
+        put: operations["board_put_scene"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/board/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lines of the solution read off this board
+         * @description The lines the last recognition read off this board, in reading order, and whether they have fallen behind the drawing. `stale` true means the board has been drawn on since; a check refuses on a stale board rather than checking yesterday's text. `latex_material` is the file of recognised lines that sits in the context folder of this board. Reading costs nothing: nothing is rebuilt here. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["board_steps"];
+        /**
+         * Write the lines of this board
+         * @description Writes the lines of the solution and rewrites the `<board>.latex.md` file of this board's context folder, so the tutor and the rest of the work see the same text. With a body, the lines are the ones given, in the order given: the page grouped the strokes into lines and had them recognised, and reading the scene a second time here would answer the same question differently. Without a body, they are built from what has already been recognised off the scene, and only when nothing has - read off the scene itself, which is the road for everything that has no page. The previous file is replaced, not kept beside it: the truth about a board is its scene, the lines are rebuilt from it at any moment, and a version per formula would grow the inventory of the work, which travels in every prompt. A line reaches the tutor when its LaTeX is not empty; a line nobody has read stays in the list and reaches the tutor as unavailable content. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 422 steps_failed.
+         */
+        put: operations["board_read_steps"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/board/task": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The assignment this board is solving
+         * @description The assignment of this board, in words. Empty is not an error: a board is allowed to be a scratch pad. It reaches the tutor as a separate untrusted part of the prompt, because the person who typed it is the person who drew the board. A file with the assignment is an ordinary material of this board's context folder, which is a different road. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["board_task"];
+        /**
+         * Write the assignment of this board
+         * @description Writes the assignment in words. An empty string erases it. Writing the same text twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
+         */
+        put: operations["board_set_task"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/board/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The conversation with the tutor on this board
+         * @description Every message exchanged with the tutor on this board, oldest first. A new message is sent by enqueueing a `board_check` job with `mode: "chat"` and `message`; the answer lands here when the job is done. Empty for a board nobody has talked on. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["board_chat"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/board/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether handwriting recognition is ready for you
+         * @description Says whether this person's boards recognise handwriting, and what to hand the recognition library so it talks to the bridge instead of the cloud. `ready` false with reason `no_keys` is a state and not an error: the board draws, saves and lets a formula be typed without any key at all, and a check works the same on typed formulas. The keys in the answer are constants, never real ones: the real pair stays in the service and the bridge substitutes it. `requests_this_month` counts what the recognition tariff counts: batch calls plus sockets opened. 401 unauthenticated.
+         */
+        get: operations["board_session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/board/recognize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read handwritten lines off a board
+         * @description Reads lines of handwriting into LaTeX with this person's own recognition keys. A line is a group of strokes as the page sees them on the canvas, and the answer depends on nothing but that line: a line whose strokes changed can be read again, and one that did not change need not be sent at all. All the lines of a call travel in a single request, because the recognition tariff counts requests. At most eight lines a call, at most two thousand points a line, at most twenty requests a minute. A line the service refuses carries the refusal in its own `error` and does not fail the call; only an unreachable service refuses the whole call. No key of any kind leaves the service, here or anywhere. 400 invalid_value, 401 unauthenticated, 403 ink_no_keys, 422 validation_failed, 429 rate_limited, 502 ink_unreachable.
+         */
+        post: operations["board_recognize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v4.0/iink/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Protocol version of the recognition service
+         * @description Passes the recognition service's version answer through. The recognition library asks for it before opening a socket and, without an answer, falls back to a protocol version of its own choosing, after which the socket fails in a way that reads on screen as an unreachable server. Carries no key and reveals none. 401 unauthenticated, 502 ink_unreachable.
+         */
+        get: operations["board_ink_version"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2678,7 +2898,7 @@ export interface paths {
         get?: never;
         /**
          * Set the assignment of this solution: text, file, or both
-         * @description Writes the assignment of the task. `text` is the assignment in words — typed into the form, or corrected after a scan has been read — and it is what the work is solved by. `material_id` names an already parsed material of this project as the file the assignment came from; the file keeps its pictures and shows what was read. Text wins over file: a correction takes effect at once, without a second upload, and there is exactly one assignment in a solution — no previous version stays behind to be marked and explained. Until one of the two is set, a `kadai_run` job refuses: there is nothing to solve. Writing the same values twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of the file, without its extension. Naming another file drops the stored text: it belonged to the previous one. Editor role. 400 invalid_id, 400 invalid_value (neither text nor material), 403 forbidden, 404 not_found.
+         * @description Writes the assignment of the task. `text` is the assignment in words - typed into the form, or corrected after a scan has been read - and it is what the work is solved by. `material_id` names an already parsed material of this project as the file the assignment came from; the file keeps its pictures and shows what was read. Text wins over file: a correction takes effect at once, without a second upload, and there is exactly one assignment in a solution - no previous version stays behind to be marked and explained. Until one of the two is set, a `kadai_run` job refuses: there is nothing to solve. Writing the same values twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of the file, without its extension. Naming another file drops the stored text: it belonged to the previous one. Editor role. 400 invalid_id, 400 invalid_value (neither text nor material), 403 forbidden, 404 not_found.
          */
         put: operations["kadai_set_condition_v1"];
         post?: never;
@@ -2770,6 +2990,226 @@ export interface paths {
          * @description Turns the block list of a solution into a reusable DOCX blank: headings are printed as headings, every other block becomes a `{{key:label}}` tag with a hint above it saying what belongs there. The file lands on the personal shelf of whoever asked (GET /api/templates), is attached to this project (GET /api/projects/{id}/templates) and is stored as an artifact of the project as well, so it can be downloaded either way. A manifest is stored beside the bytes: tag types, model tasks, limits and dependencies cannot be said in a DOCX paragraph, and without it they would be guessed from the labels when the blank is used again. Asking twice for the same blocks gives the same file and the same shelf entry: one DOCX is one template. `run` names the solution; without it the blocks of the work as a whole are taken. No model is called and nothing is charged. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 413 quota_exceeded, 422 kadai_failed.
          */
         post: operations["kadai_template_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/board/boards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Boards of every project in a workspace
+         * @description Every board of one workspace, newest first, each named together with the work it is a solution of. This is the list the board screen is made of: a board is opened and started without picking a work first. `workspace_id` is required: a list of everything the caller can reach would show the boards of one workspace while another one is open. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
+         */
+        get: operations["board_workspace_boards_v1"];
+        put?: never;
+        /**
+         * Start a new board in a workspace
+         * @description Starts a board without naming a work: a journal entry and its own directory on the volume, with its own assignment, its own context folder and its own scene. The work it lands in is the workspace board work, created on the first board if it is not there yet. Nothing is drawn and nothing is charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.
+         */
+        post: operations["board_workspace_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/board/boards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Boards of this project
+         * @description Every board of the project, oldest first: what it is called, which board of this project it is, how many lines the last recognition read off it and when a tutor last checked it. A board is one solution of the work: it carries its own assignment, its own context folder and its own run history, and its id is what the other routes take as `run`. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["board_boards_v1"];
+        put?: never;
+        /**
+         * Start a new board in this project
+         * @description Starts a board: a journal entry and its own directory on the volume, with its own assignment, its own context folder and its own scene. Nothing is drawn and nothing is charged here. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        post: operations["board_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/board/boards/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete one board of this project
+         * @description Removes a board: its journal entry, its scene, the lines read off it and its assignment. Its context files are unbound from it; files attached to the project as a whole are left alone, and so are artifacts: a snapshot is addressed by its content and may still be what a finished check refers to. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        delete: operations["board_delete_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/board/scene": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The working scene of this board
+         * @description The drawing as it was last written, and the version counter to pass back when writing. An empty scene with version 0 is the answer for a board nobody has drawn on yet, which is not an error: the page opens before the first stroke. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["board_scene_v1"];
+        /**
+         * Write the working scene of this board
+         * @description Replaces the drawing and bumps its version. `version` in the body is the one this edit is based on; if it is not the current one, the answer is 409 and carries the scene that won, so two tabs of one board lose an edit loudly rather than silently. Editor role. 400 invalid_id, 400 invalid_value, 400 scene_too_big, 403 forbidden, 404 not_found, 409 scene_conflict.
+         */
+        put: operations["board_put_scene_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/board/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lines of the solution read off this board
+         * @description The lines the last recognition read off this board, in reading order, and whether they have fallen behind the drawing. `stale` true means the board has been drawn on since; a check refuses on a stale board rather than checking yesterday's text. `latex_material` is the file of recognised lines that sits in the context folder of this board. Reading costs nothing: nothing is rebuilt here. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["board_steps_v1"];
+        /**
+         * Write the lines of this board
+         * @description Writes the lines of the solution and rewrites the `<board>.latex.md` file of this board's context folder, so the tutor and the rest of the work see the same text. With a body, the lines are the ones given, in the order given: the page grouped the strokes into lines and had them recognised, and reading the scene a second time here would answer the same question differently. Without a body, they are built from what has already been recognised off the scene, and only when nothing has - read off the scene itself, which is the road for everything that has no page. The previous file is replaced, not kept beside it: the truth about a board is its scene, the lines are rebuilt from it at any moment, and a version per formula would grow the inventory of the work, which travels in every prompt. A line reaches the tutor when its LaTeX is not empty; a line nobody has read stays in the list and reaches the tutor as unavailable content. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 422 steps_failed.
+         */
+        put: operations["board_read_steps_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/board/task": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The assignment this board is solving
+         * @description The assignment of this board, in words. Empty is not an error: a board is allowed to be a scratch pad. It reaches the tutor as a separate untrusted part of the prompt, because the person who typed it is the person who drew the board. A file with the assignment is an ordinary material of this board's context folder, which is a different road. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["board_task_v1"];
+        /**
+         * Write the assignment of this board
+         * @description Writes the assignment in words. An empty string erases it. Writing the same text twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
+         */
+        put: operations["board_set_task_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/board/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The conversation with the tutor on this board
+         * @description Every message exchanged with the tutor on this board, oldest first. A new message is sent by enqueueing a `board_check` job with `mode: "chat"` and `message`; the answer lands here when the job is done. Empty for a board nobody has talked on. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["board_chat_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/board/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether handwriting recognition is ready for you
+         * @description Says whether this person's boards recognise handwriting, and what to hand the recognition library so it talks to the bridge instead of the cloud. `ready` false with reason `no_keys` is a state and not an error: the board draws, saves and lets a formula be typed without any key at all, and a check works the same on typed formulas. The keys in the answer are constants, never real ones: the real pair stays in the service and the bridge substitutes it. `requests_this_month` counts what the recognition tariff counts: batch calls plus sockets opened. 401 unauthenticated.
+         */
+        get: operations["board_session_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/board/recognize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read handwritten lines off a board
+         * @description Reads lines of handwriting into LaTeX with this person's own recognition keys. A line is a group of strokes as the page sees them on the canvas, and the answer depends on nothing but that line: a line whose strokes changed can be read again, and one that did not change need not be sent at all. All the lines of a call travel in a single request, because the recognition tariff counts requests. At most eight lines a call, at most two thousand points a line, at most twenty requests a minute. A line the service refuses carries the refusal in its own `error` and does not fail the call; only an unreachable service refuses the whole call. No key of any kind leaves the service, here or anywhere. 400 invalid_value, 401 unauthenticated, 403 ink_no_keys, 422 validation_failed, 429 rate_limited, 502 ink_unreachable.
+         */
+        post: operations["board_recognize_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/v4.0/iink/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Protocol version of the recognition service
+         * @description Passes the recognition service's version answer through. The recognition library asks for it before opening a socket and, without an answer, falls back to a protocol version of its own choosing, after which the socket fails in a way that reads on screen as an unreachable server. Carries no key and reveals none. 401 unauthenticated, 502 ink_unreachable.
+         */
+        get: operations["board_ink_version_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3171,6 +3611,56 @@ export interface components {
              */
             artifact: string;
         };
+        /**
+         * BoardIn
+         * @description Тело заведения доски. Поле одно: как её звать.
+         */
+        BoardIn: {
+            /**
+             * Name
+             * @description What to call this board. Empty is fine: the interface names it itself, from the module and n.
+             * @default
+             */
+            name: string;
+        };
+        /**
+         * BoardOut
+         * @description Доска наружу: запись журнала плюс то, что видно на её карточке.
+         */
+        BoardOut: {
+            /**
+             * Id
+             * @description Run id of this board: the value of ?run=
+             */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * N
+             * @description Which board of this project, from 1
+             */
+            n: number;
+            /** User Id */
+            user_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Steps
+             * @description How many lines the last recognition read off this board
+             * @default 0
+             */
+            steps: number;
+            /**
+             * Checked At
+             * @description When a tutor last finished checking this board
+             */
+            checked_at?: string | null;
+        };
         /** Body_create_project */
         Body_create_project: {
             /** Workspace Id */
@@ -3208,6 +3698,40 @@ export interface components {
             template?: string | null;
             /** Template Id */
             template_id?: string | null;
+        };
+        /**
+         * ChatMessageOut
+         * @description Одно сообщение переписки с репетитором.
+         */
+        ChatMessageOut: {
+            /**
+             * Role
+             * @description `you` for the person, `tutor` for the agent
+             */
+            role: string;
+            /**
+             * Text
+             * @description The message; formulas as LaTeX between dollars
+             */
+            text: string;
+            /**
+             * At
+             * @description When it was written
+             */
+            at?: string | null;
+            /**
+             * Scene Version
+             * @description Scene version the person's message was sent with
+             */
+            scene_version?: number | null;
+        };
+        /**
+         * ChatOut
+         * @description Переписка с репетитором целиком, старые сообщения первыми.
+         */
+        ChatOut: {
+            /** Messages */
+            messages?: components["schemas"]["ChatMessageOut"][];
         };
         /**
          * ConditionIn
@@ -3534,7 +4058,11 @@ export interface components {
         };
         /**
          * ErrorOut
-         * @description Единственная форма отказа службы. Другой нет ни у одного маршрута.
+         * @description Форма отказа службы: тело `error` и ничего кроме.
+         *
+         *     Маршрут, которому есть что приложить к отказу, кладёт приложение рядом с
+         *     `error` своей моделью (`board.SceneConflictOut`), но поле `error` в ней —
+         *     тот же `ErrorBody`: разбор отказа в интерфейсе один на все маршруты.
          */
         ErrorOut: {
             error: components["schemas"]["ErrorBody"];
@@ -3631,7 +4159,7 @@ export interface components {
         JobIn: {
             /**
              * Kind
-             * @description What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, probe
+             * @description What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, board_check, probe
              */
             kind: string;
             /**
@@ -3874,6 +4402,96 @@ export interface components {
             name: string;
         };
         /**
+         * RecognizeIn
+         * @description Тело распознавания: строки записи и разрешение, в котором они мерены.
+         */
+        RecognizeIn: {
+            /**
+             * Lines
+             * @description The lines to read, at most eight. A line is sent when its strokes have changed and not otherwise: recognition of a line depends on nothing but that line, so the answer to an unchanged one is already known.
+             */
+            lines?: components["schemas"]["RecognizeLineIn"][];
+            /**
+             * Dpi
+             * @description Resolution the coordinates are in. The service answers in millimetres, and this is what turns them back into the numbers that were sent.
+             * @default 96
+             */
+            dpi: number;
+        };
+        /**
+         * RecognizeLineIn
+         * @description Одна строка записи, как её собрала страница: имя и все её росчерки.
+         */
+        RecognizeLineIn: {
+            /**
+             * Id
+             * @description How the page calls this line. It is handed back untouched, so the answer needs no matching up by order.
+             */
+            id: string;
+            /**
+             * Strokes
+             * @description Every stroke of this line, in the order they were drawn
+             */
+            strokes?: components["schemas"]["StrokeIn"][];
+        };
+        /**
+         * RecognizeOut
+         * @description Ответ распознавания: строки, цена вызова и то, что не легло никуда.
+         */
+        RecognizeOut: {
+            /**
+             * Lines
+             * @description One answer per line sent, in the order they were sent
+             */
+            lines?: components["schemas"]["RecognizedLineOut"][];
+            /**
+             * Requests
+             * @description How many requests this call cost. One, normally: all the lines travel in a single request, because the tariff counts requests. Zero means nothing was sent at all.
+             * @default 0
+             */
+            requests: number;
+            /**
+             * Unmatched
+             * @description What was read but belongs to none of the lines sent. It is handed over rather than dropped: silently losing it would read on screen as a line that recognised empty.
+             */
+            unmatched?: components["schemas"]["UnmatchedOut"][];
+        };
+        /**
+         * RecognizedLineOut
+         * @description Одна распознанная строка: что прочли и что помешало.
+         */
+        RecognizedLineOut: {
+            /**
+             * Id
+             * @description The id this line was sent under
+             */
+            id: string;
+            /**
+             * Latex
+             * @description The line in LaTeX, without the dollar signs. Empty when nothing was read off it.
+             * @default
+             */
+            latex: string;
+            /**
+             * Text
+             * @description The service's own one-line signature of what it read, when it gave one. A fallback for showing the line to a person: it is prose, not LaTeX, and nothing is built out of it. Empty when the call carried more than one line, because the signature then describes them all at once.
+             * @default
+             */
+            text: string;
+            /**
+             * Jiix
+             * @description The service's own answer for this line, whole. It carries the bounding box of every expression and the strokes behind it, which is what a line has to be split by when the person wrote two formulas in one go. Null when nothing was read.
+             */
+            jiix?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Error
+             * @description Why this line was not read, in the words of whoever refused. A line that failed does not fail the call: the board keeps working, and the trouble is shown where it happened.
+             */
+            error?: string | null;
+        };
+        /**
          * RegisterIn
          * @description Регистрация. Длина пароля проверяется формой, а не обработчиком: беда
          *     формы уезжает клиенту с адресом поля (`where: body.password`).
@@ -3996,6 +4614,143 @@ export interface components {
             n: number;
         };
         /**
+         * SceneConflictOut
+         * @description Ответ `409`: та же форма отказа, и рядом с ней — сцена, которая победила.
+         *
+         *     Форма отказа не меняется (`error` — то же тело `ErrorBody`: код, текст и
+         *     место): меняется то, что к ней приложено. Без сцены вкладка, потерявшая
+         *     гонку, пошла бы за нею вторым запросом — и за время этого запроса гонка
+         *     повторилась бы.
+         */
+        SceneConflictOut: {
+            error: components["schemas"]["ErrorBody"];
+            /** Scene */
+            scene?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Version
+             * @default 0
+             */
+            version: number;
+            /** Recognized */
+            recognized?: {
+                [key: string]: unknown;
+            };
+            /** At */
+            at?: string | null;
+        };
+        /**
+         * SceneIn
+         * @description Тело записи сцены: сама сцена и версия, поверх которой пишут.
+         */
+        SceneIn: {
+            /**
+             * Scene
+             * @description The drawing as the canvas gives it. Scroll, zoom and selection do not belong here: they are a property of the person looking, not of the board, and every movement of the canvas would otherwise be a write to the volume.
+             */
+            scene: {
+                [key: string]: unknown;
+            };
+            /**
+             * Version
+             * @description The version this edit is based on: the one the last GET or PUT answered. Zero means the board was empty. A version that is not the current one answers 409 and carries the current scene, so the edit is lost loudly.
+             * @default 0
+             */
+            version: number;
+            /**
+             * Recognized
+             * @description What has already been recognised off this scene, kept beside it and handed back untouched. It rides along with the scene so that reopening a board recognises nothing again — every line whose strokes have not changed is already answered here. Empty is normal: a board nobody has written on has nothing recognised. Keyed by line, an entry carries at least `box` (where the line stands on the scene), `elements` (the strokes it is drawn with), `latex` (what was read, empty when nothing was) and `state` (`recognized` or `manual`). Those four are what lets the service rebuild the lines of the solution by itself when the board has been drawn on since they were last written; everything else in an entry belongs to the page and is never looked at.
+             */
+            recognized?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * SceneOut
+         * @description Рабочая сцена доски, её версия и то, что с неё уже распознали.
+         */
+        SceneOut: {
+            /**
+             * Scene
+             * @description The drawing itself, as the canvas stores it. Empty on a board nobody has drawn on yet, which is not an error.
+             */
+            scene?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Version
+             * @description Version counter of the scene, from 1. Pass it back in PUT: a stale one loses to whoever wrote first.
+             * @default 0
+             */
+            version: number;
+            /**
+             * Recognized
+             * @description What has already been recognised off this scene, kept beside it and handed back untouched. It rides along with the scene so that reopening a board recognises nothing again — every line whose strokes have not changed is already answered here. Empty is normal: a board nobody has written on has nothing recognised. Keyed by line, an entry carries at least `box` (where the line stands on the scene), `elements` (the strokes it is drawn with), `latex` (what was read, empty when nothing was) and `state` (`recognized` or `manual`). Those four are what lets the service rebuild the lines of the solution by itself when the board has been drawn on since they were last written; everything else in an entry belongs to the page and is never looked at.
+             */
+            recognized?: {
+                [key: string]: unknown;
+            };
+            /**
+             * At
+             * @description When it was last written
+             */
+            at?: string | null;
+        };
+        /**
+         * SessionOut
+         * @description Готово ли распознавание рукописи и чем открывать сокет.
+         */
+        SessionOut: {
+            /**
+             * Ready
+             * @description Whether handwriting recognition works for this person. False is a state, not an error: the board still draws and still lets a formula be typed.
+             */
+            ready: boolean;
+            /**
+             * Reason
+             * @description Why not, when it is not: `no_keys`. Empty when ready.
+             * @default
+             */
+            reason: string;
+            /**
+             * Scheme
+             * @description `wss` or `ws`, as seen from this request
+             * @default
+             */
+            scheme: string;
+            /**
+             * Host
+             * @description Host this request came to. The recognition library builds the socket address out of it, so the page appends its own base path before handing it over.
+             * @default
+             */
+            host: string;
+            /**
+             * Application Key
+             * @description What to give the recognition library as its application key. A constant, and deliberately not a key: the real one never leaves the service, and the bridge substitutes it on the way out.
+             * @default koritsu
+             */
+            application_key: string;
+            /**
+             * Hmac Key
+             * @description What to give the library as its HMAC key. The same constant, for the same reason: the bridge answers the signature challenge itself.
+             * @default koritsu
+             */
+            hmac_key: string;
+            /**
+             * Requests This Month
+             * @description Recognition requests this month by this person: batch calls plus sockets opened. The tariff counts requests, not strokes, so this is the number to watch.
+             * @default 0
+             */
+            requests_this_month: number;
+            /**
+             * Opens This Month
+             * @description Sockets opened this month, of those requests. The live socket is the part a forgotten tab can keep spending on, which is why it is also counted on its own.
+             * @default 0
+             */
+            opens_this_month: number;
+        };
+        /**
          * SolutionIn
          * @description Тело заведения решения. Поле одно: как его звать.
          */
@@ -4051,6 +4806,159 @@ export interface components {
             condition_name: string;
         };
         /**
+         * StepLineIn
+         * @description Одна строка решения так, как её прислала страница.
+         */
+        StepLineIn: {
+            /**
+             * Id
+             * @description Short id of the line. The tutor names lines by it and the page resolves a remark back into strokes by it, so it has to be the same id on both roads.
+             */
+            id: string;
+            /**
+             * Latex
+             * @description The line in LaTeX, without the dollar signs. Empty on a line that was not read. It is what decides whether the line reaches the tutor: there is nothing else to show and nothing else to ask.
+             * @default
+             */
+            latex: string;
+            /**
+             * Elements
+             * @description Ids of the scene objects this line is drawn with
+             */
+            elements?: string[];
+            /**
+             * Confirmed
+             * @description Kept so that a page written against an older shape is still understood; nothing is decided by it. There is no confirming step on the board, and `latex` alone says whether the line has content.
+             * @default true
+             */
+            confirmed: boolean;
+            /**
+             * Source
+             * @description Where the LaTeX came from, when the page knows: it is shown beside the line and nothing is decided by it.
+             * @default
+             */
+            source: string;
+        };
+        /**
+         * StepOut
+         * @description Одна строка решения так, как её читает интерфейс.
+         */
+        StepOut: {
+            /**
+             * N
+             * @description Reading order, from 1
+             */
+            n: number;
+            /**
+             * Id
+             * @description Short id of the line; the tutor names this
+             */
+            id: string;
+            /**
+             * Latex
+             * @description The line in LaTeX, without the dollar signs. Empty on a line nobody has read: such a line stays in the list and reaches the tutor as unavailable content.
+             * @default
+             */
+            latex: string;
+            /**
+             * Source
+             * @description Where the LaTeX came from
+             * @default
+             */
+            source: string;
+            /**
+             * Confirmed
+             * @description Whether this line has content to show: true when its LaTeX is not empty. There is no confirming step on the board - the person sees what was read under their own writing and corrects the strokes - so this answers whether there is anything here for the tutor to see, and nothing else.
+             * @default false
+             */
+            confirmed: boolean;
+            /**
+             * Elements
+             * @description Ids of the scene objects this line is drawn with
+             */
+            elements?: string[];
+            /**
+             * Frame
+             * @description Id of the frame this line belongs to, null when it belongs to none. A frame is a caption over a group of lines, not a step of the solution.
+             */
+            frame?: string | null;
+            /**
+             * Frame Name
+             * @description What that frame is called
+             * @default
+             */
+            frame_name: string;
+        };
+        /**
+         * StepsIn
+         * @description Тело записи строк: готовые строки в порядке чтения.
+         */
+        StepsIn: {
+            /**
+             * Lines
+             * @description The lines of the solution, top to bottom. Reading order is the order of this list: which line stands above which is a fact about the drawing, and the page is the one looking at it.
+             */
+            lines?: components["schemas"]["StepLineIn"][];
+        };
+        /**
+         * StepsOut
+         * @description Строки решения и то, не отстали ли они от доски.
+         */
+        StepsOut: {
+            /** Steps */
+            steps?: components["schemas"]["StepOut"][];
+            /**
+             * Scene Version
+             * @description Version of the scene these lines were read off
+             * @default 0
+             */
+            scene_version: number;
+            /**
+             * Latex Material
+             * @description Id of the `<board>.latex.md` material of this solution, the one the model sees along with the rest of the context folder. Empty until the lines are first built.
+             * @default
+             */
+            latex_material: string;
+            /**
+             * Unrecognized
+             * @description How many lines nobody has read: lines with empty LaTeX. Such a line stays in the list and reaches the tutor as unavailable content: a verdict cannot be `correct` while the board carries writing nobody has read.
+             * @default 0
+             */
+            unrecognized: number;
+            /**
+             * Stale
+             * @description True when the board has been drawn on since these lines were read. A check refuses on a stale board rather than checking yesterday's text.
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * At
+             * @description When they were read
+             */
+            at?: string | null;
+        };
+        /**
+         * StrokeIn
+         * @description Один росчерк: где вело перо и когда.
+         */
+        StrokeIn: {
+            /**
+             * X
+             * @description Horizontal coordinates of the points, in canvas pixels
+             */
+            x: number[];
+            /**
+             * Y
+             * @description Vertical coordinates, the same length as `x`
+             */
+            y: number[];
+            /**
+             * T
+             * @description Milliseconds of each point, the same length as `x`. May be left out; timing sharpens recognition but is not required by it.
+             */
+            t?: number[] | null;
+        };
+        /**
          * TagPromptIn
          * @description Тело правки задания на тег. Пустая строка — «задания нет».
          */
@@ -4060,6 +4968,29 @@ export interface components {
              * @description What the model is told to write into this tag. Stored in the manifest of the work, so it outlives a single run.
              */
             prompt: string;
+        };
+        /**
+         * TaskIn
+         * @description Тело записи условия. Пустая строка стирает записанное.
+         */
+        TaskIn: {
+            /**
+             * Text
+             * @description The assignment in words. It travels to the tutor as a separate untrusted part of the prompt: the person who typed it is the person who drew the board.
+             */
+            text: string;
+        };
+        /**
+         * TaskOut
+         * @description Условие задачи этой доски, словами.
+         */
+        TaskOut: {
+            /**
+             * Text
+             * @description The assignment in words
+             * @default
+             */
+            text: string;
         };
         /**
          * TemplateOut
@@ -4174,6 +5105,25 @@ export interface components {
             source: string;
         };
         /**
+         * UnmatchedOut
+         * @description Выражение, не легшее ни на одну присланную строку.
+         */
+        UnmatchedOut: {
+            /**
+             * Latex
+             * @description The expression in LaTeX
+             * @default
+             */
+            latex: string;
+            /**
+             * Jiix
+             * @description The expression as the service returned it
+             */
+            jiix?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
          * UserCreateIn
          * @description Тело `POST /api/admin/users`: кого заводит владелец.
          *
@@ -4252,6 +5202,72 @@ export interface components {
              * @default false
              */
             show_structure: boolean;
+        };
+        /**
+         * WorkspaceBoardIn
+         * @description Тело заведения доски без работы: в каком пространстве и как звать.
+         */
+        WorkspaceBoardIn: {
+            /**
+             * Workspace Id
+             * @description Which workspace the board goes to. The work it lands in is chosen by the service: a board is a solution, and picking a work before the first stroke is a screen with nothing to decide on it.
+             */
+            workspace_id: string;
+            /**
+             * Name
+             * @description What to call this board. Empty is fine: the interface names it itself, from the module and n.
+             * @default
+             */
+            name: string;
+        };
+        /**
+         * WorkspaceBoardOut
+         * @description Карточка доски в ленте пространства: та же, плюс имя её работы.
+         *
+         *     Имя работы стоит в карточке не для показа, а для поиска: экран доски
+         *     работы не называет вовсе, но доску, заведённую внутри работы, человек
+         *     помнит по этой работе, и ответ без имени заставил бы спрашивать список
+         *     работ вторым запросом.
+         */
+        WorkspaceBoardOut: {
+            /**
+             * Id
+             * @description Run id of this board: the value of ?run=
+             */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Name
+             * @description Empty means the interface names it itself
+             */
+            name: string;
+            /**
+             * N
+             * @description Which board of this project, from 1
+             */
+            n: number;
+            /** User Id */
+            user_id?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Steps
+             * @description How many lines the last recognition read off this board
+             * @default 0
+             */
+            steps: number;
+            /**
+             * Checked At
+             * @description When a tutor last finished checking this board
+             */
+            checked_at?: string | null;
+            /**
+             * Project Name
+             * @description Name of the work this board is a solution of
+             * @default
+             */
+            project_name: string;
         };
         /**
          * WorkspaceLiveReportOut
@@ -8172,6 +9188,518 @@ export interface operations {
             };
         };
     };
+    board_workspace_boards: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceBoardOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_workspace_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceBoardIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceBoardOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_boards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_scene: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_put_scene: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SceneIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneOut"];
+                };
+            };
+            /** @description The board was written from somewhere else; the current scene comes with the refusal */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneConflictOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_steps: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepsOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_read_steps: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StepsIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepsOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_task: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_set_task: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_chat: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_recognize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecognizeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecognizeOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_ink_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     flowcharts_modes: {
         parameters: {
             query?: never;
@@ -10203,6 +11731,518 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BlankOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_workspace_boards_v1: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceBoardOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_workspace_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceBoardIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceBoardOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_boards_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_scene_v1: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_put_scene_v1: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SceneIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneOut"];
+                };
+            };
+            /** @description The board was written from somewhere else; the current scene comes with the refusal */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneConflictOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_steps_v1: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepsOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_read_steps_v1: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StepsIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepsOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_task_v1: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_set_task_v1: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_chat_v1: {
+        parameters: {
+            query?: {
+                /** @description Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole. */
+                run?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_session_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_recognize_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecognizeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecognizeOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    board_ink_version_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */

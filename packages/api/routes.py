@@ -57,7 +57,7 @@ routes — два входа службы и место, куда подпаке
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, APIWebSocketRoute
 
 # Вход сайта (`site`, cookie-сессия, не версионируется — сайт и API едут вместе)
 # собирается ВНУТРИ `collect()`, а не здесь. Роутер уровня модуля накапливал бы
@@ -244,9 +244,17 @@ def зеркало(роутер: APIRouter) -> APIRouter:
     маршруты службы объявляются декоратором на своём роутере. Если такое
     появится, здесь будет внятный отказ при сборке приложения, а не тихо
     пропавшая половина маршрутов.
+
+    **Сокет не зеркалится.** У маршрута WebSocket нет ни `operation_id`, ни
+    места в документе, и ключом его не открывают: сокет живёт ровно столько,
+    сколько открыта страница в браузере, и подтверждает себя той же
+    cookie-сессией. Пропуск, а не отказ: сокет у службы законный (мост
+    распознавания рукописи), и роняться сборке приложения из-за него незачем.
     """
     зеркальный = APIRouter()
     for маршрут in роутер.routes:
+        if isinstance(маршрут, APIWebSocketRoute):
+            continue
         if not isinstance(маршрут, APIRoute):
             raise TypeError(
                 f"под /api/v1 попал не маршрут, а {type(маршрут).__name__}: "

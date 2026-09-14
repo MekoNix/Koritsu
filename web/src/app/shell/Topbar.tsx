@@ -17,9 +17,10 @@
  * оказалась бы родителем окна, которое стоит поверх всей страницы.
  */
 import { useState } from 'react'
+import { useLocation } from 'react-router-dom'
 
 import { useT } from '@/i18n'
-import { toggleAgentPanel, useAgentPanelOpen } from '@/features/agent'
+import { hasOwnTutor, toggleAgentPanel, useAgentPanelOpen } from '@/features/agent'
 import { SearchPalette } from '@/features/search/SearchPalette'
 import { hotkeyLabel, useActionHotkey, useHotkeyBinding } from '@/lib/hotkeys'
 import { Button, Icon } from '@/ui'
@@ -33,6 +34,9 @@ export function Topbar() {
   const t = useT()
   const agentOpen = useAgentPanelOpen()
   const [searchOpen, setSearchOpen] = useState(false)
+  // На разделе со своим репетитором («Доска») кнопки общей панели нет: панель
+  // там не открывается, а кнопка, которая ничего не делает, хуже её отсутствия.
+  const свойАгент = hasOwnTutor(useLocation().pathname)
 
   // Сочетания — по действию, а не буквой: человек вправе переназначить их в
   // настройках (`/settings/hotkeys`), и подсказка на кнопке обязана показывать
@@ -64,19 +68,21 @@ export function Topbar() {
           </kbd>
         </Button>
 
-        <Button
-          variant="agent"
-          size="sm"
-          className="rounded-full"
-          aria-expanded={agentOpen}
-          onClick={toggleAgentPanel}
-        >
-          <Icon name="agent" size={16} />
-          {t('shell.agent.label')}
-          <kbd className="rounded-sm border border-line-strong bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted">
-            {hotkeyLabel(агент)}
-          </kbd>
-        </Button>
+        {!свойАгент && (
+          <Button
+            variant="agent"
+            size="sm"
+            className="rounded-full"
+            aria-expanded={agentOpen}
+            onClick={toggleAgentPanel}
+          >
+            <Icon name="agent" size={16} />
+            {t('shell.agent.label')}
+            <kbd className="rounded-sm border border-line-strong bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted">
+              {hotkeyLabel(агент)}
+            </kbd>
+          </Button>
+        )}
 
         <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-line" />
 

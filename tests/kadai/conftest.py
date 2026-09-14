@@ -21,8 +21,10 @@
 `AttributeError`.
 
 Подделки дверей ведут себя как настоящие в том, что для сценария важно:
-`make_template` кладёт по два блока на раздел (заголовок и место под
-содержимое), `solve` заменяет черновики нетекстовых блоков и пишет версию,
+`make_template` кладёт по два блока на раздел (заголовок и заготовка, названная
+видом того, чего раздел ждёт), `solve` закрывает заготовки под код и таблицу и
+пишет версию, а заготовку под схему оставляет как есть — инструментов у
+подделки нет, и сценарий обязан замечать незакрытый раздел;
 `write_texts` пишет весь текст одним вызовом и **не трогает** блоки с пометкой
 `manual`/`file`. Последнее подделано намеренно: правило «написанное человеком
 не переписывается» держит настоящая дверь, и тест обязан ловить сценарий,
@@ -52,6 +54,25 @@ def code(text: str, lang: str = "python") -> dict:
 
 def table(rows) -> dict:
     return {"v": 2, "type": "table", "rows": [list(r) for r in rows]}
+
+
+# Виды содержимого, которые ставит инструмент, а не текст. Заготовка такого
+# раздела несёт вид в самой пометке — «черновик diagram: …», — и по ней сценарий
+# отличает место под схему от места под текст.
+ВИДЫ_ПОД_ИНСТРУМЕНТ = ("diagram", "code", "table", "image", "formula")
+
+
+def заготовка(подсказка: str, вид: str = "") -> str:
+    """Заготовка раздела так, как её пишет служба: пометка, вид и подсказка."""
+    пометка = f"черновик {вид}:" if вид in ВИДЫ_ПОД_ИНСТРУМЕНТ else "черновик:"
+    return f"{пометка} {подсказка}"
+
+
+def вид_заготовки(текст) -> str:
+    """Чего ждёт заготовка: «черновик diagram: …» → diagram, «черновик: …» → пусто."""
+    текст = str(текст or "").strip().lower()
+    return next((вид for вид in ВИДЫ_ПОД_ИНСТРУМЕНТ
+                 if текст.startswith(f"черновик {вид}:")), "")
 
 
 @dataclass
@@ -126,10 +147,13 @@ class FakeProject:
         self._block_versions: list = []
         self._artifacts: dict = {}
         self._packed: list | None = None
+        self._packs: dict = {}
         self._pack_name: str = ""
         self._derived: dict = {}
         self._store = FakeStore()
         self._condition: str | None = None
+        self._condition_text: str = ""
+        self._common: set = set()
         self._spent = spent or {"calls": 2, "units": 41200.0, "cost": 1.83,
                                 "estimated_share": 0.04}
         self._cap = cap
@@ -149,8 +173,32 @@ class FakeProject:
             self._condition = mid
         return material
 
+    def add_common(self, data: bytes, name: str):
+        """Файл, приложенный ко всей работе, а не к этому решению.
+
+        Отдельным движением, потому что и в проекте это отдельное движение:
+        материал работы приписывается решению, и в `исходники/` едут только
+        приписанные. Без такого файла проверить «берутся файлы папки решения, а
+        не все подряд» было бы нечем.
+        """
+        material = self.add_material(data, name)
+        self._common.add(material.id)
+        return material
+
     def condition(self):
         return self._condition
+
+    def condition_text(self) -> str:
+        """Условие словами: набранное человеком или подтверждённое им после скана."""
+        return self._condition_text
+
+    def set_condition_text(self, text: str) -> str:
+        self._condition_text = str(text or "")
+        return self._condition_text
+
+    def solution_materials(self) -> list:
+        """Материалы папки решения: всё, что не приложено ко всей работе."""
+        return [m.id for m in self._store.list() if m.id not in self._common]
 
     # ── блоки ────────────────────────────────────────────────────────────
     def blocks(self) -> list:
@@ -202,7 +250,11 @@ class FakeProject:
         return self._state.get(name, {})
 
     def pack(self, entries, *, name: str = "работа.zip") -> str:
+        # Архивов за прогон складывается два — полный и тот, что несут на сдачу,
+        # — и опись каждого нужна по имени: перезаписав одну другой, тест
+        # проверял бы состав того архива, который сложили последним.
         self._packed = entries
+        self._packs[str(name)] = entries
         self._pack_name = name
         return name
 
@@ -329,36 +381,45 @@ class FakeDoors:
             записи.append({"key": f"b-{n:02d}", "kind": "heading", "label": заголовок,
                            "value": markdown(f"# {заголовок}"), "source": "agent"})
             n += 1
-            подпись = подсказка if вид in ("markdown", "text") else f"{подсказка} (здесь будет {вид})"
             записи.append({"key": f"b-{n:02d}", "kind": "markdown", "label": подсказка,
-                           "value": markdown(f"черновик: {подпись}"), "source": "agent"})
+                           "value": markdown(заготовка(подсказка, вид)), "source": "agent"})
         self.project.set_blocks(записи, source="agent", note="строение работы")
         return self.project.blocks()
 
     def solve(self, task, *, data=(), max_steps=None, tools=None, **kw):
-        """Петля: черновики нетекстовых мест становятся кодом и таблицей.
+        """Петля: заготовки под код и таблицу становятся кодом и таблицей.
 
         Связного текста не пишет ни строки — это и есть несущее решение, и
         подделка обязана вести себя так же, иначе тест на «текст одним
         проходом» проверял бы не то.
+
+        Заготовки остальных видов петля оставляет как есть: инструментов схемы и
+        графика у подделки нет, а сценарий обязан замечать именно это — раздел,
+        объявленный схемой, но оставшийся заготовкой.
         """
         self.solved.append({"task": task, "data": list(data), "max_steps": max_steps})
         записи, changed = self.project.blocks(), []
         for record in записи:
-            текст = str((record.get("value") or {}).get("text") or "")
-            if "здесь будет code" in текст:
+            вид = вид_заготовки((record.get("value") or {}).get("text"))
+            if вид == "code":
                 record["kind"], record["value"] = "code", code("def sort(a):\n    return sorted(a)")
-                changed.append(record["key"])
-            elif "здесь будет table" in текст:
+            elif вид == "table":
                 record["kind"] = "table"
                 record["value"] = table([["n", "мс"], ["10", "1"], ["100", "12"]])
-                changed.append(record["key"])
+            else:
+                continue
+            changed.append(record["key"])
         self.project.set_blocks(записи, source="agent", note="петля: нетекстовое")
         return FakeResult(ok=True, changed=changed, steps=len(changed) + 1,
                           calls=len(changed))
 
     def write_texts(self, *, overwrite=False, data=(), **kw):
-        """Весь текст одним проходом. Блоки человека не трогает даже при просьбе."""
+        """Весь текст одним проходом. Блоки человека не трогает даже при просьбе.
+
+        Заготовка, названная видом («черновик diagram: …»), местом под текст не
+        считается: проза поверх места под схему выглядит готовым разделом, а
+        схемы в работе нет, и узнаёт об этом человек из собранного отчёта.
+        """
         self.texts.append({"overwrite": overwrite})
         записи, filled = self.project.blocks(), []
         for record in записи:

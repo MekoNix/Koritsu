@@ -45,6 +45,8 @@ const config: Config = {
         'mod-flowcharts': 'var(--mod-flowcharts)',
         'mod-uml': 'var(--mod-uml)',
         'mod-reports': 'var(--mod-reports)',
+        'mod-kadai': 'var(--mod-kadai)',
+        'mod-board': 'var(--mod-board)',
       },
       borderRadius: {
         sm: 'var(--radius-sm)',

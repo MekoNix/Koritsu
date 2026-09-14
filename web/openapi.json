@@ -3,7 +3,7 @@
  "info": {
   "title": "Koritsu API",
   "description": "Two entrances, one set of handlers: `/api` for the site (cookie session) and `/api/v1` for external clients (bearer token). Only `/api/v1` is versioned and documented.",
-  "version": "2.0.0b1.4"
+  "version": "2.0.0b2.0"
  },
  "paths": {
   "/api/auth/register": {
@@ -1936,7 +1936,7 @@
      "projects"
     ],
     "summary": "Reports of this project",
-    "description": "Every report of the project, oldest first: what it is called, which template it is built from and the first page of what it built last. A project carries several reports, each with its own template and its own tag values; the id of a report is what the other routes take as `report`. `kind` says how a report is made: `template` is the usual way — a blank with tags and tag values — and `report` names it; `live` is a report written from an assignment, a solution built in blocks, and the `/kadai` routes take its id as `run`. Reports written from an assignment are listed only for projects of the `reports` module, after the templated ones. Viewer role. 400 invalid_id, 404 not_found, 409 in_trash.",
+    "description": "Every report of the project, oldest first: what it is called, which template it is built from and the first page of what it built last. A project carries several reports, each with its own template and its own tag values; the id of a report is what the other routes take as `report`. `kind` says how a report is made: `template` is the usual way (a blank with tags and tag values), and `report` names it; `live` is a report written from an assignment, a solution built in blocks, and the `/kadai` routes take its id as `run`. Reports written from an assignment are listed only for projects of the `reports` module, after the templated ones. Viewer role. 400 invalid_id, 404 not_found, 409 in_trash.",
     "operationId": "list_project_reports",
     "parameters": [
      {
@@ -2086,7 +2086,7 @@
      "projects"
     ],
     "summary": "Reports of every project in a workspace",
-    "description": "Every report of every project of one workspace, newest first, each named together with the project it belongs to. `kind` says how a report is made: `template` is a blank with tags and tag values, `live` is a report written from an assignment — a solution built in blocks, whose id the `/kadai` routes take as `run`. Reports written from an assignment are listed for projects of the `reports` module. `workspace_id` is required: a list of everything the caller can reach would show the reports of one workspace while another one is open. Projects in the trash are left out, and so are projects with no reports at all. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
+    "description": "Every report of every project of one workspace, newest first, each named together with the project it belongs to. `kind` says how a report is made: `template` is a blank with tags and tag values, `live` is a report written from an assignment: a solution built in blocks, whose id the `/kadai` routes take as `run`. Reports written from an assignment are listed for projects of the `reports` module. `workspace_id` is required: a list of everything the caller can reach would show the reports of one workspace while another one is open. Projects in the trash are left out, and so are projects with no reports at all. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
     "operationId": "list_workspace_reports",
     "parameters": [
      {
@@ -2219,7 +2219,7 @@
      "keys"
     ],
     "summary": "Providers that accept a key",
-    "description": "Lists the model providers a key can be stored for, and where a key for each would come from: `own` (yours), `shared` (the one the service runs on) or `none` (nothing to pay with). 401 unauthenticated.",
+    "description": "Lists the providers a key can be stored for, and where a key for each would come from: `own` (yours), `shared` (the one the service runs on) or `none` (nothing to pay with). `kind` says what the key is for: `model` pays for a model run, `ink` recognises handwriting on a board. An ink provider never answers `shared`: its tariff counts socket openings, so a board runs on the person's own key or not at all. 401 unauthenticated.",
     "operationId": "list_key_providers",
     "responses": {
      "200": {
@@ -4779,7 +4779,7 @@
      "templates"
     ],
     "summary": "Build this project from this template",
-    "description": "Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. A template that carries a manifest of its own — one generated from the blocks of a work — is restored from it: tag types, model tasks, limits and dependencies come back as they were written instead of being guessed from the labels. For the tags of such a template its own manifest is what counts: keys are given out by the service, and the same key in an older blank is not the same tag. `report` says which report of the project changes its template; without it the single document of the work does. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.",
+    "description": "Makes one of the attached templates the one the work is built from. Decisions already made about the tags (prompts, types, limits) move to the new manifest: a tag that is gone is marked as such rather than dropped, and tag values are left alone. A template that carries a manifest of its own (one generated from the blocks of a work) is restored from it: tag types, model tasks, limits and dependencies come back as they were written instead of being guessed from the labels. For the tags of such a template its own manifest is what counts: keys are given out by the service, and the same key in an older blank is not the same tag. `report` says which report of the project changes its template; without it the single document of the work does. Editor role. 400 bad_template, 400 invalid_id, 403 forbidden, 404 not_found.",
     "operationId": "use_project_template",
     "parameters": [
      {
@@ -5271,7 +5271,7 @@
      "kadai"
     ],
     "summary": "Set the assignment of this solution: text, file, or both",
-    "description": "Writes the assignment of the task. `text` is the assignment in words — typed into the form, or corrected after a scan has been read — and it is what the work is solved by. `material_id` names an already parsed material of this project as the file the assignment came from; the file keeps its pictures and shows what was read. Text wins over file: a correction takes effect at once, without a second upload, and there is exactly one assignment in a solution — no previous version stays behind to be marked and explained. Until one of the two is set, a `kadai_run` job refuses: there is nothing to solve. Writing the same values twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of the file, without its extension. Naming another file drops the stored text: it belonged to the previous one. Editor role. 400 invalid_id, 400 invalid_value (neither text nor material), 403 forbidden, 404 not_found.",
+    "description": "Writes the assignment of the task. `text` is the assignment in words - typed into the form, or corrected after a scan has been read - and it is what the work is solved by. `material_id` names an already parsed material of this project as the file the assignment came from; the file keeps its pictures and shows what was read. Text wins over file: a correction takes effect at once, without a second upload, and there is exactly one assignment in a solution - no previous version stays behind to be marked and explained. Until one of the two is set, a `kadai_run` job refuses: there is nothing to solve. Writing the same values twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of the file, without its extension. Naming another file drops the stored text: it belonged to the previous one. Editor role. 400 invalid_id, 400 invalid_value (neither text nor material), 403 forbidden, 404 not_found.",
     "operationId": "kadai_set_condition",
     "parameters": [
      {
@@ -5677,6 +5677,770 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/BlankOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/board/boards": {
+   "get": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Boards of every project in a workspace",
+    "description": "Every board of one workspace, newest first, each named together with the work it is a solution of. This is the list the board screen is made of: a board is opened and started without picking a work first. `workspace_id` is required: a list of everything the caller can reach would show the boards of one workspace while another one is open. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
+    "operationId": "board_workspace_boards",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/WorkspaceBoardOut"
+         },
+         "title": "Response Board Workspace Boards"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Start a new board in a workspace",
+    "description": "Starts a board without naming a work: a journal entry and its own directory on the volume, with its own assignment, its own context folder and its own scene. The work it lands in is the workspace board work, created on the first board if it is not there yet. Nothing is drawn and nothing is charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.",
+    "operationId": "board_workspace_create",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceBoardIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceBoardOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/board/boards": {
+   "get": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Boards of this project",
+    "description": "Every board of the project, oldest first: what it is called, which board of this project it is, how many lines the last recognition read off it and when a tutor last checked it. A board is one solution of the work: it carries its own assignment, its own context folder and its own run history, and its id is what the other routes take as `run`. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "board_boards",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/BoardOut"
+         },
+         "title": "Response Board Boards"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Start a new board in this project",
+    "description": "Starts a board: a journal entry and its own directory on the volume, with its own assignment, its own context folder and its own scene. Nothing is drawn and nothing is charged here. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "board_create",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BoardIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BoardOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/board/boards/{run_id}": {
+   "delete": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Delete one board of this project",
+    "description": "Removes a board: its journal entry, its scene, the lines read off it and its assignment. Its context files are unbound from it; files attached to the project as a whole are left alone, and so are artifacts: a snapshot is addressed by its content and may still be what a finished check refers to. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "board_delete",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/board/scene": {
+   "get": {
+    "tags": [
+     "board"
+    ],
+    "summary": "The working scene of this board",
+    "description": "The drawing as it was last written, and the version counter to pass back when writing. An empty scene with version 0 is the answer for a board nobody has drawn on yet, which is not an error: the page opens before the first stroke. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "board_scene",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SceneOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Write the working scene of this board",
+    "description": "Replaces the drawing and bumps its version. `version` in the body is the one this edit is based on; if it is not the current one, the answer is 409 and carries the scene that won, so two tabs of one board lose an edit loudly rather than silently. Editor role. 400 invalid_id, 400 invalid_value, 400 scene_too_big, 403 forbidden, 404 not_found, 409 scene_conflict.",
+    "operationId": "board_put_scene",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SceneIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SceneOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "The board was written from somewhere else; the current scene comes with the refusal",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SceneConflictOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/board/steps": {
+   "get": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Lines of the solution read off this board",
+    "description": "The lines the last recognition read off this board, in reading order, and whether they have fallen behind the drawing. `stale` true means the board has been drawn on since; a check refuses on a stale board rather than checking yesterday's text. `latex_material` is the file of recognised lines that sits in the context folder of this board. Reading costs nothing: nothing is rebuilt here. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "board_steps",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StepsOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Write the lines of this board",
+    "description": "Writes the lines of the solution and rewrites the `<board>.latex.md` file of this board's context folder, so the tutor and the rest of the work see the same text. With a body, the lines are the ones given, in the order given: the page grouped the strokes into lines and had them recognised, and reading the scene a second time here would answer the same question differently. Without a body, they are built from what has already been recognised off the scene, and only when nothing has - read off the scene itself, which is the road for everything that has no page. The previous file is replaced, not kept beside it: the truth about a board is its scene, the lines are rebuilt from it at any moment, and a version per formula would grow the inventory of the work, which travels in every prompt. A line reaches the tutor when its LaTeX is not empty; a line nobody has read stays in the list and reaches the tutor as unavailable content. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 422 steps_failed.",
+    "operationId": "board_read_steps",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/StepsIn"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Тело"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StepsOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/board/task": {
+   "get": {
+    "tags": [
+     "board"
+    ],
+    "summary": "The assignment this board is solving",
+    "description": "The assignment of this board, in words. Empty is not an error: a board is allowed to be a scratch pad. It reaches the tutor as a separate untrusted part of the prompt, because the person who typed it is the person who drew the board. A file with the assignment is an ordinary material of this board's context folder, which is a different road. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "board_task",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TaskOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Write the assignment of this board",
+    "description": "Writes the assignment in words. An empty string erases it. Writing the same text twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
+    "operationId": "board_set_task",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TaskIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TaskOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/board/chat": {
+   "get": {
+    "tags": [
+     "board"
+    ],
+    "summary": "The conversation with the tutor on this board",
+    "description": "Every message exchanged with the tutor on this board, oldest first. A new message is sent by enqueueing a `board_check` job with `mode: \"chat\"` and `message`; the answer lands here when the job is done. Empty for a board nobody has talked on. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "board_chat",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ChatOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/board/session": {
+   "get": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Whether handwriting recognition is ready for you",
+    "description": "Says whether this person's boards recognise handwriting, and what to hand the recognition library so it talks to the bridge instead of the cloud. `ready` false with reason `no_keys` is a state and not an error: the board draws, saves and lets a formula be typed without any key at all, and a check works the same on typed formulas. The keys in the answer are constants, never real ones: the real pair stays in the service and the bridge substitutes it. `requests_this_month` counts what the recognition tariff counts: batch calls plus sockets opened. 401 unauthenticated.",
+    "operationId": "board_session",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SessionOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/board/recognize": {
+   "post": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Read handwritten lines off a board",
+    "description": "Reads lines of handwriting into LaTeX with this person's own recognition keys. A line is a group of strokes as the page sees them on the canvas, and the answer depends on nothing but that line: a line whose strokes changed can be read again, and one that did not change need not be sent at all. All the lines of a call travel in a single request, because the recognition tariff counts requests. At most eight lines a call, at most two thousand points a line, at most twenty requests a minute. A line the service refuses carries the refusal in its own `error` and does not fail the call; only an unreachable service refuses the whole call. No key of any kind leaves the service, here or anywhere. 400 invalid_value, 401 unauthenticated, 403 ink_no_keys, 422 validation_failed, 429 rate_limited, 502 ink_unreachable.",
+    "operationId": "board_recognize",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RecognizeIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RecognizeOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v4.0/iink/version": {
+   "get": {
+    "tags": [
+     "board"
+    ],
+    "summary": "Protocol version of the recognition service",
+    "description": "Passes the recognition service's version answer through. The recognition library asks for it before opening a socket and, without an answer, falls back to a protocol version of its own choosing, after which the socket fails in a way that reads on screen as an unreachable server. Carries no key and reveals none. 401 unauthenticated, 502 ink_unreachable.",
+    "operationId": "board_ink_version",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Board Ink Version"
         }
        }
       }
@@ -8523,7 +9287,7 @@
      "kadai"
     ],
     "summary": "Set the assignment of this solution: text, file, or both",
-    "description": "Writes the assignment of the task. `text` is the assignment in words — typed into the form, or corrected after a scan has been read — and it is what the work is solved by. `material_id` names an already parsed material of this project as the file the assignment came from; the file keeps its pictures and shows what was read. Text wins over file: a correction takes effect at once, without a second upload, and there is exactly one assignment in a solution — no previous version stays behind to be marked and explained. Until one of the two is set, a `kadai_run` job refuses: there is nothing to solve. Writing the same values twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of the file, without its extension. Naming another file drops the stored text: it belonged to the previous one. Editor role. 400 invalid_id, 400 invalid_value (neither text nor material), 403 forbidden, 404 not_found.",
+    "description": "Writes the assignment of the task. `text` is the assignment in words - typed into the form, or corrected after a scan has been read - and it is what the work is solved by. `material_id` names an already parsed material of this project as the file the assignment came from; the file keeps its pictures and shows what was read. Text wins over file: a correction takes effect at once, without a second upload, and there is exactly one assignment in a solution - no previous version stays behind to be marked and explained. Until one of the two is set, a `kadai_run` job refuses: there is nothing to solve. Writing the same values twice is the same state, which is why this is a PUT. Every solution has an assignment of its own: `run` says which. A solution the person has not named takes the name of the file, without its extension. Naming another file drops the stored text: it belonged to the previous one. Editor role. 400 invalid_id, 400 invalid_value (neither text nor material), 403 forbidden, 404 not_found.",
     "operationId": "kadai_set_condition_v1",
     "parameters": [
      {
@@ -8935,6 +9699,785 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/BlankOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/board/boards": {
+   "get": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Boards of every project in a workspace",
+    "description": "Every board of one workspace, newest first, each named together with the work it is a solution of. This is the list the board screen is made of: a board is opened and started without picking a work first. `workspace_id` is required: a list of everything the caller can reach would show the boards of one workspace while another one is open. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
+    "operationId": "board_workspace_boards_v1",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/WorkspaceBoardOut"
+         },
+         "title": "Response Board Workspace Boards V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Start a new board in a workspace",
+    "description": "Starts a board without naming a work: a journal entry and its own directory on the volume, with its own assignment, its own context folder and its own scene. The work it lands in is the workspace board work, created on the first board if it is not there yet. Nothing is drawn and nothing is charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.",
+    "operationId": "board_workspace_create_v1",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkspaceBoardIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkspaceBoardOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/board/boards": {
+   "get": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Boards of this project",
+    "description": "Every board of the project, oldest first: what it is called, which board of this project it is, how many lines the last recognition read off it and when a tutor last checked it. A board is one solution of the work: it carries its own assignment, its own context folder and its own run history, and its id is what the other routes take as `run`. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "board_boards_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/BoardOut"
+         },
+         "title": "Response Board Boards V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Start a new board in this project",
+    "description": "Starts a board: a journal entry and its own directory on the volume, with its own assignment, its own context folder and its own scene. Nothing is drawn and nothing is charged here. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "board_create_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BoardIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BoardOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/board/boards/{run_id}": {
+   "delete": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Delete one board of this project",
+    "description": "Removes a board: its journal entry, its scene, the lines read off it and its assignment. Its context files are unbound from it; files attached to the project as a whole are left alone, and so are artifacts: a snapshot is addressed by its content and may still be what a finished check refers to. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "board_delete_v1",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/board/scene": {
+   "get": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "The working scene of this board",
+    "description": "The drawing as it was last written, and the version counter to pass back when writing. An empty scene with version 0 is the answer for a board nobody has drawn on yet, which is not an error: the page opens before the first stroke. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "board_scene_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SceneOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Write the working scene of this board",
+    "description": "Replaces the drawing and bumps its version. `version` in the body is the one this edit is based on; if it is not the current one, the answer is 409 and carries the scene that won, so two tabs of one board lose an edit loudly rather than silently. Editor role. 400 invalid_id, 400 invalid_value, 400 scene_too_big, 403 forbidden, 404 not_found, 409 scene_conflict.",
+    "operationId": "board_put_scene_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SceneIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SceneOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "The board was written from somewhere else; the current scene comes with the refusal",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SceneConflictOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/board/steps": {
+   "get": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Lines of the solution read off this board",
+    "description": "The lines the last recognition read off this board, in reading order, and whether they have fallen behind the drawing. `stale` true means the board has been drawn on since; a check refuses on a stale board rather than checking yesterday's text. `latex_material` is the file of recognised lines that sits in the context folder of this board. Reading costs nothing: nothing is rebuilt here. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "board_steps_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StepsOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Write the lines of this board",
+    "description": "Writes the lines of the solution and rewrites the `<board>.latex.md` file of this board's context folder, so the tutor and the rest of the work see the same text. With a body, the lines are the ones given, in the order given: the page grouped the strokes into lines and had them recognised, and reading the scene a second time here would answer the same question differently. Without a body, they are built from what has already been recognised off the scene, and only when nothing has - read off the scene itself, which is the road for everything that has no page. The previous file is replaced, not kept beside it: the truth about a board is its scene, the lines are rebuilt from it at any moment, and a version per formula would grow the inventory of the work, which travels in every prompt. A line reaches the tutor when its LaTeX is not empty; a line nobody has read stays in the list and reaches the tutor as unavailable content. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 422 steps_failed.",
+    "operationId": "board_read_steps_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/StepsIn"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Тело"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StepsOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/board/task": {
+   "get": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "The assignment this board is solving",
+    "description": "The assignment of this board, in words. Empty is not an error: a board is allowed to be a scratch pad. It reaches the tutor as a separate untrusted part of the prompt, because the person who typed it is the person who drew the board. A file with the assignment is an ordinary material of this board's context folder, which is a different road. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "board_task_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TaskOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Write the assignment of this board",
+    "description": "Writes the assignment in words. An empty string erases it. Writing the same text twice is the same state, which is why this is a PUT. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
+    "operationId": "board_set_task_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TaskIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TaskOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/board/chat": {
+   "get": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "The conversation with the tutor on this board",
+    "description": "Every message exchanged with the tutor on this board, oldest first. A new message is sent by enqueueing a `board_check` job with `mode: \"chat\"` and `message`; the answer lands here when the job is done. Empty for a board nobody has talked on. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "board_chat_v1",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "run",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole.",
+       "default": "",
+       "title": "Run"
+      },
+      "description": "Which solution of this project to work with, by its run id (GET /api/projects/{id}/kadai/runs). A project carries several solutions, each with its own assignment and its own block list. Empty means the work as a whole."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ChatOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/board/session": {
+   "get": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Whether handwriting recognition is ready for you",
+    "description": "Says whether this person's boards recognise handwriting, and what to hand the recognition library so it talks to the bridge instead of the cloud. `ready` false with reason `no_keys` is a state and not an error: the board draws, saves and lets a formula be typed without any key at all, and a check works the same on typed formulas. The keys in the answer are constants, never real ones: the real pair stays in the service and the bridge substitutes it. `requests_this_month` counts what the recognition tariff counts: batch calls plus sockets opened. 401 unauthenticated.",
+    "operationId": "board_session_v1",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SessionOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/board/recognize": {
+   "post": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Read handwritten lines off a board",
+    "description": "Reads lines of handwriting into LaTeX with this person's own recognition keys. A line is a group of strokes as the page sees them on the canvas, and the answer depends on nothing but that line: a line whose strokes changed can be read again, and one that did not change need not be sent at all. All the lines of a call travel in a single request, because the recognition tariff counts requests. At most eight lines a call, at most two thousand points a line, at most twenty requests a minute. A line the service refuses carries the refusal in its own `error` and does not fail the call; only an unreachable service refuses the whole call. No key of any kind leaves the service, here or anywhere. 400 invalid_value, 401 unauthenticated, 403 ink_no_keys, 422 validation_failed, 429 rate_limited, 502 ink_unreachable.",
+    "operationId": "board_recognize_v1",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RecognizeIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RecognizeOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/v4.0/iink/version": {
+   "get": {
+    "tags": [
+     "v1",
+     "board"
+    ],
+    "summary": "Protocol version of the recognition service",
+    "description": "Passes the recognition service's version answer through. The recognition library asks for it before opening a socket and, without an answer, falls back to a protocol version of its own choosing, after which the socket fails in a way that reads on screen as an unreachable server. Carries no key and reveals none. 401 unauthenticated, 502 ink_unreachable.",
+    "operationId": "board_ink_version_v1",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Board Ink Version V1"
         }
        }
       }
@@ -9898,6 +11441,92 @@
     "title": "BlankOut",
     "description": "Бланк, собранный из блоков решения: где он теперь лежит и чем его взять."
    },
+   "BoardIn": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 200,
+      "title": "Name",
+      "description": "What to call this board. Empty is fine: the interface names it itself, from the module and n.",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "BoardIn",
+    "description": "Тело заведения доски. Поле одно: как её звать."
+   },
+   "BoardOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Run id of this board: the value of ?run="
+     },
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Which board of this project, from 1"
+     },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "steps": {
+      "type": "integer",
+      "title": "Steps",
+      "description": "How many lines the last recognition read off this board",
+      "default": 0
+     },
+     "checked_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Checked At",
+      "description": "When a tutor last finished checking this board"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "project_id",
+     "name",
+     "n"
+    ],
+    "title": "BoardOut",
+    "description": "Доска наружу: запись журнала плюс то, что видно на её карточке."
+   },
    "Body_create_project": {
     "properties": {
      "workspace_id": {
@@ -9989,6 +11618,65 @@
      "workspace_id"
     ],
     "title": "Body_create_project_v1"
+   },
+   "ChatMessageOut": {
+    "properties": {
+     "role": {
+      "type": "string",
+      "title": "Role",
+      "description": "`you` for the person, `tutor` for the agent"
+     },
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "description": "The message; formulas as LaTeX between dollars"
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At",
+      "description": "When it was written"
+     },
+     "scene_version": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scene Version",
+      "description": "Scene version the person's message was sent with"
+     }
+    },
+    "type": "object",
+    "required": [
+     "role",
+     "text"
+    ],
+    "title": "ChatMessageOut",
+    "description": "Одно сообщение переписки с репетитором."
+   },
+   "ChatOut": {
+    "properties": {
+     "messages": {
+      "items": {
+       "$ref": "#/components/schemas/ChatMessageOut"
+      },
+      "type": "array",
+      "title": "Messages"
+     }
+    },
+    "type": "object",
+    "title": "ChatOut",
+    "description": "Переписка с репетитором целиком, старые сообщения первыми."
    },
    "ConditionIn": {
     "properties": {
@@ -10450,7 +12138,7 @@
      "error"
     ],
     "title": "ErrorOut",
-    "description": "Единственная форма отказа службы. Другой нет ни у одного маршрута."
+    "description": "Форма отказа службы: тело `error` и ничего кроме.\n\nМаршрут, которому есть что приложить к отказу, кладёт приложение рядом с\n`error` своей моделью (`board.SceneConflictOut`), но поле `error` в ней —\nтот же `ErrorBody`: разбор отказа в интерфейсе один на все маршруты."
    },
    "FlowchartIn": {
     "properties": {
@@ -10568,7 +12256,7 @@
      "kind": {
       "type": "string",
       "title": "Kind",
-      "description": "What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, probe"
+      "description": "What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, board_check, probe"
      },
      "project_id": {
       "anyOf": [
@@ -10965,6 +12653,134 @@
     "title": "ProjectRunPatchIn",
     "description": "Правка записи. Поле одно — имя: всё остальное в записи не редактируется.\n\nМодуль, номер и артефакт — это то, что случилось, а случившееся не правят:\nпереписать модуль у записи значило бы сказать, что схему построил отчёт.\nИмя — единственное, что в записи придумал человек, и единственное, что он\nможет передумать.\n\nОбязательное поле, а не необязательное: у правки с одним полем «поля нет»\nозначало бы «ничего не делать», то есть запрос, на который незачем ходить."
    },
+   "RecognizeIn": {
+    "properties": {
+     "lines": {
+      "items": {
+       "$ref": "#/components/schemas/RecognizeLineIn"
+      },
+      "type": "array",
+      "title": "Lines",
+      "description": "The lines to read, at most eight. A line is sent when its strokes have changed and not otherwise: recognition of a line depends on nothing but that line, so the answer to an unchanged one is already known."
+     },
+     "dpi": {
+      "type": "integer",
+      "maximum": 4000.0,
+      "minimum": 1.0,
+      "title": "Dpi",
+      "description": "Resolution the coordinates are in. The service answers in millimetres, and this is what turns them back into the numbers that were sent.",
+      "default": 96
+     }
+    },
+    "type": "object",
+    "title": "RecognizeIn",
+    "description": "Тело распознавания: строки записи и разрешение, в котором они мерены."
+   },
+   "RecognizeLineIn": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "maxLength": 200,
+      "title": "Id",
+      "description": "How the page calls this line. It is handed back untouched, so the answer needs no matching up by order."
+     },
+     "strokes": {
+      "items": {
+       "$ref": "#/components/schemas/StrokeIn"
+      },
+      "type": "array",
+      "title": "Strokes",
+      "description": "Every stroke of this line, in the order they were drawn"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id"
+    ],
+    "title": "RecognizeLineIn",
+    "description": "Одна строка записи, как её собрала страница: имя и все её росчерки."
+   },
+   "RecognizeOut": {
+    "properties": {
+     "lines": {
+      "items": {
+       "$ref": "#/components/schemas/RecognizedLineOut"
+      },
+      "type": "array",
+      "title": "Lines",
+      "description": "One answer per line sent, in the order they were sent"
+     },
+     "requests": {
+      "type": "integer",
+      "title": "Requests",
+      "description": "How many requests this call cost. One, normally: all the lines travel in a single request, because the tariff counts requests. Zero means nothing was sent at all.",
+      "default": 0
+     },
+     "unmatched": {
+      "items": {
+       "$ref": "#/components/schemas/UnmatchedOut"
+      },
+      "type": "array",
+      "title": "Unmatched",
+      "description": "What was read but belongs to none of the lines sent. It is handed over rather than dropped: silently losing it would read on screen as a line that recognised empty."
+     }
+    },
+    "type": "object",
+    "title": "RecognizeOut",
+    "description": "Ответ распознавания: строки, цена вызова и то, что не легло никуда."
+   },
+   "RecognizedLineOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "The id this line was sent under"
+     },
+     "latex": {
+      "type": "string",
+      "title": "Latex",
+      "description": "The line in LaTeX, without the dollar signs. Empty when nothing was read off it.",
+      "default": ""
+     },
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "description": "The service's own one-line signature of what it read, when it gave one. A fallback for showing the line to a person: it is prose, not LaTeX, and nothing is built out of it. Empty when the call carried more than one line, because the signature then describes them all at once.",
+      "default": ""
+     },
+     "jiix": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Jiix",
+      "description": "The service's own answer for this line, whole. It carries the bounding box of every expression and the strokes behind it, which is what a line has to be split by when the person wrote two formulas in one go. Null when nothing was read."
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error",
+      "description": "Why this line was not read, in the words of whoever refused. A line that failed does not fail the call: the board keeps working, and the trouble is shown where it happened."
+     }
+    },
+    "type": "object",
+    "required": [
+     "id"
+    ],
+    "title": "RecognizedLineOut",
+    "description": "Одна распознанная строка: что прочли и что помешало."
+   },
    "RegisterIn": {
     "properties": {
      "email": {
@@ -11154,6 +12970,167 @@
     "title": "RollbackIn",
     "description": "Тело возврата: номер версии, к которой возвращаемся.\n\nТело, а не путь, потому что возврат — действие над тегом, а не обращение к\nверсии: `POST …/values/{key}/versions/{n}` читалось бы как «создать версию\nномер n», чего служба не умеет и не должна."
    },
+   "SceneConflictOut": {
+    "properties": {
+     "error": {
+      "$ref": "#/components/schemas/ErrorBody"
+     },
+     "scene": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Scene"
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version",
+      "default": 0
+     },
+     "recognized": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Recognized"
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "error"
+    ],
+    "title": "SceneConflictOut",
+    "description": "Ответ `409`: та же форма отказа, и рядом с ней — сцена, которая победила.\n\nФорма отказа не меняется (`error` — то же тело `ErrorBody`: код, текст и\nместо): меняется то, что к ней приложено. Без сцены вкладка, потерявшая\nгонку, пошла бы за нею вторым запросом — и за время этого запроса гонка\nповторилась бы."
+   },
+   "SceneIn": {
+    "properties": {
+     "scene": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Scene",
+      "description": "The drawing as the canvas gives it. Scroll, zoom and selection do not belong here: they are a property of the person looking, not of the board, and every movement of the canvas would otherwise be a write to the volume."
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version",
+      "description": "The version this edit is based on: the one the last GET or PUT answered. Zero means the board was empty. A version that is not the current one answers 409 and carries the current scene, so the edit is lost loudly.",
+      "default": 0
+     },
+     "recognized": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Recognized",
+      "description": "What has already been recognised off this scene, kept beside it and handed back untouched. It rides along with the scene so that reopening a board recognises nothing again — every line whose strokes have not changed is already answered here. Empty is normal: a board nobody has written on has nothing recognised. Keyed by line, an entry carries at least `box` (where the line stands on the scene), `elements` (the strokes it is drawn with), `latex` (what was read, empty when nothing was) and `state` (`recognized` or `manual`). Those four are what lets the service rebuild the lines of the solution by itself when the board has been drawn on since they were last written; everything else in an entry belongs to the page and is never looked at."
+     }
+    },
+    "type": "object",
+    "required": [
+     "scene"
+    ],
+    "title": "SceneIn",
+    "description": "Тело записи сцены: сама сцена и версия, поверх которой пишут."
+   },
+   "SceneOut": {
+    "properties": {
+     "scene": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Scene",
+      "description": "The drawing itself, as the canvas stores it. Empty on a board nobody has drawn on yet, which is not an error."
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version",
+      "description": "Version counter of the scene, from 1. Pass it back in PUT: a stale one loses to whoever wrote first.",
+      "default": 0
+     },
+     "recognized": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Recognized",
+      "description": "What has already been recognised off this scene, kept beside it and handed back untouched. It rides along with the scene so that reopening a board recognises nothing again — every line whose strokes have not changed is already answered here. Empty is normal: a board nobody has written on has nothing recognised. Keyed by line, an entry carries at least `box` (where the line stands on the scene), `elements` (the strokes it is drawn with), `latex` (what was read, empty when nothing was) and `state` (`recognized` or `manual`). Those four are what lets the service rebuild the lines of the solution by itself when the board has been drawn on since they were last written; everything else in an entry belongs to the page and is never looked at."
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At",
+      "description": "When it was last written"
+     }
+    },
+    "type": "object",
+    "title": "SceneOut",
+    "description": "Рабочая сцена доски, её версия и то, что с неё уже распознали."
+   },
+   "SessionOut": {
+    "properties": {
+     "ready": {
+      "type": "boolean",
+      "title": "Ready",
+      "description": "Whether handwriting recognition works for this person. False is a state, not an error: the board still draws and still lets a formula be typed."
+     },
+     "reason": {
+      "type": "string",
+      "title": "Reason",
+      "description": "Why not, when it is not: `no_keys`. Empty when ready.",
+      "default": ""
+     },
+     "scheme": {
+      "type": "string",
+      "title": "Scheme",
+      "description": "`wss` or `ws`, as seen from this request",
+      "default": ""
+     },
+     "host": {
+      "type": "string",
+      "title": "Host",
+      "description": "Host this request came to. The recognition library builds the socket address out of it, so the page appends its own base path before handing it over.",
+      "default": ""
+     },
+     "application_key": {
+      "type": "string",
+      "title": "Application Key",
+      "description": "What to give the recognition library as its application key. A constant, and deliberately not a key: the real one never leaves the service, and the bridge substitutes it on the way out.",
+      "default": "koritsu"
+     },
+     "hmac_key": {
+      "type": "string",
+      "title": "Hmac Key",
+      "description": "What to give the library as its HMAC key. The same constant, for the same reason: the bridge answers the signature challenge itself.",
+      "default": "koritsu"
+     },
+     "requests_this_month": {
+      "type": "integer",
+      "title": "Requests This Month",
+      "description": "Recognition requests this month by this person: batch calls plus sockets opened. The tariff counts requests, not strokes, so this is the number to watch.",
+      "default": 0
+     },
+     "opens_this_month": {
+      "type": "integer",
+      "title": "Opens This Month",
+      "description": "Sockets opened this month, of those requests. The live socket is the part a forgotten tab can keep spending on, which is why it is also counted on its own.",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "ready"
+    ],
+    "title": "SessionOut",
+    "description": "Готово ли распознавание рукописи и чем открывать сокет."
+   },
    "SolutionIn": {
     "properties": {
      "name": {
@@ -11252,6 +13229,224 @@
     "title": "SolutionOut",
     "description": "Решение наружу: запись журнала плюс то, что видно на его карточке."
    },
+   "StepLineIn": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "maxLength": 200,
+      "title": "Id",
+      "description": "Short id of the line. The tutor names lines by it and the page resolves a remark back into strokes by it, so it has to be the same id on both roads."
+     },
+     "latex": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Latex",
+      "description": "The line in LaTeX, without the dollar signs. Empty on a line that was not read. It is what decides whether the line reaches the tutor: there is nothing else to show and nothing else to ask.",
+      "default": ""
+     },
+     "elements": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "maxItems": 500,
+      "title": "Elements",
+      "description": "Ids of the scene objects this line is drawn with"
+     },
+     "confirmed": {
+      "type": "boolean",
+      "title": "Confirmed",
+      "description": "Kept so that a page written against an older shape is still understood; nothing is decided by it. There is no confirming step on the board, and `latex` alone says whether the line has content.",
+      "default": true
+     },
+     "source": {
+      "type": "string",
+      "maxLength": 32,
+      "title": "Source",
+      "description": "Where the LaTeX came from, when the page knows: it is shown beside the line and nothing is decided by it.",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "id"
+    ],
+    "title": "StepLineIn",
+    "description": "Одна строка решения так, как её прислала страница."
+   },
+   "StepOut": {
+    "properties": {
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Reading order, from 1"
+     },
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Short id of the line; the tutor names this"
+     },
+     "latex": {
+      "type": "string",
+      "title": "Latex",
+      "description": "The line in LaTeX, without the dollar signs. Empty on a line nobody has read: such a line stays in the list and reaches the tutor as unavailable content.",
+      "default": ""
+     },
+     "source": {
+      "type": "string",
+      "title": "Source",
+      "description": "Where the LaTeX came from",
+      "default": ""
+     },
+     "confirmed": {
+      "type": "boolean",
+      "title": "Confirmed",
+      "description": "Whether this line has content to show: true when its LaTeX is not empty. There is no confirming step on the board - the person sees what was read under their own writing and corrects the strokes - so this answers whether there is anything here for the tutor to see, and nothing else.",
+      "default": false
+     },
+     "elements": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Elements",
+      "description": "Ids of the scene objects this line is drawn with"
+     },
+     "frame": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Frame",
+      "description": "Id of the frame this line belongs to, null when it belongs to none. A frame is a caption over a group of lines, not a step of the solution."
+     },
+     "frame_name": {
+      "type": "string",
+      "title": "Frame Name",
+      "description": "What that frame is called",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "n",
+     "id"
+    ],
+    "title": "StepOut",
+    "description": "Одна строка решения так, как её читает интерфейс."
+   },
+   "StepsIn": {
+    "properties": {
+     "lines": {
+      "items": {
+       "$ref": "#/components/schemas/StepLineIn"
+      },
+      "type": "array",
+      "maxItems": 500,
+      "title": "Lines",
+      "description": "The lines of the solution, top to bottom. Reading order is the order of this list: which line stands above which is a fact about the drawing, and the page is the one looking at it."
+     }
+    },
+    "type": "object",
+    "title": "StepsIn",
+    "description": "Тело записи строк: готовые строки в порядке чтения."
+   },
+   "StepsOut": {
+    "properties": {
+     "steps": {
+      "items": {
+       "$ref": "#/components/schemas/StepOut"
+      },
+      "type": "array",
+      "title": "Steps"
+     },
+     "scene_version": {
+      "type": "integer",
+      "title": "Scene Version",
+      "description": "Version of the scene these lines were read off",
+      "default": 0
+     },
+     "latex_material": {
+      "type": "string",
+      "title": "Latex Material",
+      "description": "Id of the `<board>.latex.md` material of this solution, the one the model sees along with the rest of the context folder. Empty until the lines are first built.",
+      "default": ""
+     },
+     "unrecognized": {
+      "type": "integer",
+      "title": "Unrecognized",
+      "description": "How many lines nobody has read: lines with empty LaTeX. Such a line stays in the list and reaches the tutor as unavailable content: a verdict cannot be `correct` while the board carries writing nobody has read.",
+      "default": 0
+     },
+     "stale": {
+      "type": "boolean",
+      "title": "Stale",
+      "description": "True when the board has been drawn on since these lines were read. A check refuses on a stale board rather than checking yesterday's text.",
+      "default": false
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At",
+      "description": "When they were read"
+     }
+    },
+    "type": "object",
+    "title": "StepsOut",
+    "description": "Строки решения и то, не отстали ли они от доски."
+   },
+   "StrokeIn": {
+    "properties": {
+     "x": {
+      "items": {
+       "type": "number"
+      },
+      "type": "array",
+      "title": "X",
+      "description": "Horizontal coordinates of the points, in canvas pixels"
+     },
+     "y": {
+      "items": {
+       "type": "number"
+      },
+      "type": "array",
+      "title": "Y",
+      "description": "Vertical coordinates, the same length as `x`"
+     },
+     "t": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "number"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "T",
+      "description": "Milliseconds of each point, the same length as `x`. May be left out; timing sharpens recognition but is not required by it."
+     }
+    },
+    "type": "object",
+    "required": [
+     "x",
+     "y"
+    ],
+    "title": "StrokeIn",
+    "description": "Один росчерк: где вело перо и когда."
+   },
    "TagPromptIn": {
     "properties": {
      "prompt": {
@@ -11267,6 +13462,35 @@
     ],
     "title": "TagPromptIn",
     "description": "Тело правки задания на тег. Пустая строка — «задания нет»."
+   },
+   "TaskIn": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "maxLength": 40000,
+      "title": "Text",
+      "description": "The assignment in words. It travels to the tutor as a separate untrusted part of the prompt: the person who typed it is the person who drew the board."
+     }
+    },
+    "type": "object",
+    "required": [
+     "text"
+    ],
+    "title": "TaskIn",
+    "description": "Тело записи условия. Пустая строка стирает записанное."
+   },
+   "TaskOut": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "description": "The assignment in words",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "TaskOut",
+    "description": "Условие задачи этой доски, словами."
    },
    "TemplateOut": {
     "properties": {
@@ -11431,6 +13655,25 @@
     "title": "UmlSourceIn",
     "description": "Исходник в теле запроса: как называется и что в нём написано.\n\nИмя нужно разбору (в замечание «файл не разобрался» едет именно оно) и\nчеловеку в ответе. Путём оно не является и в путь не превращается нигде."
    },
+   "UnmatchedOut": {
+    "properties": {
+     "latex": {
+      "type": "string",
+      "title": "Latex",
+      "description": "The expression in LaTeX",
+      "default": ""
+     },
+     "jiix": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Jiix",
+      "description": "The expression as the service returned it"
+     }
+    },
+    "type": "object",
+    "title": "UnmatchedOut",
+    "description": "Выражение, не легшее ни на одну присланную строку."
+   },
    "UserCreateIn": {
     "properties": {
      "email": {
@@ -11555,6 +13798,106 @@
     "type": "object",
     "title": "WishesIn",
     "description": "Пожелания человека к работе — те же три поля, что у `kadai.plan.Wishes`."
+   },
+   "WorkspaceBoardIn": {
+    "properties": {
+     "workspace_id": {
+      "type": "string",
+      "title": "Workspace Id",
+      "description": "Which workspace the board goes to. The work it lands in is chosen by the service: a board is a solution, and picking a work before the first stroke is a screen with nothing to decide on it."
+     },
+     "name": {
+      "type": "string",
+      "maxLength": 200,
+      "title": "Name",
+      "description": "What to call this board. Empty is fine: the interface names it itself, from the module and n.",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "workspace_id"
+    ],
+    "title": "WorkspaceBoardIn",
+    "description": "Тело заведения доски без работы: в каком пространстве и как звать."
+   },
+   "WorkspaceBoardOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Run id of this board: the value of ?run="
+     },
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "description": "Empty means the interface names it itself"
+     },
+     "n": {
+      "type": "integer",
+      "title": "N",
+      "description": "Which board of this project, from 1"
+     },
+     "user_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "User Id"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "steps": {
+      "type": "integer",
+      "title": "Steps",
+      "description": "How many lines the last recognition read off this board",
+      "default": 0
+     },
+     "checked_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Checked At",
+      "description": "When a tutor last finished checking this board"
+     },
+     "project_name": {
+      "type": "string",
+      "title": "Project Name",
+      "description": "Name of the work this board is a solution of",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "project_id",
+     "name",
+     "n"
+    ],
+    "title": "WorkspaceBoardOut",
+    "description": "Карточка доски в ленте пространства: та же, плюс имя её работы.\n\nИмя работы стоит в карточке не для показа, а для поиска: экран доски\nработы не называет вовсе, но доску, заведённую внутри работы, человек\nпомнит по этой работе, и ответ без имени заставил бы спрашивать список\nработ вторым запросом."
    },
    "WorkspaceLiveReportOut": {
     "properties": {
@@ -11777,6 +14120,7 @@
   "bad_outputs",
   "bad_result",
   "bad_template",
+  "board_failed",
   "build_failed",
   "cancelled",
   "cancelled_before",
@@ -11792,6 +14136,8 @@
   "handler_failed",
   "http_error",
   "in_trash",
+  "ink_no_keys",
+  "ink_unreachable",
   "insufficient_scope",
   "internal_error",
   "invalid_credentials",
@@ -11825,7 +14171,11 @@
   "quota_exceeded",
   "rate_limited",
   "run_failed",
+  "scene_conflict",
+  "scene_stale",
+  "scene_too_big",
   "source_too_large",
+  "steps_failed",
   "tag_refused",
   "task_too_long",
   "timeout",

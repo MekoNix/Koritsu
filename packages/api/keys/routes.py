@@ -56,9 +56,13 @@ def список(s: SessionDep, user: CurrentUser) -> list[dict]:
 @router.get("/providers", operation_id="list_key_providers",
             summary="Providers that accept a key",
             description=(
-                "Lists the model providers a key can be stored for, and where "
-                "a key for each would come from: `own` (yours), `shared` (the "
-                "one the service runs on) or `none` (nothing to pay with). "
+                "Lists the providers a key can be stored for, and where a key "
+                "for each would come from: `own` (yours), `shared` (the one "
+                "the service runs on) or `none` (nothing to pay with). `kind` "
+                "says what the key is for: `model` pays for a model run, `ink` "
+                "recognises handwriting on a board. An ink provider never "
+                "answers `shared`: its tariff counts socket openings, so a "
+                "board runs on the person's own key or not at all. "
                 "401 unauthenticated."))
 def поставщики(request: Request, s: SessionDep, user: CurrentUser) -> dict:
     """Для каких пресетов ключ имеет смысл и чем по каждому платить.
@@ -78,12 +82,20 @@ def поставщики(request: Request, s: SessionDep, user: CurrentUser) -> 
     Тем же ответом, а не соседним маршрутом: список пресетов без того, чем по
     ним платить, — это половина ответа, за которой всё равно идут вторым
     запросом.
+
+    **`kind` — тем же ответом и по той же причине.** Поставщики двух видов:
+    модель и распознавание рукописи. Заводятся они одинаково, но спрашиваются в
+    разных местах, и настройки рисуют их разными подразделами. Решать, какой
+    поставщик к какому подразделу относится, по имени в браузере значило бы
+    завести второй список чернильных поставщиков — тот, что разойдётся с первым
+    при третьем поставщике.
     """
     settings = request.app.state.settings
     имена = list(service.providers())
     return {"providers": имена,
             "key_source": {имя: service.source_of(settings, s, user.id, имя)
-                           for имя in имена}}
+                           for имя in имена},
+            "kind": {имя: service.kind_of(имя) for имя in имена}}
 
 
 @router.post("", status_code=201, operation_id="add_model_key",

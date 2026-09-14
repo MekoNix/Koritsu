@@ -1,0 +1,80 @@
+[
+ {
+  "n": 1,
+  "id": "3b24f8",
+  "latex": "x^{2}+2x=8",
+  "source": "myscript",
+  "confirmed": true,
+  "elements": [
+   "kv-02",
+   "kv-03"
+  ],
+  "frame": "kv-01",
+  "frame_name": "Шаг 1 — привести к каноническому виду"
+ },
+ {
+  "n": 2,
+  "id": "e6cad9",
+  "latex": "x^{2}+2x-8=0",
+  "source": "myscript",
+  "confirmed": true,
+  "elements": [
+   "kv-04",
+   "kv-05"
+  ],
+  "frame": "kv-01",
+  "frame_name": "Шаг 1 — привести к каноническому виду"
+ },
+ {
+  "n": 3,
+  "id": "843bf9",
+  "latex": "D=2^{2}-4\\cdot 1\\cdot (-8)=4+32=36",
+  "source": "myscript",
+  "confirmed": true,
+  "elements": [
+   "kv-07",
+   "kv-08"
+  ],
+  "frame": "kv-06",
+  "frame_name": "Шаг 2 — дискриминант"
+ },
+ {
+  "n": 4,
+  "id": "19725e",
+  "latex": "\\sqrt{D}=6",
+  "source": "myscript",
+  "confirmed": true,
+  "elements": [
+   "kv-09",
+   "kv-10"
+  ],
+  "frame": "kv-06",
+  "frame_name": "Шаг 2 — дискриминант"
+ },
+ {
+  "n": 5,
+  "id": "ba25a2",
+  "latex": "x_{1}=\\frac{-2+6}{2}=2",
+  "source": "myscript",
+  "confirmed": true,
+  "elements": [
+   "kv-12",
+   "kv-13"
+  ],
+  "frame": "kv-11",
+  "frame_name": "Шаг 3 — корни"
+ },
+ {
+  "n": 6,
+  "id": "067d1c",
+  "latex": "x_{2}=\\frac{-2-6}{2}=-4",
+  "source": "myscript",
+  "confirmed": true,
+  "elements": [
+   "kv-14",
+   "kv-15"
+  ],
+  "frame": "kv-11",
+  "frame_name": "Шаг 3 — корни"
+ }
+]

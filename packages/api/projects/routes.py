@@ -334,9 +334,31 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
         # бланка, собранного из блоков, типы и задания тегов записаны только в
         # нём, и без него новая работа угадывала бы их по меткам.
         манифест_рядом = шаблоны.манифест(settings, шаблон)
+    p = завести_работу(s, settings, ws, user, name=name, module=module,
+                       template=байты, manifest=манифест_рядом)
+    return карточка(p, settings, теги=True, workspace_name=ws.name)
+
+
+def завести_работу(s, settings: Settings, ws: Workspace, user, *,
+                   name: str = "", module: str = "",
+                   template: bytes | None = None, manifest=None,
+                   where: str = "body.module") -> Project:
+    """Строка работы в базе и её каталог на томе. → строка, ещё не карточка.
+
+    Отдельно от обработчика, потому что работу заводит не только человек
+    кнопкой «Новая работа»: доска кладётся в неявную работу пространства,
+    которой человек не выбирал и не видит (`api/modules/board/routes.py`).
+    Второе такое же создание каталога рядом означало бы, что однажды одна из
+    двух дорог заведёт строку в базе без каталога на томе.
+
+    Порядок — сначала база, потом диск, и это не случайность: `id` каталога
+    берётся из строки, а строка при беде на диске откатится сама (сессия на
+    запрос, `db.session`). Обратный порядок оставил бы на томе каталог, о
+    котором база не знает.
+    """
     p = Project(workspace_id=ws.id, owner_id=user.id,
                 name=name.strip() or "Project",
-                module=проверить_модуль(module, where="body.module"))
+                module=проверить_модуль(module, where=where))
     s.add(p)
     s.flush()
 
@@ -347,8 +369,8 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
         raise ApiError(PROJECT_EXISTS, "Project directory is not empty", 409)
     os.makedirs(каталог, exist_ok=True)
     try:
-        orchestrator.Project.create(каталог, template=байты, name=p.name,
-                                    manifest=манифест_рядом)
+        orchestrator.Project.create(каталог, template=template, name=p.name,
+                                    manifest=manifest)
     except Exception:                                   # noqa: BLE001
         # Подробности — в журнал: в тексте беды оркестратора стоит путь на томе,
         # а клиенту про раскладку тома знать нечего.
@@ -356,7 +378,7 @@ def создать(request: Request, s: SessionDep, user: CurrentUser,
         shutil.rmtree(каталог, ignore_errors=True)
         raise ApiError(BAD_TEMPLATE, "Template is not a readable DOCX file", 400,
                        where="body.template") from None
-    return карточка(p, settings, теги=True, workspace_name=ws.name)
+    return p
 
 
 @router.get("", operation_id="list_projects",
@@ -693,4 +715,5 @@ def доступный(s, user, project_id: str, min_role: str, *,
     return p
 
 
-__all__ = ["router", "открыть", "отчёт", "решение", "ОТЧЁТ", "РЕШЕНИЕ"]
+__all__ = ["router", "открыть", "отчёт", "решение", "завести_работу",
+           "ОТЧЁТ", "РЕШЕНИЕ"]

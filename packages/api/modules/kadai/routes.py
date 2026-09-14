@@ -390,8 +390,12 @@ def с_условием(вид, снимок: dict) -> dict:
     """
     названо = условие_решения(вид)
     прочитано = dict(снимок.get("condition") or {})
-    текст_прогона = ("" if названо.get("material") != прочитано.get("material")
-                     else str(снимок.get("condition_text") or ""))
+    # Прочитанный прогоном текст остаётся, пока условие не сменили другим файлом:
+    # тот же материал — тот же текст; условие не названо вовсе (работа заведена
+    # до записи об условии) — прочитанное и есть единственное, что известно.
+    тот_же = (not названо.get("material")
+              or названо.get("material") == прочитано.get("material"))
+    текст_прогона = str(снимок.get("condition_text") or "") if тот_же else ""
     if названо and названо.get("material") == прочитано.get("material"):
         названо = прочитано
     снимок["condition"] = {k: v for k, v in названо.items() if k != "text"}
@@ -581,13 +585,13 @@ def ход(проект: ЧитательПроекта, s: SessionDep, run: str
             summary="Set the assignment of this solution: text, file, or both",
             description=(
                 "Writes the assignment of the task. `text` is the assignment "
-                "in words — typed into the form, or corrected after a scan has "
-                "been read — and it is what the work is solved by. "
+                "in words - typed into the form, or corrected after a scan has "
+                "been read - and it is what the work is solved by. "
                 "`material_id` names an already parsed material of this "
                 "project as the file the assignment came from; the file keeps "
                 "its pictures and shows what was read. Text wins over file: a "
                 "correction takes effect at once, without a second upload, and "
-                "there is exactly one assignment in a solution — no previous "
+                "there is exactly one assignment in a solution - no previous "
                 "version stays behind to be marked and explained. Until one of "
                 "the two is set, a `kadai_run` job refuses: there is nothing "
                 "to solve. Writing the same values twice is the same state, "

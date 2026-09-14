@@ -156,6 +156,34 @@ export const keys = {
     common: (projectId: string, runId: string) =>
       ['projects', 'one', projectId, 'kadai-common', runId] as const,
   },
+  // Область «Доска». Ключи досок начинаются с `projects.one` по той же
+  // причине, что у решений: доска принадлежит работе, и сброс работы обязан
+  // гасить их заодно. Доска входит в ключ отдельным звеном — досок в работе
+  // несколько, у каждой своя сцена, свой чистовик и своё условие, и общий ключ
+  // показал бы на экране одной доски ответ, полученный для другой.
+  //
+  // Готовность распознавания — свой корень: она про человека и его ключи
+  // MyScript, а не про работу, и одна на все доски сразу.
+  board: {
+    session: ['board', 'session'] as const,
+    /**
+     * Доски всего пространства — список, из которого сделан экран «Доска».
+     * Корень свой, не `projects.one`: работы в этом запросе нет вовсе, а сброс
+     * ленты после заведения доски гасил бы иначе список одной чужой работы.
+     */
+    workspace: (workspaceId: string) => ['board', 'workspace', workspaceId] as const,
+    /** Лента любого пространства: гасится, когда неизвестно, чьей доски касается правка. */
+    workspaceAll: ['board', 'workspace'] as const,
+    boards: (projectId: string) => ['projects', 'one', projectId, 'board-boards'] as const,
+    scene: (projectId: string, boardId: string) =>
+      ['projects', 'one', projectId, 'board-scene', boardId] as const,
+    steps: (projectId: string, boardId: string) =>
+      ['projects', 'one', projectId, 'board-steps', boardId] as const,
+    task: (projectId: string, boardId: string) =>
+      ['projects', 'one', projectId, 'board-task', boardId] as const,
+    chat: (projectId: string, boardId: string) =>
+      ['projects', 'one', projectId, 'board-chat', boardId] as const,
+  },
   // Настройки аккаунта.
   modelKeys: ['model-keys'] as const,
   /** Свои шаблоны отчётов: их читают и настройки, и диалог «Новая работа». */

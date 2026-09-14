@@ -30,7 +30,10 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/*.config.{ts,js}', 'src/test/**'],
+    // Шаги сборки (`scripts/`) и настройки сборщиков живут в Node целиком:
+    // файлы, пути, `console`. Браузерных глобальных им хватает за компанию —
+    // настройки сборщика описывают и то, что потом исполнится в браузере.
+    files: ['**/*.config.{ts,js}', 'scripts/**', 'src/test/**'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
   {

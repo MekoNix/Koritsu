@@ -34,7 +34,12 @@ errors — один формат ошибки на всю службу.
 выписал бы для каждого отказа `unknown`, а разбор ошибки в интерфейсе оказался
 бы написан руками — то есть вторым описанием того же формата, которое разойдётся
 с этим молча. Ответ описан один, под ключом `default`: он покрывает все коды
-разом, и это правда — других форм отказа у службы нет. Заодно он вытесняет
+разом, и это правда — отказ у службы читается всюду одинаково. Отказу
+разрешено нести приложение: `409 scene_conflict` доски отдаёт рядом с `error`
+победившую сцену, чтобы вкладка, потерявшая гонку, не ходила за нею вторым
+запросом. Приложение лежит **рядом** с `error`, а само поле `error` остаётся
+тем же `ErrorBody`, так что разбор отказа в интерфейсе один. Заодно `default`
+вытесняет
 `HTTPValidationError`, который FastAPI дописывает сам: наш `422` выглядит не так,
 и оставить в документе чужую форму значило бы соврать про единственный отказ,
 который клиент видит чаще прочих.
@@ -109,7 +114,12 @@ class ErrorBody(BaseModel):
 
 
 class ErrorOut(BaseModel):
-    """Единственная форма отказа службы. Другой нет ни у одного маршрута."""
+    """Форма отказа службы: тело `error` и ничего кроме.
+
+    Маршрут, которому есть что приложить к отказу, кладёт приложение рядом с
+    `error` своей моделью (`board.SceneConflictOut`), но поле `error` в ней —
+    тот же `ErrorBody`: разбор отказа в интерфейсе один на все маршруты.
+    """
 
     error: ErrorBody
 
@@ -157,25 +167,27 @@ INTERNAL_MESSAGE = "Internal server error"
 
 # Отказы: сюда попадает всё, что служба бросает `ApiError`.
 КОДЫ_ОТКАЗОВ: tuple[str, ...] = (
-    "account_blocked", "agent_refused", "already_finished", "already_member",
-    "bad_outputs", "bad_template", "build_failed", "csrf_failed",
-    "diagram_failed", "email_not_confirmed", "email_taken",
-    "endpoint_required", "export_too_large", "file_too_large", "forbidden",
-    "http_error", "in_trash", "insufficient_scope", "internal_error",
+    "account_blocked", "agent_refused", "already_finished",
+    "already_member", "bad_outputs", "bad_template", "board_failed",
+    "build_failed", "csrf_failed", "diagram_failed", "email_not_confirmed",
+    "email_taken", "endpoint_required", "export_too_large",
+    "file_too_large", "forbidden", "http_error", "in_trash",
+    "ink_no_keys", "ink_unreachable", "insufficient_scope", "internal_error",
     "invalid_credentials", "invalid_id", "invalid_key", "invalid_name",
     "invalid_nickname", "invalid_source", "invalid_token", "invalid_value",
     "kadai_failed", "key_required", "last_owner", "limit_exhausted",
-    "method_not_allowed", "nickname_taken", "no_file", "no_invite", "no_key",
-    "no_such_user", "not_found", "not_implemented", "not_in_trash",
-    "not_ready", "note_required", "parse_failed", "personal_workspace",
-    "project_exists", "project_required", "quota_exceeded", "rate_limited",
-    "run_failed", "source_too_large", "tag_refused", "task_too_long",
-    "token_expired", "token_not_allowed", "token_required", "token_revoked",
-    "unauthenticated", "unauthorized", "unknown_job_kind",
-    "unknown_job_status", "unknown_lang", "unknown_mode", "unknown_module",
-    "unknown_plan", "unknown_provider", "unknown_role", "unknown_scope",
-    "unknown_stage", "unknown_tag", "unknown_theme", "unsupported_type",
-    "validation_failed",
+    "method_not_allowed", "nickname_taken", "no_file", "no_invite",
+    "no_key", "no_such_user", "not_found", "not_implemented",
+    "not_in_trash", "not_ready", "note_required", "parse_failed",
+    "personal_workspace", "project_exists", "project_required",
+    "quota_exceeded", "rate_limited", "run_failed", "scene_conflict",
+    "scene_stale", "scene_too_big", "source_too_large", "steps_failed",
+    "tag_refused", "task_too_long", "token_expired", "token_not_allowed",
+    "token_required", "token_revoked", "unauthenticated", "unauthorized",
+    "unknown_job_kind", "unknown_job_status", "unknown_lang",
+    "unknown_mode", "unknown_module", "unknown_plan", "unknown_provider",
+    "unknown_role", "unknown_scope", "unknown_stage", "unknown_tag",
+    "unknown_theme", "unsupported_type", "validation_failed",
 )
 
 # Беды заданий. Ответом HTTP они не приходят — приходят полем `error` карточки

@@ -8,11 +8,16 @@
  * обратно.
  *
  * Собственной разметки здесь нет намеренно — только порядок карточек. Сами
- * карточки остаются там же, где были (`AgentSection`, `ModelKeysSection`): у
- * каждой своя работа со службой, и слить их в один файл значило бы получить
- * экран, который делает четыре запроса и правит три разных ресурса.
+ * карточки остаются там же, где были (`AgentSection`, `ModelKeysSection`,
+ * `InkKeysSection`): у каждой своя работа со службой, и слить их в один файл
+ * значило бы получить экран, который делает четыре запроса и правит три разных
+ * ресурса.
+ *
+ * Ключи распознавания рукописи стоят последними: они нужны одной доске, а пресет
+ * и ключ модели — всему остальному.
  */
 import { AgentSection } from './AgentSection'
+import { InkKeysSection } from './InkKeysSection'
 import { ModelKeysSection } from './ModelKeysSection'
 
 export function AgentConfigSection() {
@@ -20,6 +25,7 @@ export function AgentConfigSection() {
     <>
       <AgentSection />
       <ModelKeysSection />
+      <InkKeysSection />
     </>
   )
 }

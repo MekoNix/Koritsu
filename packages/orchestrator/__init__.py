@@ -1,9 +1,9 @@
 """
 orchestrator — единственный, кто знает про все пакеты сразу.
 
-Шесть пакетов (`hokoku` — отчёты из DOCX-шаблонов, `llm` — слой моделей,
+Семь пакетов (`hokoku` — отчёты из DOCX-шаблонов, `llm` — слой моделей,
 `materials` — материалы студента, `fragmos` и `uml_generator` — схемы, `zuhyo` —
-графики) не связаны
+графики, `kokuban` — доска с решением от руки) не связаны
 между собой ни одним импортом, и это правило держится намеренно: каждый из них
 самостоятелен и тестируется отдельно. Не хватало того единственного, кто знает
 про всех сразу, — им и работает этот пакет. Импортировать соседей можно только
@@ -35,6 +35,8 @@ orchestrator — единственный, кто знает про все па�
     build(project)                        значения → validate → build_report
     build_parts(project, keys=…)          раскладка промпта в пять ролей
     ask(project, вопрос, endpoint=…)      один вопрос модели вне тегов
+    check_board(project, scene=…)         доска: разбор решения репетитором
+    steps(scene) / latex_file(…)          сцена → строки решения и файл рядом
     make_template(project, …)             строение работы → заготовки блоков
     solve(project, задание, endpoint=…)   живой режим: агент собирает блоки
     write_texts(project, endpoint=…)      весь связный текст одним проходом
@@ -54,6 +56,7 @@ orchestrator — единственный, кто знает про все па�
     agent.py     уровень 3: петля llm.run_tools, отбор, ворота, исход
     build.py     значения → hokoku.build_report
     live.py      живой режим: работа списком блоков, свои инструменты, текст
+    board.py     дверь к доске: снимок сцены, куски, один вызов, сверка ответа
     doors.py     двери наружу: ask, make_template, check_code, Services для kadai
     kadai.py     python -m orchestrator.kadai: сценарий с уже собранными дверями
 
@@ -88,6 +91,7 @@ from .build import build
 from .live import LiveResult, TextsResult, live_tools, solve, write_texts
 from .doors import Answer, ask, check_code, kadai_services, make_template, \
     template_of_blocks
+from .board import BoardCheck, check_board, latex_file, steps
 
 __all__ = [
     "Project", "Version", "BlockVersion", "Run", "SOURCES", "artifact_id",
@@ -97,6 +101,7 @@ __all__ = [
     "fill_agent", "AgentResult", "ToolBox", "ToolError", "operator_channel_gate",
     "build", "check", "job_of",
     "ask", "Answer", "make_template", "check_code", "solve", "write_texts",
+    "check_board", "BoardCheck", "steps", "latex_file",
     "kadai_services", "template_of_blocks",
     "LiveResult", "TextsResult", "live_tools",
     "build_parts", "seal_mark", "render", "prompt_hash", "RULES",
@@ -104,4 +109,5 @@ __all__ = [
     "OrchestratorError",
     "diagrams", "DiagramResult", "DiagramError",
     "prompt", "schema", "stream", "fill", "tools", "agent", "live", "doors",
+    "board",
 ]

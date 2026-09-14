@@ -16,6 +16,34 @@ export type ModelKey = {
 }
 
 /**
+ * Поставщики ключей распознавания рукописи.
+ *
+ * Они лежат в той же таблице, что и ключи моделей, и заводятся тем же
+ * маршрутом, но платят за другое: ключ модели — за прогон, ключ MyScript — за
+ * открытие доски. Поэтому в настройках у них свой подраздел, а список ключей
+ * моделей их не показывает.
+ *
+ * Служба помечает их `kind: "ink"` в `GET /api/keys/providers`; имена повторены
+ * здесь, чтобы разделение работало и на ответе без этой пометки.
+ */
+export const INK_PROVIDER_APP = 'myscript_app'
+export const INK_PROVIDER_HMAC = 'myscript_hmac'
+export const INK_PROVIDERS: readonly string[] = [INK_PROVIDER_APP, INK_PROVIDER_HMAC]
+
+/**
+ * Поставщик распознавания рукописи: по пометке службы, а если её нет — по имени.
+ *
+ * Одна функция на оба подраздела: «ключи моделей» отбирает ею то, чего не
+ * показывает, а «распознавание рукописи» — то, что показывает. Два разных отбора
+ * рядом разъехались бы на первом же новом поставщике, и ключ оказался бы либо в
+ * обоих списках, либо ни в одном.
+ */
+export function isInkProvider(providers: KeyProviders | undefined, provider: string): boolean {
+  const вид = providers?.kind?.[provider]
+  return вид ? вид === 'ink' : INK_PROVIDERS.includes(provider)
+}
+
+/**
  * Чем платит человек за этого поставщика:
  * `own` — свой ключ, `shared` — общий ключ службы, `none` — платить нечем.
  */
@@ -31,6 +59,12 @@ export type KeySource = 'own' | 'shared' | 'none'
 export type KeyProviders = {
   providers: string[]
   key_source?: Partial<Record<string, KeySource>>
+  /**
+   * Чем поставщик занят: `model` — вызовы модели, `ink` — распознавание
+   * рукописи. Поле появилось позже списка, поэтому необязательное: пока его
+   * нет, поставщиков распознавания отбирает список имён (`INK_PROVIDERS`).
+   */
+  kind?: Partial<Record<string, 'model' | 'ink'>>
 }
 
 /**

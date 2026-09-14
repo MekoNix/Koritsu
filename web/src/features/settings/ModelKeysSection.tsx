@@ -40,7 +40,7 @@ import {
 
 import { useAddModelKey, useKeyProviders, useModelKeys, useRevokeModelKey } from './api'
 import { formatDate } from './format'
-import type { ModelKey } from './types'
+import { isInkProvider, type ModelKey } from './types'
 
 const schema = z.object({
   provider: z.string().min(1, { message: translate('settings.valid.providerRequired') }),
@@ -71,7 +71,13 @@ export function ModelKeysSection() {
     defaultValues: { provider: '', key: '' },
   })
 
-  const providerNames = providers.data?.providers ?? []
+  // Ключи распознавания рукописи живут своим подразделом (`InkKeysSection`):
+  // они из той же таблицы, но платят за другое, и в списке моделей выглядели бы
+  // поставщиком, которого нельзя выбрать пресетом.
+  const providerNames = (providers.data?.providers ?? []).filter(
+    (provider) => !isInkProvider(providers.data, provider),
+  )
+  const keyList = (list.data ?? []).filter((key) => !isInkProvider(providers.data, key.provider))
 
   async function submit(values: Values) {
     try {
@@ -105,7 +111,7 @@ export function ModelKeysSection() {
         {list.isLoading && <SkeletonLines count={3} />}
         {list.error && <ErrorState error={list.error} onRetry={() => void list.refetch()} />}
 
-        {list.data && list.data.length === 0 && (
+        {list.data && keyList.length === 0 && (
           <EmptyState
             compact
             icon="key"
@@ -114,9 +120,9 @@ export function ModelKeysSection() {
           />
         )}
 
-        {list.data && list.data.length > 0 && (
+        {list.data && keyList.length > 0 && (
           <ul className="flex flex-col gap-s2">
-            {list.data.map((key) => (
+            {keyList.map((key) => (
               <li
                 key={key.id}
                 className="flex flex-wrap items-center gap-s3 rounded-sm border border-line bg-surface-2 px-s3 py-s2"

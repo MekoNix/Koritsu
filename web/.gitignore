@@ -6,3 +6,7 @@ playwright-report
 coverage
 .vite
 *.local
+# Шрифты доски кладёт `scripts/fonts.mjs` перед сборкой — они копии из
+# node_modules, и в истории им делать нечего.
+public/fonts
+public/mathlive-fonts
