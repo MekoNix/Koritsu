@@ -93,6 +93,9 @@ const PATHS = {
   // Во весь экран и обратно: четыре угла наружу и четыре внутрь.
   expand: 'M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5',
   shrink: 'M3 8h5V3M21 8h-5V3M3 16h5v5M21 16h-5v5',
+  // Тренажёр: две карточки стопкой, верхняя со строкой вопроса.
+  cards: 'M8 7h11a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1ZM4 16V5a1 1 0 0 1 1-1h11M10.5 11.5h6M10.5 15h4',
+  menu: 'M4 7h16M4 12h16M4 17h16',
 } as const
 
 export type IconName = keyof typeof PATHS

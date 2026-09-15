@@ -53,15 +53,16 @@ export function UserMenu() {
         <Button
           variant="ghost"
           size="sm"
-          className="gap-s2 pl-1 pr-2"
+          className="gap-s2 pl-1 pr-2 max-[640px]:min-h-[40px] max-[640px]:pr-1"
           aria-label={t('shell.user.menu')}
         >
           {/* Своя картинка, если человек её загрузил: `me` живёт одним ключом
               кэша, и загрузка в настройках кладёт свежий профиль прямо в него —
               шапка меняется тем же рендером, без перезагрузки страницы. */}
           <Avatar id={me?.id} size={26} version={me?.avatar_version} />
-          <span className="max-w-[180px] truncate text-sm font-medium text-ink">{name}</span>
-          <Icon name="chevronDown" size={14} className="text-muted" />
+          {/* На узком экране — только аватар: имя и стрелка сдвигали бы шапку за край. */}
+          <span className="max-w-[180px] truncate text-sm font-medium text-ink max-[640px]:hidden">{name}</span>
+          <Icon name="chevronDown" size={14} className="text-muted max-[640px]:hidden" />
         </Button>
       </MenuTrigger>
       <MenuContent>

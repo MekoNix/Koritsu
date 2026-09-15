@@ -20,6 +20,11 @@
  * а пункт меню обещал бы место, куда можно уйти.
  *
  * Наверху — только название, и оно же ссылка на дашборд.
+ *
+ * **Узкий экран (≤ 640 px).** Постоянной колонки нет — она забрала бы у экрана
+ * треть ширины. То же меню выезжает слева по кнопке в шапке (`AppShell`): вариант
+ * `mobile` не сворачивается, растягивается на высоту листа, у пунктов высота
+ * 44 px под палец, а кнопка у названия закрывает меню.
  */
 import { Link, NavLink } from 'react-router-dom'
 
@@ -46,10 +51,14 @@ type Item = {
 
 export type SidebarProps = {
   collapsed: boolean
+  /** Свернуть/развернуть; у выезжающего меню — закрыть его. */
   onToggle: () => void
+  /** Выезжающее меню узкого экрана. */
+  mobile?: boolean
+  className?: string
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, mobile = false, className }: SidebarProps) {
   const t = useT()
   const modules = useModules()
 
@@ -82,9 +91,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'sticky top-0 flex h-screen flex-col gap-s1 overflow-hidden border-r border-line bg-surface p-s3',
-        'transition-[width] duration-200',
-        collapsed ? 'w-sidebar-collapsed items-center px-2' : 'w-sidebar',
+        'flex flex-col gap-s1 bg-surface p-s3',
+        mobile
+          ? 'h-full w-full overflow-y-auto pb-[max(env(safe-area-inset-bottom),var(--space-3))] pt-[max(env(safe-area-inset-top),var(--space-3))]'
+          : cn(
+              'sticky top-0 h-screen overflow-hidden border-r border-line transition-[width] duration-200',
+              collapsed ? 'w-sidebar-collapsed items-center px-2' : 'w-sidebar',
+            ),
+        className,
       )}
     >
       <div className={cn('flex items-center gap-s1', collapsed && 'flex-col gap-s2')}>
@@ -106,17 +120,23 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             {collapsed ? t('shell.brand').slice(0, 1) : t('shell.brand')}
           </span>
         </Link>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          onClick={onToggle}
-          aria-label={collapsed ? t('shell.sidebar.expand') : t('shell.sidebar.collapse')}
-          aria-expanded={!collapsed}
-          className="text-muted"
-        >
-          <Icon name={collapsed ? 'panelOpen' : 'panelClose'} size={18} />
-        </Button>
+        {mobile ? (
+          <Button variant="ghost" size="lg" iconOnly onClick={onToggle} aria-label={t('shell.sidebar.close')} className="text-muted">
+            <Icon name="close" size={20} />
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            onClick={onToggle}
+            aria-label={collapsed ? t('shell.sidebar.expand') : t('shell.sidebar.collapse')}
+            aria-expanded={!collapsed}
+            className="text-muted"
+          >
+            <Icon name={collapsed ? 'panelOpen' : 'panelClose'} size={18} />
+          </Button>
+        )}
       </div>
 
       {/* Рабочее пространство — рамка, в которой показаны все работы; стоит
@@ -125,7 +145,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       <nav className="flex flex-col gap-s1" aria-label={t('shell.sidebar.modules')}>
         {fixedTop.map((item) => (
-          <NavItem key={item.key} item={item} collapsed={collapsed} />
+          <NavItem key={item.key} item={item} collapsed={collapsed} mobile={mobile} />
         ))}
 
         {!collapsed && (
@@ -138,20 +158,20 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <Skeleton key={i} className={cn('my-1 h-6', collapsed ? 'w-9' : 'w-full')} />
           ))}
         {moduleItems.map((item) => (
-          <NavItem key={item.key} item={item} collapsed={collapsed} />
+          <NavItem key={item.key} item={item} collapsed={collapsed} mobile={mobile} />
         ))}
       </nav>
 
       <div className="mt-auto w-full border-t border-line pt-s2">
         {fixedBottom.map((item) => (
-          <NavItem key={item.key} item={item} collapsed={collapsed} />
+          <NavItem key={item.key} item={item} collapsed={collapsed} mobile={mobile} />
         ))}
       </div>
     </aside>
   )
 }
 
-function NavItem({ item, collapsed }: { item: Item; collapsed: boolean }) {
+function NavItem({ item, collapsed, mobile = false }: { item: Item; collapsed: boolean; mobile?: boolean }) {
   return (
     <NavLink
       to={item.to}
@@ -165,6 +185,7 @@ function NavItem({ item, collapsed }: { item: Item; collapsed: boolean }) {
           // будет: это прямой запрет брифа.
           isActive ? 'bg-accent-bg font-semibold text-ink-strong' : 'text-muted',
           collapsed && 'w-11 justify-center px-0 py-2.5',
+          mobile && 'min-h-[44px] text-md',
         )
       }
     >

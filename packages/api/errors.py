@@ -169,7 +169,9 @@ INTERNAL_MESSAGE = "Internal server error"
 КОДЫ_ОТКАЗОВ: tuple[str, ...] = (
     "account_blocked", "agent_refused", "already_finished",
     "already_member", "bad_outputs", "bad_template", "board_failed",
-    "build_failed", "csrf_failed", "diagram_failed", "email_not_confirmed",
+    "build_failed", "cards_generate_failed", "cards_invalid", "csrf_failed",
+    "diagram_failed",
+    "draft_busy", "email_not_confirmed",
     "email_taken", "endpoint_required", "export_too_large",
     "file_too_large", "forbidden", "http_error", "in_trash",
     "ink_no_keys", "ink_unreachable", "insufficient_scope", "internal_error",
@@ -178,7 +180,8 @@ INTERNAL_MESSAGE = "Internal server error"
     "kadai_failed", "key_required", "last_owner", "limit_exhausted",
     "method_not_allowed", "nickname_taken", "no_file", "no_invite",
     "no_key", "no_such_user", "not_found", "not_implemented",
-    "not_in_trash", "not_ready", "note_required", "parse_failed",
+    "not_in_trash", "not_ready", "note_required", "nothing_to_add",
+    "nothing_to_play", "parse_failed",
     "personal_workspace", "project_exists", "project_required",
     "quota_exceeded", "rate_limited", "run_failed", "scene_conflict",
     "scene_stale", "scene_too_big", "source_too_large", "steps_failed",
@@ -188,6 +191,7 @@ INTERNAL_MESSAGE = "Internal server error"
     "unknown_mode", "unknown_module", "unknown_plan", "unknown_provider",
     "unknown_role", "unknown_scope", "unknown_stage", "unknown_tag",
     "unknown_theme", "unsupported_type", "validation_failed",
+    "version_conflict",
 )
 
 # Беды заданий. Ответом HTTP они не приходят — приходят полем `error` карточки

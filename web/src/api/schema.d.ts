@@ -2296,6 +2296,366 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cards/sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Card sets of a workspace
+         * @description Every card set of one workspace, most recently updated first, with how many topics and cards it has and how many of them I know: cards whose last answer of mine is Yes. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
+         */
+        get: operations["cards_sets"];
+        put?: never;
+        /**
+         * Create a card set from a draft
+         * @description Creates a set in the workspace from a draft of mine: a journal entry in the workspace trainer work, created on the first set, with the file as version 1. A draft with problems is refused unless `only_valid` asks to keep only the valid cards. Saving the same draft twice answers the set it already became. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 422 cards_invalid.
+         */
+        post: operations["cards_create_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cards/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a card file into a draft
+         * @description Reads a JSON card file (or a `.csv`/`.tsv` table) into a new draft of mine and answers its problems, each with the JSON path of the field (`cards[12].a`) or the line of a broken file or a CSV row, with how many cards are valid and how many were rejected. The draft keeps the file as JSON; a table is turned into one. JSON `{text, filename}` or a multipart file, at most 5 MB. A Markdown `.md` file is refused. Nothing is created in a workspace: POST /api/cards/sets does that with the draft id. With `workspace_id`, the editor role in it is checked now rather than on save. 400 invalid_value, 403 forbidden, 404 not_found, 413 file_too_large, 415 unsupported_type, 422 cards_invalid.
+         */
+        post: operations["cards_preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cards/materials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Files for the card agent in a workspace
+         * @description Files uploaded for generating cards in this workspace: parsed ones with status `ready`, files still being parsed with status `pending` and their job, and files whose parsing failed within the draft lifetime with status `failed` and the reason in `error`. They live in the workspace trainer work. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["cards_materials"];
+        put?: never;
+        /**
+         * Upload a file for the card agent
+         * @description Accepts a file (multipart field `file`) into the workspace trainer work, created if it is not there yet, and queues its `parse` job, the same way as uploading a material into a project. `status` is `ready` when the same file is already parsed. Editor role in the workspace. 400 invalid_id, 400 no_file, 402 limit_exhausted, 403 forbidden, 404 not_found, 413 file_too_large, 413 quota_exceeded, 415 unsupported_type.
+         */
+        post: operations["cards_upload_material"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cards/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Have the agent write cards into a draft
+         * @description Queues a `cards_generate` job and answers at once with the job and the draft it writes into. Without `draft_id` a new empty draft of mine is created; with it the agent adds cards to that draft (for `topic` when named). With `project_id` and `set_id` the draft is meant to add cards to that set on save. Input: a description, exam questions and files from GET /api/cards/materials; `count` cards in total or `per_topic`, at most 200; `length` short or full; `language`. Progress frames: `progress` with step = cards written, total = cards asked, note = topic; `text`. Editor role in the workspace. 400 endpoint_required, 400 invalid_id, 400 invalid_value, 400 unknown_provider, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 draft_busy.
+         */
+        post: operations["cards_generate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cards/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A draft of mine
+         * @description The draft as a JSON card file with every card as it came, rejected ones included; the valid cards parsed into a set; its problems with the JSON path and card number; counts; where it came from (`upload` or `agent`), the last job writing it and its status. Drafts are private and live seven days from their last change. 400 invalid_id, 404 not_found, 410 unsupported_type.
+         */
+        get: operations["cards_draft"];
+        /**
+         * Rewrite a draft of mine
+         * @description Replaces the draft with the whole JSON card file and answers its problems and counts. A draft the agent is still writing is refused. At most 5 MB. 400 invalid_id, 404 not_found, 409 draft_busy, 410 unsupported_type, 413 file_too_large.
+         */
+        put: operations["cards_put_draft"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cards/drafts/{draft_id}/save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save a draft of mine as a set
+         * @description With `workspace_id`: creates a new set from the draft. With `project_id` and `set_id`: adds the cards of the draft that the set does not have yet as a new version; cards with a key the set already has are skipped. A draft with problems is refused unless `only_valid`. Saving the same draft to the same place twice answers the first result. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 409 draft_busy, 409 version_conflict, 422 cards_invalid, 422 nothing_to_add.
+         */
+        post: operations["cards_save_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cards/sets/{set_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One card set with my settings and progress
+         * @description The set: title, description, topics with their card counts, the recommended settings, the version and its history, my settings (the recommended ones until I change them), my progress in the set and per topic, and my unfinished session to continue when there is one. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["cards_set"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a set
+         * @description Removes the set: its journal entry, its versions and the sessions, attempts, progress and settings of everyone in it. Uploaded source files stay as artifacts of the work until the work is cleaned up. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        delete: operations["cards_delete_set"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a set or change its description
+         * @description Changes the title and/or description; a field left null is kept. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 validation_failed.
+         */
+        patch: operations["cards_patch_set"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cards/sets/{set_id}/cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cards of a set, a page at a time
+         * @description Cards in file order with my last answer and the `changed` mark. `q` searches questions, answers and notes; `topic` is a topic id, or `-` for cards without a topic. `keys` — up to 100 keys separated by commas — returns exactly those cards in that order. `from`/`to` page the result, `to` not included, at most 1000 at a time. `total` counts the result before paging. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["cards_set_cards"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cards/sets/{set_id}/defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Write the recommended settings of a set
+         * @description Replaces the recommended session settings of the set. People who never changed their own settings start from these; the downloaded file carries them. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
+         */
+        put: operations["cards_put_defaults"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cards/sets/{set_id}/my-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Write my session settings for a set
+         * @description Replaces my own session settings for this set; nobody else sees them. `reset` forgets them and answers the recommended ones. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        put: operations["cards_put_my_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cards/sets/{set_id}/replace/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a new file for a set into a draft
+         * @description Reads a new version of the set file into a draft of mine and answers its problems and how it differs from the current version: keys added, changed (same key, other text) and removed. Nothing changes in the set until POST …/replace. A JSON card file or a `.csv`/`.tsv` table: JSON `{text, filename}` or a multipart file, at most 5 MB; a Markdown `.md` file is refused. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 413 file_too_large, 415 unsupported_type, 422 cards_invalid.
+         */
+        post: operations["cards_replace_preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cards/sets/{set_id}/replace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace a set with a new version from a draft
+         * @description Makes the draft the next version of the set. Progress stays with every key that is still there; a card whose key stayed and whose text changed is marked `changed` for people who answered it before, until they answer it again; cards whose key is gone leave the set, their attempts stay. The title and description of the set stay; the recommended settings come from the file. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 409 draft_busy, 409 version_conflict, 422 cards_invalid.
+         */
+        post: operations["cards_replace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cards/sets/{set_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a set as a JSON card file
+         * @description The current version as a canonical JSON card file, with an id on every card and topics by title, so a file downloaded, edited and uploaded again keeps everyone's progress. The file is named after the set. Only `format=json`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["cards_download"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cards/sets/{set_id}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a session on a set
+         * @description Plans a session and answers its keys in order with the first 20 cards. `settings` plays by my settings, `wrong` every card whose last answer of mine is No, `all_file` the whole set in file order; `keys` plays exactly the cards named. Shuffling is stable within the session. My earlier unfinished sessions of this set are closed. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found, 422 nothing_to_play.
+         */
+        post: operations["cards_start_session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cards/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One session of mine
+         * @description The plan of the session, how many of its cards are answered, every answer in the order they were given (`corrects` is the client_seq of the answer it replaced) and whether the set was replaced since. Only my own sessions. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["cards_session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cards/sets/{set_id}/sessions/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My unfinished session of a set
+         * @description My latest unfinished session of the current version of this set, started within the resume window (12 hours), in the same shape as GET …/sessions/{session_id}; 204 when there is none. Lets Continue work across devices. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["cards_open_session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/cards/sessions/{session_id}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer a card in a session
+         * @description Writes my Yes or No for a card of the session at once and recounts my progress on that card: it is known when its last answer is Yes. The same card may be answered again within the session. `corrects` names, by client_seq, an earlier answer of this session to the same card that this one replaces. A repeat with a client_seq already written answers 200 with the same result and writes nothing. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        post: operations["cards_answer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/flowcharts/modes": {
         parameters: {
             query?: never;
@@ -3728,6 +4088,366 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cards/sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Card sets of a workspace
+         * @description Every card set of one workspace, most recently updated first, with how many topics and cards it has and how many of them I know: cards whose last answer of mine is Yes. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
+         */
+        get: operations["cards_sets_v1"];
+        put?: never;
+        /**
+         * Create a card set from a draft
+         * @description Creates a set in the workspace from a draft of mine: a journal entry in the workspace trainer work, created on the first set, with the file as version 1. A draft with problems is refused unless `only_valid` asks to keep only the valid cards. Saving the same draft twice answers the set it already became. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 422 cards_invalid.
+         */
+        post: operations["cards_create_set_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cards/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a card file into a draft
+         * @description Reads a JSON card file (or a `.csv`/`.tsv` table) into a new draft of mine and answers its problems, each with the JSON path of the field (`cards[12].a`) or the line of a broken file or a CSV row, with how many cards are valid and how many were rejected. The draft keeps the file as JSON; a table is turned into one. JSON `{text, filename}` or a multipart file, at most 5 MB. A Markdown `.md` file is refused. Nothing is created in a workspace: POST /api/cards/sets does that with the draft id. With `workspace_id`, the editor role in it is checked now rather than on save. 400 invalid_value, 403 forbidden, 404 not_found, 413 file_too_large, 415 unsupported_type, 422 cards_invalid.
+         */
+        post: operations["cards_preview_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cards/materials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Files for the card agent in a workspace
+         * @description Files uploaded for generating cards in this workspace: parsed ones with status `ready`, files still being parsed with status `pending` and their job, and files whose parsing failed within the draft lifetime with status `failed` and the reason in `error`. They live in the workspace trainer work. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["cards_materials_v1"];
+        put?: never;
+        /**
+         * Upload a file for the card agent
+         * @description Accepts a file (multipart field `file`) into the workspace trainer work, created if it is not there yet, and queues its `parse` job, the same way as uploading a material into a project. `status` is `ready` when the same file is already parsed. Editor role in the workspace. 400 invalid_id, 400 no_file, 402 limit_exhausted, 403 forbidden, 404 not_found, 413 file_too_large, 413 quota_exceeded, 415 unsupported_type.
+         */
+        post: operations["cards_upload_material_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cards/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Have the agent write cards into a draft
+         * @description Queues a `cards_generate` job and answers at once with the job and the draft it writes into. Without `draft_id` a new empty draft of mine is created; with it the agent adds cards to that draft (for `topic` when named). With `project_id` and `set_id` the draft is meant to add cards to that set on save. Input: a description, exam questions and files from GET /api/cards/materials; `count` cards in total or `per_topic`, at most 200; `length` short or full; `language`. Progress frames: `progress` with step = cards written, total = cards asked, note = topic; `text`. Editor role in the workspace. 400 endpoint_required, 400 invalid_id, 400 invalid_value, 400 unknown_provider, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 draft_busy.
+         */
+        post: operations["cards_generate_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cards/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A draft of mine
+         * @description The draft as a JSON card file with every card as it came, rejected ones included; the valid cards parsed into a set; its problems with the JSON path and card number; counts; where it came from (`upload` or `agent`), the last job writing it and its status. Drafts are private and live seven days from their last change. 400 invalid_id, 404 not_found, 410 unsupported_type.
+         */
+        get: operations["cards_draft_v1"];
+        /**
+         * Rewrite a draft of mine
+         * @description Replaces the draft with the whole JSON card file and answers its problems and counts. A draft the agent is still writing is refused. At most 5 MB. 400 invalid_id, 404 not_found, 409 draft_busy, 410 unsupported_type, 413 file_too_large.
+         */
+        put: operations["cards_put_draft_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cards/drafts/{draft_id}/save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save a draft of mine as a set
+         * @description With `workspace_id`: creates a new set from the draft. With `project_id` and `set_id`: adds the cards of the draft that the set does not have yet as a new version; cards with a key the set already has are skipped. A draft with problems is refused unless `only_valid`. Saving the same draft to the same place twice answers the first result. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 409 draft_busy, 409 version_conflict, 422 cards_invalid, 422 nothing_to_add.
+         */
+        post: operations["cards_save_draft_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/cards/sets/{set_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One card set with my settings and progress
+         * @description The set: title, description, topics with their card counts, the recommended settings, the version and its history, my settings (the recommended ones until I change them), my progress in the set and per topic, and my unfinished session to continue when there is one. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["cards_set_v1"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a set
+         * @description Removes the set: its journal entry, its versions and the sessions, attempts, progress and settings of everyone in it. Uploaded source files stay as artifacts of the work until the work is cleaned up. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         */
+        delete: operations["cards_delete_set_v1"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a set or change its description
+         * @description Changes the title and/or description; a field left null is kept. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 validation_failed.
+         */
+        patch: operations["cards_patch_set_v1"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/cards/sets/{set_id}/cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cards of a set, a page at a time
+         * @description Cards in file order with my last answer and the `changed` mark. `q` searches questions, answers and notes; `topic` is a topic id, or `-` for cards without a topic. `keys` — up to 100 keys separated by commas — returns exactly those cards in that order. `from`/`to` page the result, `to` not included, at most 1000 at a time. `total` counts the result before paging. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["cards_set_cards_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/cards/sets/{set_id}/defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Write the recommended settings of a set
+         * @description Replaces the recommended session settings of the set. People who never changed their own settings start from these; the downloaded file carries them. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
+         */
+        put: operations["cards_put_defaults_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/cards/sets/{set_id}/my-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Write my session settings for a set
+         * @description Replaces my own session settings for this set; nobody else sees them. `reset` forgets them and answers the recommended ones. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        put: operations["cards_put_my_settings_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/cards/sets/{set_id}/replace/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a new file for a set into a draft
+         * @description Reads a new version of the set file into a draft of mine and answers its problems and how it differs from the current version: keys added, changed (same key, other text) and removed. Nothing changes in the set until POST …/replace. A JSON card file or a `.csv`/`.tsv` table: JSON `{text, filename}` or a multipart file, at most 5 MB; a Markdown `.md` file is refused. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 413 file_too_large, 415 unsupported_type, 422 cards_invalid.
+         */
+        post: operations["cards_replace_preview_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/cards/sets/{set_id}/replace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace a set with a new version from a draft
+         * @description Makes the draft the next version of the set. Progress stays with every key that is still there; a card whose key stayed and whose text changed is marked `changed` for people who answered it before, until they answer it again; cards whose key is gone leave the set, their attempts stay. The title and description of the set stay; the recommended settings come from the file. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 409 draft_busy, 409 version_conflict, 422 cards_invalid.
+         */
+        post: operations["cards_replace_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/cards/sets/{set_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a set as a JSON card file
+         * @description The current version as a canonical JSON card file, with an id on every card and topics by title, so a file downloaded, edited and uploaded again keeps everyone's progress. The file is named after the set. Only `format=json`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["cards_download_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/cards/sets/{set_id}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a session on a set
+         * @description Plans a session and answers its keys in order with the first 20 cards. `settings` plays by my settings, `wrong` every card whose last answer of mine is No, `all_file` the whole set in file order; `keys` plays exactly the cards named. Shuffling is stable within the session. My earlier unfinished sessions of this set are closed. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found, 422 nothing_to_play.
+         */
+        post: operations["cards_start_session_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/cards/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One session of mine
+         * @description The plan of the session, how many of its cards are answered, every answer in the order they were given (`corrects` is the client_seq of the answer it replaced) and whether the set was replaced since. Only my own sessions. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["cards_session_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/cards/sets/{set_id}/sessions/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My unfinished session of a set
+         * @description My latest unfinished session of the current version of this set, started within the resume window (12 hours), in the same shape as GET …/sessions/{session_id}; 204 when there is none. Lets Continue work across devices. Viewer role. 400 invalid_id, 404 not_found.
+         */
+        get: operations["cards_open_session_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/cards/sessions/{session_id}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer a card in a session
+         * @description Writes my Yes or No for a card of the session at once and recounts my progress on that card: it is known when its last answer is Yes. The same card may be answered again within the session. `corrects` names, by client_seq, an earlier answer of this session to the same card that this one replaces. A repeat with a client_seq already written answers 200 with the same result and writes nothing. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        post: operations["cards_answer_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/flowcharts/modes": {
         parameters: {
             query?: never;
@@ -3984,6 +4704,53 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnswerIn */
+        AnswerIn: {
+            /** Key */
+            key: string;
+            /**
+             * Answer
+             * @enum {string}
+             */
+            answer: "yes" | "no";
+            /**
+             * Shown
+             * @default false
+             */
+            shown: boolean;
+            /**
+             * Ms
+             * @default 0
+             */
+            ms: number;
+            /**
+             * Client Seq
+             * @description Sequence number of the answer in the tab
+             */
+            client_seq: number;
+            /**
+             * Corrects
+             * @description client_seq of an earlier answer of this session it replaces
+             */
+            corrects?: number | null;
+        };
+        /** AnswerOut */
+        AnswerOut: {
+            /** Key */
+            key: string;
+            /** Client Seq */
+            client_seq: number;
+            /** Pos */
+            pos: number;
+            /** Total */
+            total: number;
+            /**
+             * Ended
+             * @default false
+             */
+            ended: boolean;
+            progress: components["schemas"]["CardProgressOut"];
+        };
         /**
          * ApiTokenCreated
          * @description Ответ на создание: карточка и сама строка ключа, в первый и последний раз.
@@ -4140,6 +4907,32 @@ export interface components {
              * @description Watch expressions, as the page shows them
              */
             watches?: string[];
+        };
+        /** AttemptOut */
+        AttemptOut: {
+            /** Key */
+            key: string;
+            /** Answer */
+            answer: string;
+            /**
+             * Shown
+             * @default false
+             */
+            shown: boolean;
+            /**
+             * Ms
+             * @default 0
+             */
+            ms: number;
+            /** Client Seq */
+            client_seq: number;
+            /**
+             * Corrects
+             * @description client_seq of the attempt this one corrects
+             */
+            corrects?: number | null;
+            /** At */
+            at?: string | null;
         };
         /**
          * BlankOut
@@ -4308,6 +5101,55 @@ export interface components {
             /** Symbols */
             symbols?: components["schemas"]["SymbolOut"][];
         };
+        /** CardOut */
+        CardOut: {
+            /** Key */
+            key: string;
+            /** Topic */
+            topic?: string | null;
+            /** Q */
+            q: string;
+            /** A */
+            a: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Changed
+             * @description The question changed in a replacement after my last answer to it
+             * @default false
+             */
+            changed: boolean;
+            /**
+             * My Last
+             * @description yes, no or null
+             */
+            my_last?: string | null;
+        };
+        /** CardProgressOut */
+        CardProgressOut: {
+            /** Last Answer */
+            last_answer?: string | null;
+            /**
+             * Yes
+             * @default 0
+             */
+            yes: number;
+            /**
+             * No
+             * @default 0
+             */
+            no: number;
+        };
+        /** CardsPageOut */
+        CardsPageOut: {
+            /** Cards */
+            cards?: components["schemas"]["CardOut"][];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
         /** ChatIn */
         ChatIn: {
             /** Text */
@@ -4406,6 +5248,31 @@ export interface components {
              * @description Files attached to the project as a whole, in upload order; `selected` says which of them this solution shows the model
              */
             common?: components["schemas"]["ContextFileOut"][];
+        };
+        /** CreateSetIn */
+        CreateSetIn: {
+            /** Workspace Id */
+            workspace_id: string;
+            /** Draft Id */
+            draft_id: string;
+            /**
+             * Only Valid
+             * @description Save only the valid cards when the draft has problems
+             * @default false
+             */
+            only_valid: boolean;
+        };
+        /** CreatedOut */
+        CreatedOut: {
+            /** Project Id */
+            project_id: string;
+            /** Set Id */
+            set_id: string;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
         };
         /**
          * DiagramBuiltOut
@@ -4638,6 +5505,72 @@ export interface components {
              */
             source: string;
         };
+        /** DraftIn */
+        DraftIn: {
+            /**
+             * Text
+             * @description The whole draft as a JSON card file
+             */
+            text: string;
+        };
+        /** DraftOut */
+        DraftOut: {
+            /** Draft Id */
+            draft_id: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "upload" | "agent";
+            /**
+             * Status
+             * @description ready, running, done, failed or cancelled
+             */
+            status: string;
+            /**
+             * Job Id
+             * @description The last job writing it
+             */
+            job_id?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Filename
+             * @default
+             */
+            filename: string;
+            /**
+             * Text
+             * @description The draft as a JSON card file, rejected cards included exactly as they came; empty while the agent has written nothing
+             * @default
+             */
+            text: string;
+            /**
+             * Set
+             * @description The valid cards parsed into a set, null when nothing parses
+             */
+            set?: {
+                [key: string]: unknown;
+            } | null;
+            /** Problems */
+            problems?: components["schemas"]["ProblemOut"][];
+            stats: components["schemas"]["StatsOut"];
+            /** Workspace Id */
+            workspace_id?: string | null;
+            /** @description The set this draft replaces or adds to */
+            target?: components["schemas"]["TargetOut"] | null;
+            saved?: components["schemas"]["TargetOut"] | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** DraftSavedOut */
+        DraftSavedOut: {
+            /** Problems */
+            problems?: components["schemas"]["ProblemOut"][];
+            stats: components["schemas"]["StatsOut"];
+        };
         /** DumpOut */
         DumpOut: {
             /**
@@ -4750,6 +5683,77 @@ export interface components {
             /** Email */
             email: string;
         };
+        /** GenerateIn */
+        GenerateIn: {
+            /** Workspace Id */
+            workspace_id: string;
+            /**
+             * Project Id
+             * @description With set_id: add the cards to this set
+             */
+            project_id?: string | null;
+            /** Set Id */
+            set_id?: string | null;
+            /**
+             * Draft Id
+             * @description Write more cards into this draft of mine
+             */
+            draft_id?: string | null;
+            /**
+             * Topic
+             * @description Title of the topic to write more cards for
+             */
+            topic?: string | null;
+            /**
+             * Prompt
+             * @default
+             */
+            prompt: string;
+            /**
+             * Questions
+             * @description Exam questions to answer, sections as topics
+             */
+            questions?: string | null;
+            /**
+             * Material Ids
+             * @description Files from GET /api/cards/materials
+             */
+            material_ids?: string[];
+            /**
+             * Count
+             * @description Cards to write in total
+             */
+            count: number;
+            /**
+             * Per Topic
+             * @description Cards per topic instead of in total
+             */
+            per_topic?: number | null;
+            /**
+             * Length
+             * @default short
+             * @enum {string}
+             */
+            length: "short" | "full";
+            /**
+             * Language
+             * @default ru
+             */
+            language: string;
+            /**
+             * Endpoint
+             * @description Model provider preset that pays for it
+             * @default
+             */
+            endpoint: string;
+        };
+        /** GenerateOut */
+        GenerateOut: {
+            /** Job Id */
+            job_id: string;
+            /** Draft Id */
+            draft_id: string;
+        };
         /**
          * HealthOut
          * @description Ответ `/health` — единственный маршрут службы, чей отказ не `ErrorOut`.
@@ -4786,7 +5790,7 @@ export interface components {
         JobIn: {
             /**
              * Kind
-             * @description What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, board_check, asm_run, asm_memory, asm_chat, probe
+             * @description What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, board_check, asm_run, asm_memory, asm_chat, cards_generate, probe
              */
             kind: string;
             /**
@@ -4892,6 +5896,34 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** MaterialOut */
+        MaterialOut: {
+            /** Material Id */
+            material_id: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Kind
+             * @default
+             */
+            kind: string;
+            /**
+             * Status
+             * @description ready: parsed and can go to the agent; pending: being parsed; failed: parsing failed, see `error`
+             * @enum {string}
+             */
+            status: "ready" | "pending" | "failed";
+            /** Job Id */
+            job_id?: string | null;
+            /**
+             * Error
+             * @description Why parsing failed, for status failed
+             */
+            error?: string | null;
+        };
         /** MemWriteOut */
         MemWriteOut: {
             /**
@@ -4979,6 +6011,119 @@ export interface components {
              * @description Provider API key
              */
             key: string;
+        };
+        /** MySettingsIn */
+        MySettingsIn: {
+            /**
+             * Session Size
+             * @description Cards in a session; 0 or null means all
+             * @default 20
+             */
+            session_size: number | null;
+            /**
+             * Order
+             * @description file, random, topic_seq, topic_random or topics_shuffled
+             * @default topic_random
+             */
+            order: string;
+            /**
+             * Topics
+             * @description Topic ids to play; null in the list is the cards without a topic; the whole field null means every topic
+             */
+            topics?: (string | null)[] | null;
+            /**
+             * Include
+             * @description all, unknown or wrong
+             * @default all
+             */
+            include: string;
+            /**
+             * Repeat Wrong
+             * @description Bring a No back three cards later, at most twice a session
+             * @default true
+             */
+            repeat_wrong: boolean;
+            /**
+             * Reset
+             * @description Forget my settings and use the recommended ones again
+             * @default false
+             */
+            reset: boolean;
+        };
+        /** OpenSessionOut */
+        OpenSessionOut: {
+            /** Session Id */
+            session_id: string;
+            /**
+             * Pos
+             * @default 0
+             */
+            pos: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /** Started At */
+            started_at?: string | null;
+        };
+        /** PatchIn */
+        PatchIn: {
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+        };
+        /** PatchOut */
+        PatchOut: {
+            /** Title */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
+        /** PreviewOut */
+        PreviewOut: {
+            /** Draft Id */
+            draft_id: string;
+            /** Problems */
+            problems?: components["schemas"]["ProblemOut"][];
+            stats: components["schemas"]["StatsOut"];
+        };
+        /** ProblemOut */
+        ProblemOut: {
+            /**
+             * Line
+             * @description Line of the source, from 1: for a file that is not valid JSON and for CSV rows; null otherwise
+             */
+            line?: number | null;
+            /**
+             * Column
+             * @description Column in `line`, from 1: for a file that is not valid JSON; null otherwise
+             */
+            column?: number | null;
+            /**
+             * Code
+             * @description Machine code of the problem, e.g. empty_answer
+             */
+            code: string;
+            /**
+             * Text
+             * @description What is wrong, for a person
+             */
+            text: string;
+            /**
+             * Card
+             * @description Number of the card in the source, from 0. Such a card is rejected and is not in the set; null is a problem of the file as a whole
+             */
+            card?: number | null;
+            /**
+             * Path
+             * @description Path of the field in the JSON card file, e.g. `cards[12].a` or `defaults.order`
+             */
+            path?: string | null;
         };
         /**
          * ProfileIn
@@ -5171,6 +6316,21 @@ export interface components {
             toolchain: string;
             /** Toolchain Version */
             toolchain_version: string;
+        };
+        /** ProgressOut */
+        ProgressOut: {
+            /**
+             * Known
+             * @default 0
+             */
+            known: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /** By Topic */
+            by_topic?: components["schemas"]["TopicProgressOut"][];
         };
         /**
          * ProjectPatchIn
@@ -5387,6 +6547,51 @@ export interface components {
             /** Nickname */
             nickname: string;
         };
+        /** ReplaceIn */
+        ReplaceIn: {
+            /** Draft Id */
+            draft_id: string;
+            /**
+             * Only Valid
+             * @default false
+             */
+            only_valid: boolean;
+        };
+        /** ReplaceOut */
+        ReplaceOut: {
+            /** Version */
+            version: number;
+            /**
+             * Added
+             * @default 0
+             */
+            added: number;
+            /**
+             * Changed
+             * @default 0
+             */
+            changed: number;
+            /**
+             * Removed
+             * @default 0
+             */
+            removed: number;
+        };
+        /** ReplacePreviewOut */
+        ReplacePreviewOut: {
+            /** Draft Id */
+            draft_id: string;
+            /** Problems */
+            problems?: components["schemas"]["ProblemOut"][];
+            stats: components["schemas"]["StatsOut"];
+            /**
+             * Diff
+             * @description Keys added, changed and removed against the current version: {added, changed, removed}
+             */
+            diff?: {
+                [key: string]: unknown;
+            };
+        };
         /**
          * ReportIn
          * @description Тело создания отчёта: по какому бланку и как его звать.
@@ -5571,6 +6776,26 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** SaveDraftIn */
+        SaveDraftIn: {
+            /**
+             * Workspace Id
+             * @description Create a new set in this workspace
+             */
+            workspace_id?: string | null;
+            /**
+             * Project Id
+             * @description With set_id: add to this set
+             */
+            project_id?: string | null;
+            /** Set Id */
+            set_id?: string | null;
+            /**
+             * Only Valid
+             * @default false
+             */
+            only_valid: boolean;
+        };
         /**
          * SceneConflictOut
          * @description Ответ `409`: та же форма отказа, и рядом с ней — сцена, которая победила.
@@ -5681,58 +6906,157 @@ export interface components {
              */
             length: string;
         };
+        /** SessionIn */
+        SessionIn: {
+            /**
+             * Preset
+             * @description settings: my settings; wrong: every card whose last answer is No; all_file: the whole set in file order
+             * @default settings
+             * @enum {string}
+             */
+            preset: "settings" | "wrong" | "all_file";
+            /**
+             * Keys
+             * @description Play exactly these cards in this order instead of a preset; unknown keys are skipped
+             */
+            keys?: string[] | null;
+        };
+        /** SessionStartedOut */
+        SessionStartedOut: {
+            /** Session Id */
+            session_id: string;
+            /** Version */
+            version: number;
+            /** Keys */
+            keys: string[];
+            /** Settings */
+            settings?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Cards
+             * @description The first cards of the plan; the rest by …/cards?keys=
+             */
+            cards?: components["schemas"]["CardOut"][];
+        };
+        /** SetCardOut */
+        SetCardOut: {
+            /** Project Id */
+            project_id: string;
+            /** Set Id */
+            set_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Topics
+             * @default 0
+             */
+            topics: number;
+            /**
+             * Cards
+             * @default 0
+             */
+            cards: number;
+            /**
+             * My Known
+             * @description Cards whose last answer of mine is Yes
+             * @default 0
+             */
+            my_known: number;
+            /**
+             * Version
+             * @default 0
+             */
+            version: number;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** SetOut */
+        SetOut: {
+            /** Project Id */
+            project_id: string;
+            /** Set Id */
+            set_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Language
+             * @default
+             */
+            language: string;
+            /** Topics */
+            topics?: components["schemas"]["TopicOut"][];
+            /**
+             * Cards Count
+             * @default 0
+             */
+            cards_count: number;
+            defaults: components["schemas"]["SettingsModel"];
+            /**
+             * Version
+             * @default 0
+             */
+            version: number;
+            /** Versions */
+            versions?: components["schemas"]["VersionOut"][];
+            my_settings: components["schemas"]["SettingsModel"];
+            my_progress: components["schemas"]["ProgressOut"];
+            /** @description My unfinished session of the current version younger than the resume window, to offer Continue */
+            open_session?: components["schemas"]["OpenSessionOut"] | null;
+            /**
+             * Can Edit
+             * @default false
+             */
+            can_edit: boolean;
+            /** Updated At */
+            updated_at?: string | null;
+        };
         /**
-         * SessionOut
-         * @description Готово ли распознавание рукописи и чем открывать сокет.
+         * SettingsModel
+         * @description Настройки захода: личные или рекомендуемые набора.
          */
-        SessionOut: {
+        SettingsModel: {
             /**
-             * Ready
-             * @description Whether handwriting recognition works for this person. False is a state, not an error: the board still draws and still lets a formula be typed.
+             * Session Size
+             * @description Cards in a session; 0 or null means all
+             * @default 20
              */
-            ready: boolean;
+            session_size: number | null;
             /**
-             * Reason
-             * @description Why not, when it is not: `no_keys`. Empty when ready.
-             * @default
+             * Order
+             * @description file, random, topic_seq, topic_random or topics_shuffled
+             * @default topic_random
              */
-            reason: string;
+            order: string;
             /**
-             * Scheme
-             * @description `wss` or `ws`, as seen from this request
-             * @default
+             * Topics
+             * @description Topic ids to play; null in the list is the cards without a topic; the whole field null means every topic
              */
-            scheme: string;
+            topics?: (string | null)[] | null;
             /**
-             * Host
-             * @description Host this request came to. The recognition library builds the socket address out of it, so the page appends its own base path before handing it over.
-             * @default
+             * Include
+             * @description all, unknown or wrong
+             * @default all
              */
-            host: string;
+            include: string;
             /**
-             * Application Key
-             * @description What to give the recognition library as its application key. A constant, and deliberately not a key: the real one never leaves the service, and the bridge substitutes it on the way out.
-             * @default koritsu
+             * Repeat Wrong
+             * @description Bring a No back three cards later, at most twice a session
+             * @default true
              */
-            application_key: string;
-            /**
-             * Hmac Key
-             * @description What to give the library as its HMAC key. The same constant, for the same reason: the bridge answers the signature challenge itself.
-             * @default koritsu
-             */
-            hmac_key: string;
-            /**
-             * Requests This Month
-             * @description Recognition requests this month by this person: batch calls plus sockets opened. The tariff counts requests, not strokes, so this is the number to watch.
-             * @default 0
-             */
-            requests_this_month: number;
-            /**
-             * Opens This Month
-             * @description Sockets opened this month, of those requests. The live socket is the part a forgotten tab can keep spending on, which is why it is also counted on its own.
-             * @default 0
-             */
-            opens_this_month: number;
+            repeat_wrong: boolean;
         };
         /**
          * SolutionIn
@@ -5823,6 +7147,32 @@ export interface components {
             version: number;
             /** At */
             at?: string | null;
+        };
+        /** StatsOut */
+        StatsOut: {
+            /**
+             * Cards
+             * @description Cards that made it into the set
+             * @default 0
+             */
+            cards: number;
+            /**
+             * Topics
+             * @default 0
+             */
+            topics: number;
+            /**
+             * Valid
+             * @description The same as `cards`
+             * @default 0
+             */
+            valid: number;
+            /**
+             * Rejected
+             * @description Cards of the source rejected by problems
+             * @default 0
+             */
+            rejected: number;
         };
         /**
          * StatusOut
@@ -5989,6 +7339,13 @@ export interface components {
              */
             prompt: string;
         };
+        /** TargetOut */
+        TargetOut: {
+            /** Project Id */
+            project_id: string;
+            /** Set Id */
+            set_id: string;
+        };
         /**
          * TaskIn
          * @description Тело записи условия. Пустая строка стирает записанное.
@@ -6110,6 +7467,41 @@ export interface components {
              * @description This version is ready here
              */
             available: boolean;
+        };
+        /** TopicOut */
+        TopicOut: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /**
+             * Cards
+             * @default 0
+             */
+            cards: number;
+        };
+        /** TopicProgressOut */
+        TopicProgressOut: {
+            /**
+             * Topic
+             * @description Topic id; null for cards without one
+             */
+            topic?: string | null;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Known
+             * @default 0
+             */
+            known: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
         };
         /** TotalsOut */
         TotalsOut: {
@@ -6285,6 +7677,23 @@ export interface components {
              * @description Block or unblock the account. Blocking revokes every session; the person is refused with account_blocked at sign-in, on the site and with an API token alike.
              */
             blocked?: boolean | null;
+        };
+        /** VersionOut */
+        VersionOut: {
+            /** N */
+            n: number;
+            /** At */
+            at?: string | null;
+            /**
+             * Filename
+             * @default
+             */
+            filename: string;
+            /**
+             * Cards
+             * @default 0
+             */
+            cards: number;
         };
         /**
          * WishesIn
@@ -6642,6 +8051,59 @@ export interface components {
             messages?: components["schemas"]["api__modules__board__routes__ChatMessageOut"][];
         };
         /**
+         * SessionOut
+         * @description Готово ли распознавание рукописи и чем открывать сокет.
+         */
+        api__modules__board__routes__SessionOut: {
+            /**
+             * Ready
+             * @description Whether handwriting recognition works for this person. False is a state, not an error: the board still draws and still lets a formula be typed.
+             */
+            ready: boolean;
+            /**
+             * Reason
+             * @description Why not, when it is not: `no_keys`. Empty when ready.
+             * @default
+             */
+            reason: string;
+            /**
+             * Scheme
+             * @description `wss` or `ws`, as seen from this request
+             * @default
+             */
+            scheme: string;
+            /**
+             * Host
+             * @description Host this request came to. The recognition library builds the socket address out of it, so the page appends its own base path before handing it over.
+             * @default
+             */
+            host: string;
+            /**
+             * Application Key
+             * @description What to give the recognition library as its application key. A constant, and deliberately not a key: the real one never leaves the service, and the bridge substitutes it on the way out.
+             * @default koritsu
+             */
+            application_key: string;
+            /**
+             * Hmac Key
+             * @description What to give the library as its HMAC key. The same constant, for the same reason: the bridge answers the signature challenge itself.
+             * @default koritsu
+             */
+            hmac_key: string;
+            /**
+             * Requests This Month
+             * @description Recognition requests this month by this person: batch calls plus sockets opened. The tariff counts requests, not strokes, so this is the number to watch.
+             * @default 0
+             */
+            requests_this_month: number;
+            /**
+             * Opens This Month
+             * @description Sockets opened this month, of those requests. The live socket is the part a forgotten tab can keep spending on, which is why it is also counted on its own.
+             * @default 0
+             */
+            opens_this_month: number;
+        };
+        /**
          * StepOut
          * @description Одна строка решения так, как её читает интерфейс.
          */
@@ -6727,6 +8189,38 @@ export interface components {
              * @description When they were read
              */
             at?: string | null;
+        };
+        /** SessionOut */
+        api__modules__cards__routes__SessionOut: {
+            /** Session Id */
+            session_id: string;
+            /** Set Id */
+            set_id: string;
+            /** Version */
+            version: number;
+            /** Keys */
+            keys: string[];
+            /**
+             * Pos
+             * @default 0
+             */
+            pos: number;
+            /** Settings */
+            settings?: {
+                [key: string]: unknown;
+            };
+            /** Answers */
+            answers?: components["schemas"]["AttemptOut"][];
+            /** Started At */
+            started_at?: string | null;
+            /** Ended At */
+            ended_at?: string | null;
+            /**
+             * Stale
+             * @description The set was replaced after this session began
+             * @default false
+             */
+            stale: boolean;
         };
     };
     responses: never;
@@ -10957,7 +12451,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionOut"];
+                    "application/json": components["schemas"]["api__modules__board__routes__SessionOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -11576,6 +13070,787 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobStartedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_sets: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetCardOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_create_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSetIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The file as text, UTF-8 */
+                    text: string;
+                    /** @description Name of the file; `.csv` and `.tsv` are read as tables, `.md` is refused, anything else as a JSON card file */
+                    filename?: string;
+                    workspace_id?: string;
+                };
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    filename?: string;
+                    workspace_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_materials: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_upload_material: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_generate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_put_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftSavedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_save_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveDraftIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_delete_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_patch_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatchOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_set_cards: {
+        parameters: {
+            query?: {
+                from?: number;
+                to?: number | null;
+                q?: string;
+                topic?: string;
+                keys?: string;
+            };
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardsPageOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_put_defaults: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsModel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsModel"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_put_my_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MySettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsModel"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_replace_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The file as text, UTF-8 */
+                    text: string;
+                    /** @description Name of the file; `.csv` and `.tsv` are read as tables, `.md` is refused, anything else as a JSON card file */
+                    filename?: string;
+                    workspace_id?: string;
+                };
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    filename?: string;
+                    workspace_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplacePreviewOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplaceOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_download: {
+        parameters: {
+            query?: {
+                format?: string;
+            };
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The set as a JSON card file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_start_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SessionIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionStartedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["api__modules__cards__routes__SessionOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_open_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["api__modules__cards__routes__SessionOut"];
+                };
+            };
+            /** @description No session to continue */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_answer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnswerOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -14067,7 +16342,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SessionOut"];
+                    "application/json": components["schemas"]["api__modules__board__routes__SessionOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -14686,6 +16961,787 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobStartedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_sets_v1: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetCardOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_create_set_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSetIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_preview_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The file as text, UTF-8 */
+                    text: string;
+                    /** @description Name of the file; `.csv` and `.tsv` are read as tables, `.md` is refused, anything else as a JSON card file */
+                    filename?: string;
+                    workspace_id?: string;
+                };
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    filename?: string;
+                    workspace_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_materials_v1: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialOut"][];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_upload_material_v1: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_generate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_draft_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_put_draft_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftSavedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_save_draft_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveDraftIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_set_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_delete_set_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_patch_set_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatchOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_set_cards_v1: {
+        parameters: {
+            query?: {
+                from?: number;
+                to?: number | null;
+                q?: string;
+                topic?: string;
+                keys?: string;
+            };
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardsPageOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_put_defaults_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsModel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsModel"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_put_my_settings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MySettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsModel"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_replace_preview_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The file as text, UTF-8 */
+                    text: string;
+                    /** @description Name of the file; `.csv` and `.tsv` are read as tables, `.md` is refused, anything else as a JSON card file */
+                    filename?: string;
+                    workspace_id?: string;
+                };
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    filename?: string;
+                    workspace_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplacePreviewOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_replace_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplaceOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_download_v1: {
+        parameters: {
+            query?: {
+                format?: string;
+            };
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The set as a JSON card file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_start_session_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SessionIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionStartedOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_session_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["api__modules__cards__routes__SessionOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_open_session_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["api__modules__cards__routes__SessionOut"];
+                };
+            };
+            /** @description No session to continue */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    cards_answer_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnswerOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */

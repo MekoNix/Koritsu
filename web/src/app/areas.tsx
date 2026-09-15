@@ -41,6 +41,7 @@ const ЗАГРУЗЧИКИ: Record<string, () => Promise<RouteObject[]>> = {
   kadai: () => import('@/features/kadai/routes').then((m) => m.kadaiRoutes),
   board: () => import('@/features/board/routes').then((m) => m.boardRoutes),
   asm: () => import('@/features/asm/routes').then((m) => m.asmRoutes),
+  cards: () => import('@/features/cards/routes').then((m) => m.cardsRoutes),
   flowcharts: () => import('@/features/diagrams/routes').then((m) => m.diagramsRoutes),
   uml: () => import('@/features/diagrams/routes').then((m) => m.diagramsRoutes),
   diagrams: () => import('@/features/diagrams/routes').then((m) => m.diagramsRoutes),

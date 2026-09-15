@@ -1,14 +1,14 @@
 {
   "name": "koritsu-web",
   "private": true,
-  "version": "2.0.0-b3.1",
+  "version": "2.0.0-b4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "node scripts/fonts.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "fonts": "node scripts/fonts.mjs",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "eslint . --max-warnings 0 && node scripts/check-samples.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",

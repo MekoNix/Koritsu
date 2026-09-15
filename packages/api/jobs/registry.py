@@ -97,6 +97,8 @@ BOARD_CHECK = "board_check"
 ASM_RUN = "asm_run"
 ASM_MEMORY = "asm_memory"
 ASM_CHAT = "asm_chat"
+# Модуль «Тренажёр»: агент пишет набор карточек в черновик человека.
+CARDS_GENERATE = "cards_generate"
 
 # Последний вид — `probe`, проба самой очереди. Обработчик его ничего не делает с
 # проектом и ничем не платит; он отвечает тем, что ему дали, и умеет по просьбе
@@ -109,7 +111,7 @@ PROBE = "probe"
 
 ВИДЫ = (FILL_TAG, FILL_REPORT, AGENT, BUILD, PARSE, EXPORT,
         KADAI_RUN, KADAI_REWORK, BOARD_CHECK, ASM_RUN, ASM_MEMORY, ASM_CHAT,
-        PROBE)
+        CARDS_GENERATE, PROBE)
 
 # Виды, по которым уведомление в колокольчике не заводится ни при каком исходе.
 # `asm_memory` ставит не человек, а окна «Дамп» и «Стек», когда им не хватает
@@ -282,4 +284,4 @@ __all__ = ["register", "load_handlers", "known", "check_kind", "registration",
            "notifies", "Регистрация", "Обработчик", "ВИДЫ", "БЕЗ_УВЕДОМЛЕНИЯ",
            "UNKNOWN_JOB_KIND", "FILL_TAG", "FILL_REPORT", "AGENT", "BUILD",
            "PARSE", "EXPORT", "KADAI_RUN", "KADAI_REWORK", "BOARD_CHECK",
-           "ASM_RUN", "ASM_MEMORY", "ASM_CHAT", "PROBE"]
+           "ASM_RUN", "ASM_MEMORY", "ASM_CHAT", "CARDS_GENERATE", "PROBE"]

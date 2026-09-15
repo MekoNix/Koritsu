@@ -33,6 +33,7 @@ export const MODULE_LINKS: Record<string, ModuleLink> = {
   kadai: { path: '/kadai', icon: 'tasks', colorVar: '--mod-kadai' },
   board: { path: '/board', icon: 'board', colorVar: '--mod-board', beta: true },
   asm: { path: '/asm', icon: 'queue', colorVar: '--mod-asm', beta: true },
+  cards: { path: '/cards', icon: 'cards', colorVar: '--mod-cards', beta: true },
   flowcharts: { path: '/flowcharts', icon: 'flowchart', colorVar: '--mod-flowcharts' },
   uml: { path: '/uml', icon: 'uml', colorVar: '--mod-uml' },
 }

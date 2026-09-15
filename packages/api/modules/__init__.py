@@ -110,6 +110,7 @@ def _наполнить() -> None:
     """
     from .asm import MODULE as ассемблер, router as ассемблер_router
     from .board import MODULE as доска, router as доска_router
+    from .cards import MODULE as тренажёр, router as тренажёр_router
     from .flowcharts import MODULE as блок_схемы, router as блок_схемы_router
     from .kadai import MODULE as задания, router as задания_router
     from .uml import MODULE as uml, router as uml_router
@@ -135,6 +136,8 @@ def _наполнить() -> None:
     # собирают документ. Без инструментов на машине он не готов и в сайдбар
     # не попадает (`modules/asm/__init__.py`).
     register(ассемблер, ассемблер_router)
+    # `cards` — тренажёр карточек: отдельный модуль без связей с остальными.
+    register(тренажёр, тренажёр_router)
     register(блок_схемы, блок_схемы_router)
     register(uml, uml_router)
 

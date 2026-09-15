@@ -6364,7 +6364,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/SessionOut"
+         "$ref": "#/components/schemas/api__modules__board__routes__SessionOut"
         }
        }
       }
@@ -7429,6 +7429,1315 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/JobStartedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/cards/sets": {
+   "get": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Card sets of a workspace",
+    "description": "Every card set of one workspace, most recently updated first, with how many topics and cards it has and how many of them I know: cards whose last answer of mine is Yes. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
+    "operationId": "cards_sets",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/SetCardOut"
+         },
+         "title": "Response Cards Sets"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Create a card set from a draft",
+    "description": "Creates a set in the workspace from a draft of mine: a journal entry in the workspace trainer work, created on the first set, with the file as version 1. A draft with problems is refused unless `only_valid` asks to keep only the valid cards. Saving the same draft twice answers the set it already became. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 422 cards_invalid.",
+    "operationId": "cards_create_set",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CreateSetIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CreatedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/cards/preview": {
+   "post": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Read a card file into a draft",
+    "description": "Reads a JSON card file (or a `.csv`/`.tsv` table) into a new draft of mine and answers its problems, each with the JSON path of the field (`cards[12].a`) or the line of a broken file or a CSV row, with how many cards are valid and how many were rejected. The draft keeps the file as JSON; a table is turned into one. JSON `{text, filename}` or a multipart file, at most 5 MB. A Markdown `.md` file is refused. Nothing is created in a workspace: POST /api/cards/sets does that with the draft id. With `workspace_id`, the editor role in it is checked now rather than on save. 400 invalid_value, 403 forbidden, 404 not_found, 413 file_too_large, 415 unsupported_type, 422 cards_invalid.",
+    "operationId": "cards_preview",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "text": {
+          "type": "string",
+          "description": "The file as text, UTF-8"
+         },
+         "filename": {
+          "type": "string",
+          "description": "Name of the file; `.csv` and `.tsv` are read as tables, `.md` is refused, anything else as a JSON card file"
+         },
+         "workspace_id": {
+          "type": "string"
+         }
+        },
+        "type": "object",
+        "required": [
+         "text"
+        ]
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         },
+         "filename": {
+          "type": "string"
+         },
+         "workspace_id": {
+          "type": "string"
+         }
+        },
+        "type": "object",
+        "required": [
+         "file"
+        ]
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreviewOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/cards/materials": {
+   "get": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Files for the card agent in a workspace",
+    "description": "Files uploaded for generating cards in this workspace: parsed ones with status `ready`, files still being parsed with status `pending` and their job, and files whose parsing failed within the draft lifetime with status `failed` and the reason in `error`. They live in the workspace trainer work. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "cards_materials",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/MaterialOut"
+         },
+         "title": "Response Cards Materials"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Upload a file for the card agent",
+    "description": "Accepts a file (multipart field `file`) into the workspace trainer work, created if it is not there yet, and queues its `parse` job, the same way as uploading a material into a project. `status` is `ready` when the same file is already parsed. Editor role in the workspace. 400 invalid_id, 400 no_file, 402 limit_exhausted, 403 forbidden, 404 not_found, 413 file_too_large, 413 quota_exceeded, 415 unsupported_type.",
+    "operationId": "cards_upload_material",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaterialOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         }
+        },
+        "required": [
+         "file"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/cards/generate": {
+   "post": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Have the agent write cards into a draft",
+    "description": "Queues a `cards_generate` job and answers at once with the job and the draft it writes into. Without `draft_id` a new empty draft of mine is created; with it the agent adds cards to that draft (for `topic` when named). With `project_id` and `set_id` the draft is meant to add cards to that set on save. Input: a description, exam questions and files from GET /api/cards/materials; `count` cards in total or `per_topic`, at most 200; `length` short or full; `language`. Progress frames: `progress` with step = cards written, total = cards asked, note = topic; `text`. Editor role in the workspace. 400 endpoint_required, 400 invalid_id, 400 invalid_value, 400 unknown_provider, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 draft_busy.",
+    "operationId": "cards_generate",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GenerateIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GenerateOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/cards/drafts/{draft_id}": {
+   "get": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "A draft of mine",
+    "description": "The draft as a JSON card file with every card as it came, rejected ones included; the valid cards parsed into a set; its problems with the JSON path and card number; counts; where it came from (`upload` or `agent`), the last job writing it and its status. Drafts are private and live seven days from their last change. 400 invalid_id, 404 not_found, 410 unsupported_type.",
+    "operationId": "cards_draft",
+    "parameters": [
+     {
+      "name": "draft_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Draft Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DraftOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Rewrite a draft of mine",
+    "description": "Replaces the draft with the whole JSON card file and answers its problems and counts. A draft the agent is still writing is refused. At most 5 MB. 400 invalid_id, 404 not_found, 409 draft_busy, 410 unsupported_type, 413 file_too_large.",
+    "operationId": "cards_put_draft",
+    "parameters": [
+     {
+      "name": "draft_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Draft Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DraftIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DraftSavedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/cards/drafts/{draft_id}/save": {
+   "post": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Save a draft of mine as a set",
+    "description": "With `workspace_id`: creates a new set from the draft. With `project_id` and `set_id`: adds the cards of the draft that the set does not have yet as a new version; cards with a key the set already has are skipped. A draft with problems is refused unless `only_valid`. Saving the same draft to the same place twice answers the first result. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 409 draft_busy, 409 version_conflict, 422 cards_invalid, 422 nothing_to_add.",
+    "operationId": "cards_save_draft",
+    "parameters": [
+     {
+      "name": "draft_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Draft Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SaveDraftIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CreatedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/cards/sets/{set_id}": {
+   "get": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "One card set with my settings and progress",
+    "description": "The set: title, description, topics with their card counts, the recommended settings, the version and its history, my settings (the recommended ones until I change them), my progress in the set and per topic, and my unfinished session to continue when there is one. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "cards_set",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SetOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Rename a set or change its description",
+    "description": "Changes the title and/or description; a field left null is kept. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 validation_failed.",
+    "operationId": "cards_patch_set",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PatchOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Delete a set",
+    "description": "Removes the set: its journal entry, its versions and the sessions, attempts, progress and settings of everyone in it. Uploaded source files stay as artifacts of the work until the work is cleaned up. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "cards_delete_set",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/cards/sets/{set_id}/cards": {
+   "get": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Cards of a set, a page at a time",
+    "description": "Cards in file order with my last answer and the `changed` mark. `q` searches questions, answers and notes; `topic` is a topic id, or `-` for cards without a topic. `keys` — up to 100 keys separated by commas — returns exactly those cards in that order. `from`/`to` page the result, `to` not included, at most 1000 at a time. `total` counts the result before paging. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "cards_set_cards",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "From"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 0
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 200,
+       "default": "",
+       "title": "Q"
+      }
+     },
+     {
+      "name": "topic",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 64,
+       "default": "",
+       "title": "Topic"
+      }
+     },
+     {
+      "name": "keys",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 8100,
+       "default": "",
+       "title": "Keys"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CardsPageOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/cards/sets/{set_id}/defaults": {
+   "put": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Write the recommended settings of a set",
+    "description": "Replaces the recommended session settings of the set. People who never changed their own settings start from these; the downloaded file carries them. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
+    "operationId": "cards_put_defaults",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SettingsModel"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SettingsModel"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/cards/sets/{set_id}/my-settings": {
+   "put": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Write my session settings for a set",
+    "description": "Replaces my own session settings for this set; nobody else sees them. `reset` forgets them and answers the recommended ones. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "cards_put_my_settings",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MySettingsIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SettingsModel"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/cards/sets/{set_id}/replace/preview": {
+   "post": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Read a new file for a set into a draft",
+    "description": "Reads a new version of the set file into a draft of mine and answers its problems and how it differs from the current version: keys added, changed (same key, other text) and removed. Nothing changes in the set until POST …/replace. A JSON card file or a `.csv`/`.tsv` table: JSON `{text, filename}` or a multipart file, at most 5 MB; a Markdown `.md` file is refused. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 413 file_too_large, 415 unsupported_type, 422 cards_invalid.",
+    "operationId": "cards_replace_preview",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReplacePreviewOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "text": {
+          "type": "string",
+          "description": "The file as text, UTF-8"
+         },
+         "filename": {
+          "type": "string",
+          "description": "Name of the file; `.csv` and `.tsv` are read as tables, `.md` is refused, anything else as a JSON card file"
+         },
+         "workspace_id": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "text"
+        ]
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         },
+         "filename": {
+          "type": "string"
+         },
+         "workspace_id": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "file"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/cards/sets/{set_id}/replace": {
+   "post": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Replace a set with a new version from a draft",
+    "description": "Makes the draft the next version of the set. Progress stays with every key that is still there; a card whose key stayed and whose text changed is marked `changed` for people who answered it before, until they answer it again; cards whose key is gone leave the set, their attempts stay. The title and description of the set stay; the recommended settings come from the file. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 409 draft_busy, 409 version_conflict, 422 cards_invalid.",
+    "operationId": "cards_replace",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReplaceIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReplaceOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/cards/sets/{set_id}/download": {
+   "get": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Download a set as a JSON card file",
+    "description": "The current version as a canonical JSON card file, with an id on every card and topics by title, so a file downloaded, edited and uploaded again keeps everyone's progress. The file is named after the set. Only `format=json`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "cards_download",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "format",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "json",
+       "title": "Format"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The set as a JSON card file",
+      "content": {
+       "application/json": {}
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/cards/sets/{set_id}/sessions": {
+   "post": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Start a session on a set",
+    "description": "Plans a session and answers its keys in order with the first 20 cards. `settings` plays by my settings, `wrong` every card whose last answer of mine is No, `all_file` the whole set in file order; `keys` plays exactly the cards named. Shuffling is stable within the session. My earlier unfinished sessions of this set are closed. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found, 422 nothing_to_play.",
+    "operationId": "cards_start_session",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/SessionIn"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Тело"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SessionStartedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/cards/sessions/{session_id}": {
+   "get": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "One session of mine",
+    "description": "The plan of the session, how many of its cards are answered, every answer in the order they were given (`corrects` is the client_seq of the answer it replaced) and whether the set was replaced since. Only my own sessions. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "cards_session",
+    "parameters": [
+     {
+      "name": "session_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Session Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/api__modules__cards__routes__SessionOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/cards/sets/{set_id}/sessions/open": {
+   "get": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "My unfinished session of a set",
+    "description": "My latest unfinished session of the current version of this set, started within the resume window (12 hours), in the same shape as GET …/sessions/{session_id}; 204 when there is none. Lets Continue work across devices. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "cards_open_session",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/api__modules__cards__routes__SessionOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     },
+     "204": {
+      "description": "No session to continue"
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/cards/sessions/{session_id}/answers": {
+   "post": {
+    "tags": [
+     "cards"
+    ],
+    "summary": "Answer a card in a session",
+    "description": "Writes my Yes or No for a card of the session at once and recounts my progress on that card: it is known when its last answer is Yes. The same card may be answered again within the session. `corrects` names, by client_seq, an earlier answer of this session to the same card that this one replaces. A repeat with a client_seq already written answers 200 with the same result and writes nothing. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "cards_answer",
+    "parameters": [
+     {
+      "name": "session_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Session Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnswerIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnswerOut"
         }
        }
       }
@@ -11387,7 +12696,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/SessionOut"
+         "$ref": "#/components/schemas/api__modules__board__routes__SessionOut"
         }
        }
       }
@@ -12487,6 +13796,1337 @@
     }
    }
   },
+  "/api/v1/cards/sets": {
+   "get": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Card sets of a workspace",
+    "description": "Every card set of one workspace, most recently updated first, with how many topics and cards it has and how many of them I know: cards whose last answer of mine is Yes. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
+    "operationId": "cards_sets_v1",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/SetCardOut"
+         },
+         "title": "Response Cards Sets V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Create a card set from a draft",
+    "description": "Creates a set in the workspace from a draft of mine: a journal entry in the workspace trainer work, created on the first set, with the file as version 1. A draft with problems is refused unless `only_valid` asks to keep only the valid cards. Saving the same draft twice answers the set it already became. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 422 cards_invalid.",
+    "operationId": "cards_create_set_v1",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CreateSetIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CreatedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/cards/preview": {
+   "post": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Read a card file into a draft",
+    "description": "Reads a JSON card file (or a `.csv`/`.tsv` table) into a new draft of mine and answers its problems, each with the JSON path of the field (`cards[12].a`) or the line of a broken file or a CSV row, with how many cards are valid and how many were rejected. The draft keeps the file as JSON; a table is turned into one. JSON `{text, filename}` or a multipart file, at most 5 MB. A Markdown `.md` file is refused. Nothing is created in a workspace: POST /api/cards/sets does that with the draft id. With `workspace_id`, the editor role in it is checked now rather than on save. 400 invalid_value, 403 forbidden, 404 not_found, 413 file_too_large, 415 unsupported_type, 422 cards_invalid.",
+    "operationId": "cards_preview_v1",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "text": {
+          "type": "string",
+          "description": "The file as text, UTF-8"
+         },
+         "filename": {
+          "type": "string",
+          "description": "Name of the file; `.csv` and `.tsv` are read as tables, `.md` is refused, anything else as a JSON card file"
+         },
+         "workspace_id": {
+          "type": "string"
+         }
+        },
+        "type": "object",
+        "required": [
+         "text"
+        ]
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         },
+         "filename": {
+          "type": "string"
+         },
+         "workspace_id": {
+          "type": "string"
+         }
+        },
+        "type": "object",
+        "required": [
+         "file"
+        ]
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreviewOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/cards/materials": {
+   "get": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Files for the card agent in a workspace",
+    "description": "Files uploaded for generating cards in this workspace: parsed ones with status `ready`, files still being parsed with status `pending` and their job, and files whose parsing failed within the draft lifetime with status `failed` and the reason in `error`. They live in the workspace trainer work. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "cards_materials_v1",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/MaterialOut"
+         },
+         "title": "Response Cards Materials V1"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Upload a file for the card agent",
+    "description": "Accepts a file (multipart field `file`) into the workspace trainer work, created if it is not there yet, and queues its `parse` job, the same way as uploading a material into a project. `status` is `ready` when the same file is already parsed. Editor role in the workspace. 400 invalid_id, 400 no_file, 402 limit_exhausted, 403 forbidden, 404 not_found, 413 file_too_large, 413 quota_exceeded, 415 unsupported_type.",
+    "operationId": "cards_upload_material_v1",
+    "parameters": [
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Workspace Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaterialOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         }
+        },
+        "required": [
+         "file"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/cards/generate": {
+   "post": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Have the agent write cards into a draft",
+    "description": "Queues a `cards_generate` job and answers at once with the job and the draft it writes into. Without `draft_id` a new empty draft of mine is created; with it the agent adds cards to that draft (for `topic` when named). With `project_id` and `set_id` the draft is meant to add cards to that set on save. Input: a description, exam questions and files from GET /api/cards/materials; `count` cards in total or `per_topic`, at most 200; `length` short or full; `language`. Progress frames: `progress` with step = cards written, total = cards asked, note = topic; `text`. Editor role in the workspace. 400 endpoint_required, 400 invalid_id, 400 invalid_value, 400 unknown_provider, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 draft_busy.",
+    "operationId": "cards_generate_v1",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GenerateIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GenerateOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/cards/drafts/{draft_id}": {
+   "get": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "A draft of mine",
+    "description": "The draft as a JSON card file with every card as it came, rejected ones included; the valid cards parsed into a set; its problems with the JSON path and card number; counts; where it came from (`upload` or `agent`), the last job writing it and its status. Drafts are private and live seven days from their last change. 400 invalid_id, 404 not_found, 410 unsupported_type.",
+    "operationId": "cards_draft_v1",
+    "parameters": [
+     {
+      "name": "draft_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Draft Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DraftOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Rewrite a draft of mine",
+    "description": "Replaces the draft with the whole JSON card file and answers its problems and counts. A draft the agent is still writing is refused. At most 5 MB. 400 invalid_id, 404 not_found, 409 draft_busy, 410 unsupported_type, 413 file_too_large.",
+    "operationId": "cards_put_draft_v1",
+    "parameters": [
+     {
+      "name": "draft_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Draft Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DraftIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DraftSavedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/cards/drafts/{draft_id}/save": {
+   "post": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Save a draft of mine as a set",
+    "description": "With `workspace_id`: creates a new set from the draft. With `project_id` and `set_id`: adds the cards of the draft that the set does not have yet as a new version; cards with a key the set already has are skipped. A draft with problems is refused unless `only_valid`. Saving the same draft to the same place twice answers the first result. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 409 draft_busy, 409 version_conflict, 422 cards_invalid, 422 nothing_to_add.",
+    "operationId": "cards_save_draft_v1",
+    "parameters": [
+     {
+      "name": "draft_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Draft Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SaveDraftIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CreatedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/cards/sets/{set_id}": {
+   "get": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "One card set with my settings and progress",
+    "description": "The set: title, description, topics with their card counts, the recommended settings, the version and its history, my settings (the recommended ones until I change them), my progress in the set and per topic, and my unfinished session to continue when there is one. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "cards_set_v1",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SetOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Rename a set or change its description",
+    "description": "Changes the title and/or description; a field left null is kept. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 422 validation_failed.",
+    "operationId": "cards_patch_set_v1",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PatchOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Delete a set",
+    "description": "Removes the set: its journal entry, its versions and the sessions, attempts, progress and settings of everyone in it. Uploaded source files stay as artifacts of the work until the work is cleaned up. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "operationId": "cards_delete_set_v1",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/cards/sets/{set_id}/cards": {
+   "get": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Cards of a set, a page at a time",
+    "description": "Cards in file order with my last answer and the `changed` mark. `q` searches questions, answers and notes; `topic` is a topic id, or `-` for cards without a topic. `keys` — up to 100 keys separated by commas — returns exactly those cards in that order. `from`/`to` page the result, `to` not included, at most 1000 at a time. `total` counts the result before paging. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "cards_set_cards_v1",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "From"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 0
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 200,
+       "default": "",
+       "title": "Q"
+      }
+     },
+     {
+      "name": "topic",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 64,
+       "default": "",
+       "title": "Topic"
+      }
+     },
+     {
+      "name": "keys",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 8100,
+       "default": "",
+       "title": "Keys"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CardsPageOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/cards/sets/{set_id}/defaults": {
+   "put": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Write the recommended settings of a set",
+    "description": "Replaces the recommended session settings of the set. People who never changed their own settings start from these; the downloaded file carries them. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
+    "operationId": "cards_put_defaults_v1",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SettingsModel"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SettingsModel"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/cards/sets/{set_id}/my-settings": {
+   "put": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Write my session settings for a set",
+    "description": "Replaces my own session settings for this set; nobody else sees them. `reset` forgets them and answers the recommended ones. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "cards_put_my_settings_v1",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MySettingsIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SettingsModel"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/cards/sets/{set_id}/replace/preview": {
+   "post": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Read a new file for a set into a draft",
+    "description": "Reads a new version of the set file into a draft of mine and answers its problems and how it differs from the current version: keys added, changed (same key, other text) and removed. Nothing changes in the set until POST …/replace. A JSON card file or a `.csv`/`.tsv` table: JSON `{text, filename}` or a multipart file, at most 5 MB; a Markdown `.md` file is refused. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 413 file_too_large, 415 unsupported_type, 422 cards_invalid.",
+    "operationId": "cards_replace_preview_v1",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReplacePreviewOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "text": {
+          "type": "string",
+          "description": "The file as text, UTF-8"
+         },
+         "filename": {
+          "type": "string",
+          "description": "Name of the file; `.csv` and `.tsv` are read as tables, `.md` is refused, anything else as a JSON card file"
+         },
+         "workspace_id": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "text"
+        ]
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         },
+         "filename": {
+          "type": "string"
+         },
+         "workspace_id": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "file"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/cards/sets/{set_id}/replace": {
+   "post": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Replace a set with a new version from a draft",
+    "description": "Makes the draft the next version of the set. Progress stays with every key that is still there; a card whose key stayed and whose text changed is marked `changed` for people who answered it before, until they answer it again; cards whose key is gone leave the set, their attempts stay. The title and description of the set stay; the recommended settings come from the file. Editor role. 400 invalid_id, 403 forbidden, 404 not_found, 409 draft_busy, 409 version_conflict, 422 cards_invalid.",
+    "operationId": "cards_replace_v1",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReplaceIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReplaceOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/cards/sets/{set_id}/download": {
+   "get": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Download a set as a JSON card file",
+    "description": "The current version as a canonical JSON card file, with an id on every card and topics by title, so a file downloaded, edited and uploaded again keeps everyone's progress. The file is named after the set. Only `format=json`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "cards_download_v1",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "format",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "json",
+       "title": "Format"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The set as a JSON card file",
+      "content": {
+       "application/json": {}
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/cards/sets/{set_id}/sessions": {
+   "post": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Start a session on a set",
+    "description": "Plans a session and answers its keys in order with the first 20 cards. `settings` plays by my settings, `wrong` every card whose last answer of mine is No, `all_file` the whole set in file order; `keys` plays exactly the cards named. Shuffling is stable within the session. My earlier unfinished sessions of this set are closed. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found, 422 nothing_to_play.",
+    "operationId": "cards_start_session_v1",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/SessionIn"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Тело"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SessionStartedOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/cards/sessions/{session_id}": {
+   "get": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "One session of mine",
+    "description": "The plan of the session, how many of its cards are answered, every answer in the order they were given (`corrects` is the client_seq of the answer it replaced) and whether the set was replaced since. Only my own sessions. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "cards_session_v1",
+    "parameters": [
+     {
+      "name": "session_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Session Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/api__modules__cards__routes__SessionOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/cards/sets/{set_id}/sessions/open": {
+   "get": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "My unfinished session of a set",
+    "description": "My latest unfinished session of the current version of this set, started within the resume window (12 hours), in the same shape as GET …/sessions/{session_id}; 204 when there is none. Lets Continue work across devices. Viewer role. 400 invalid_id, 404 not_found.",
+    "operationId": "cards_open_session_v1",
+    "parameters": [
+     {
+      "name": "set_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Set Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/api__modules__cards__routes__SessionOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     },
+     "204": {
+      "description": "No session to continue"
+     }
+    }
+   }
+  },
+  "/api/v1/projects/{project_id}/cards/sessions/{session_id}/answers": {
+   "post": {
+    "tags": [
+     "v1",
+     "cards"
+    ],
+    "summary": "Answer a card in a session",
+    "description": "Writes my Yes or No for a card of the session at once and recounts my progress on that card: it is known when its last answer is Yes. The same card may be answered again within the session. `corrects` names, by client_seq, an earlier answer of this session to the same card that this one replaces. A repeat with a client_seq already written answers 200 with the same result and writes nothing. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "cards_answer_v1",
+    "parameters": [
+     {
+      "name": "session_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Session Id"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnswerIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnswerOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/flowcharts/modes": {
    "get": {
     "tags": [
@@ -13213,6 +15853,98 @@
  },
  "components": {
   "schemas": {
+   "AnswerIn": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "maxLength": 80,
+      "title": "Key"
+     },
+     "answer": {
+      "type": "string",
+      "enum": [
+       "yes",
+       "no"
+      ],
+      "title": "Answer"
+     },
+     "shown": {
+      "type": "boolean",
+      "title": "Shown",
+      "default": false
+     },
+     "ms": {
+      "type": "integer",
+      "maximum": 86400000.0,
+      "minimum": 0.0,
+      "title": "Ms",
+      "default": 0
+     },
+     "client_seq": {
+      "type": "integer",
+      "minimum": 0.0,
+      "title": "Client Seq",
+      "description": "Sequence number of the answer in the tab"
+     },
+     "corrects": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Corrects",
+      "description": "client_seq of an earlier answer of this session it replaces"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "answer",
+     "client_seq"
+    ],
+    "title": "AnswerIn"
+   },
+   "AnswerOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "client_seq": {
+      "type": "integer",
+      "title": "Client Seq"
+     },
+     "pos": {
+      "type": "integer",
+      "title": "Pos"
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total"
+     },
+     "ended": {
+      "type": "boolean",
+      "title": "Ended",
+      "default": false
+     },
+     "progress": {
+      "$ref": "#/components/schemas/CardProgressOut"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "client_seq",
+     "pos",
+     "total",
+     "progress"
+    ],
+    "title": "AnswerOut"
+   },
    "ApiTokenCreated": {
     "properties": {
      "id": {
@@ -13468,6 +16200,62 @@
     "type": "object",
     "title": "AsmSettingsModel",
     "description": "Настройки прогона программы. Заменяются целиком."
+   },
+   "AttemptOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "answer": {
+      "type": "string",
+      "title": "Answer"
+     },
+     "shown": {
+      "type": "boolean",
+      "title": "Shown",
+      "default": false
+     },
+     "ms": {
+      "type": "integer",
+      "title": "Ms",
+      "default": 0
+     },
+     "client_seq": {
+      "type": "integer",
+      "title": "Client Seq"
+     },
+     "corrects": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Corrects",
+      "description": "client_seq of the attempt this one corrects"
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "answer",
+     "client_seq"
+    ],
+    "title": "AttemptOut"
    },
    "BlankOut": {
     "properties": {
@@ -13770,6 +16558,114 @@
     "type": "object",
     "title": "BuildOut"
    },
+   "CardOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "topic": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Topic"
+     },
+     "q": {
+      "type": "string",
+      "title": "Q"
+     },
+     "a": {
+      "type": "string",
+      "title": "A"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "changed": {
+      "type": "boolean",
+      "title": "Changed",
+      "description": "The question changed in a replacement after my last answer to it",
+      "default": false
+     },
+     "my_last": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "My Last",
+      "description": "yes, no or null"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "q",
+     "a"
+    ],
+    "title": "CardOut"
+   },
+   "CardProgressOut": {
+    "properties": {
+     "last_answer": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Answer"
+     },
+     "yes": {
+      "type": "integer",
+      "title": "Yes",
+      "default": 0
+     },
+     "no": {
+      "type": "integer",
+      "title": "No",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "title": "CardProgressOut"
+   },
+   "CardsPageOut": {
+    "properties": {
+     "cards": {
+      "items": {
+       "$ref": "#/components/schemas/CardOut"
+      },
+      "type": "array",
+      "title": "Cards"
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "title": "CardsPageOut"
+   },
    "ChatIn": {
     "properties": {
      "text": {
@@ -13937,6 +16833,53 @@
     "type": "object",
     "title": "ContextOut",
     "description": "Общие файлы работы глазами одного решения."
+   },
+   "CreateSetIn": {
+    "properties": {
+     "workspace_id": {
+      "type": "string",
+      "title": "Workspace Id"
+     },
+     "draft_id": {
+      "type": "string",
+      "title": "Draft Id"
+     },
+     "only_valid": {
+      "type": "boolean",
+      "title": "Only Valid",
+      "description": "Save only the valid cards when the draft has problems",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "workspace_id",
+     "draft_id"
+    ],
+    "title": "CreateSetIn"
+   },
+   "CreatedOut": {
+    "properties": {
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "set_id": {
+      "type": "string",
+      "title": "Set Id"
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version",
+      "default": 1
+     }
+    },
+    "type": "object",
+    "required": [
+     "project_id",
+     "set_id"
+    ],
+    "title": "CreatedOut"
    },
    "DiagramBuiltOut": {
     "properties": {
@@ -14247,6 +17190,179 @@
     "title": "DiagramSource",
     "description": "Один исходник схемы: как назывался файл и что в нём было."
    },
+   "DraftIn": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "description": "The whole draft as a JSON card file"
+     }
+    },
+    "type": "object",
+    "required": [
+     "text"
+    ],
+    "title": "DraftIn"
+   },
+   "DraftOut": {
+    "properties": {
+     "draft_id": {
+      "type": "string",
+      "title": "Draft Id"
+     },
+     "source": {
+      "type": "string",
+      "enum": [
+       "upload",
+       "agent"
+      ],
+      "title": "Source"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status",
+      "description": "ready, running, done, failed or cancelled"
+     },
+     "job_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Job Id",
+      "description": "The last job writing it"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "filename": {
+      "type": "string",
+      "title": "Filename",
+      "default": ""
+     },
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "description": "The draft as a JSON card file, rejected cards included exactly as they came; empty while the agent has written nothing",
+      "default": ""
+     },
+     "set": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Set",
+      "description": "The valid cards parsed into a set, null when nothing parses"
+     },
+     "problems": {
+      "items": {
+       "$ref": "#/components/schemas/ProblemOut"
+      },
+      "type": "array",
+      "title": "Problems"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/StatsOut"
+     },
+     "workspace_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Workspace Id"
+     },
+     "target": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TargetOut"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The set this draft replaces or adds to"
+     },
+     "saved": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TargetOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "draft_id",
+     "source",
+     "status",
+     "stats"
+    ],
+    "title": "DraftOut"
+   },
+   "DraftSavedOut": {
+    "properties": {
+     "problems": {
+      "items": {
+       "$ref": "#/components/schemas/ProblemOut"
+      },
+      "type": "array",
+      "title": "Problems"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/StatsOut"
+     }
+    },
+    "type": "object",
+    "required": [
+     "stats"
+    ],
+    "title": "DraftSavedOut"
+   },
    "DumpOut": {
     "properties": {
      "step": {
@@ -14411,6 +17527,155 @@
     ],
     "title": "ForgotIn"
    },
+   "GenerateIn": {
+    "properties": {
+     "workspace_id": {
+      "type": "string",
+      "title": "Workspace Id"
+     },
+     "project_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Project Id",
+      "description": "With set_id: add the cards to this set"
+     },
+     "set_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Set Id"
+     },
+     "draft_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Draft Id",
+      "description": "Write more cards into this draft of mine"
+     },
+     "topic": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Topic",
+      "description": "Title of the topic to write more cards for"
+     },
+     "prompt": {
+      "type": "string",
+      "maxLength": 4000,
+      "title": "Prompt",
+      "default": ""
+     },
+     "questions": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 100000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Questions",
+      "description": "Exam questions to answer, sections as topics"
+     },
+     "material_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "maxItems": 100,
+      "title": "Material Ids",
+      "description": "Files from GET /api/cards/materials"
+     },
+     "count": {
+      "type": "integer",
+      "minimum": 1.0,
+      "title": "Count",
+      "description": "Cards to write in total"
+     },
+     "per_topic": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Per Topic",
+      "description": "Cards per topic instead of in total"
+     },
+     "length": {
+      "type": "string",
+      "enum": [
+       "short",
+       "full"
+      ],
+      "title": "Length",
+      "default": "short"
+     },
+     "language": {
+      "type": "string",
+      "maxLength": 16,
+      "title": "Language",
+      "default": "ru"
+     },
+     "endpoint": {
+      "type": "string",
+      "maxLength": 64,
+      "title": "Endpoint",
+      "description": "Model provider preset that pays for it",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "workspace_id",
+     "count"
+    ],
+    "title": "GenerateIn"
+   },
+   "GenerateOut": {
+    "properties": {
+     "job_id": {
+      "type": "string",
+      "title": "Job Id"
+     },
+     "draft_id": {
+      "type": "string",
+      "title": "Draft Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "job_id",
+     "draft_id"
+    ],
+    "title": "GenerateOut"
+   },
    "HealthOut": {
     "properties": {
      "status": {
@@ -14443,7 +17708,7 @@
      "kind": {
       "type": "string",
       "title": "Kind",
-      "description": "What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, board_check, asm_run, asm_memory, asm_chat, probe"
+      "description": "What to do; one of: fill_tag, fill_report, agent, build, parse, export, kadai_run, kadai_rework, board_check, asm_run, asm_memory, asm_chat, cards_generate, probe"
      },
      "project_id": {
       "anyOf": [
@@ -14640,6 +17905,63 @@
     "title": "LoginIn",
     "description": "Вход. Длина пароля здесь **не** проверяется: старый пароль может быть\nкороче нынешнего предела, и человеку надо дать войти и сменить его."
    },
+   "MaterialOut": {
+    "properties": {
+     "material_id": {
+      "type": "string",
+      "title": "Material Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "default": ""
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind",
+      "default": ""
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "ready",
+       "pending",
+       "failed"
+      ],
+      "title": "Status",
+      "description": "ready: parsed and can go to the agent; pending: being parsed; failed: parsing failed, see `error`"
+     },
+     "job_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Job Id"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error",
+      "description": "Why parsing failed, for status failed"
+     }
+    },
+    "type": "object",
+    "required": [
+     "material_id",
+     "status"
+    ],
+    "title": "MaterialOut"
+   },
    "MemWriteOut": {
     "properties": {
      "seg": {
@@ -14788,6 +18110,249 @@
     ],
     "title": "ModelKeyIn",
     "description": "Тело `POST /api/keys`.\n\nПоле называется `key`, а не `secret`: человек несёт сюда то, что у\nпоставщика называется API key, и переименовывать это по дороге значит\nзаставлять его гадать, туда ли он вставил."
+   },
+   "MySettingsIn": {
+    "properties": {
+     "session_size": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 10000.0,
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Session Size",
+      "description": "Cards in a session; 0 or null means all",
+      "default": 20
+     },
+     "order": {
+      "type": "string",
+      "title": "Order",
+      "description": "file, random, topic_seq, topic_random or topics_shuffled",
+      "default": "topic_random"
+     },
+     "topics": {
+      "anyOf": [
+       {
+        "items": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "type": "array",
+        "maxItems": 501
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Topics",
+      "description": "Topic ids to play; null in the list is the cards without a topic; the whole field null means every topic"
+     },
+     "include": {
+      "type": "string",
+      "title": "Include",
+      "description": "all, unknown or wrong",
+      "default": "all"
+     },
+     "repeat_wrong": {
+      "type": "boolean",
+      "title": "Repeat Wrong",
+      "description": "Bring a No back three cards later, at most twice a session",
+      "default": true
+     },
+     "reset": {
+      "type": "boolean",
+      "title": "Reset",
+      "description": "Forget my settings and use the recommended ones again",
+      "default": false
+     }
+    },
+    "type": "object",
+    "title": "MySettingsIn"
+   },
+   "OpenSessionOut": {
+    "properties": {
+     "session_id": {
+      "type": "string",
+      "title": "Session Id"
+     },
+     "pos": {
+      "type": "integer",
+      "title": "Pos",
+      "default": 0
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total",
+      "default": 0
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "session_id"
+    ],
+    "title": "OpenSessionOut"
+   },
+   "PatchIn": {
+    "properties": {
+     "title": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 2000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     }
+    },
+    "type": "object",
+    "title": "PatchIn"
+   },
+   "PatchOut": {
+    "properties": {
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "title"
+    ],
+    "title": "PatchOut"
+   },
+   "PreviewOut": {
+    "properties": {
+     "draft_id": {
+      "type": "string",
+      "title": "Draft Id"
+     },
+     "problems": {
+      "items": {
+       "$ref": "#/components/schemas/ProblemOut"
+      },
+      "type": "array",
+      "title": "Problems"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/StatsOut"
+     }
+    },
+    "type": "object",
+    "required": [
+     "draft_id",
+     "stats"
+    ],
+    "title": "PreviewOut"
+   },
+   "ProblemOut": {
+    "properties": {
+     "line": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Line",
+      "description": "Line of the source, from 1: for a file that is not valid JSON and for CSV rows; null otherwise"
+     },
+     "column": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Column",
+      "description": "Column in `line`, from 1: for a file that is not valid JSON; null otherwise"
+     },
+     "code": {
+      "type": "string",
+      "title": "Code",
+      "description": "Machine code of the problem, e.g. empty_answer"
+     },
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "description": "What is wrong, for a person"
+     },
+     "card": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Card",
+      "description": "Number of the card in the source, from 0. Such a card is rejected and is not in the set; null is a problem of the file as a whole"
+     },
+     "path": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Path",
+      "description": "Path of the field in the JSON card file, e.g. `cards[12].a` or `defaults.order`"
+     }
+    },
+    "type": "object",
+    "required": [
+     "code",
+     "text"
+    ],
+    "title": "ProblemOut"
    },
    "ProfileIn": {
     "properties": {
@@ -15144,6 +18709,29 @@
     ],
     "title": "ProgramPatchOut"
    },
+   "ProgressOut": {
+    "properties": {
+     "known": {
+      "type": "integer",
+      "title": "Known",
+      "default": 0
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total",
+      "default": 0
+     },
+     "by_topic": {
+      "items": {
+       "$ref": "#/components/schemas/TopicProgressOut"
+      },
+      "type": "array",
+      "title": "By Topic"
+     }
+    },
+    "type": "object",
+    "title": "ProgressOut"
+   },
    "ProjectPatchIn": {
     "properties": {
      "name": {
@@ -15466,6 +19054,82 @@
     ],
     "title": "RegisterIn",
     "description": "Регистрация. Длина пароля проверяется формой, а не обработчиком: беда\nформы уезжает клиенту с адресом поля (`where: body.password`).\n\nНик — обязательное поле: именно он показывается\nвместо почты, и завести человека без него значит завести его безымянным.\nГраницы и знаки ника формой НЕ проверяются намеренно: `422\nvalidation_failed` не отличить от беды в почте, а сайту нужен отдельный код\n`invalid_nickname`, чтобы показать подсказку под нужным полем. Форма здесь\nсторожит только длину строки — от тела запроса в мегабайт."
+   },
+   "ReplaceIn": {
+    "properties": {
+     "draft_id": {
+      "type": "string",
+      "title": "Draft Id"
+     },
+     "only_valid": {
+      "type": "boolean",
+      "title": "Only Valid",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "draft_id"
+    ],
+    "title": "ReplaceIn"
+   },
+   "ReplaceOut": {
+    "properties": {
+     "version": {
+      "type": "integer",
+      "title": "Version"
+     },
+     "added": {
+      "type": "integer",
+      "title": "Added",
+      "default": 0
+     },
+     "changed": {
+      "type": "integer",
+      "title": "Changed",
+      "default": 0
+     },
+     "removed": {
+      "type": "integer",
+      "title": "Removed",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "version"
+    ],
+    "title": "ReplaceOut"
+   },
+   "ReplacePreviewOut": {
+    "properties": {
+     "draft_id": {
+      "type": "string",
+      "title": "Draft Id"
+     },
+     "problems": {
+      "items": {
+       "$ref": "#/components/schemas/ProblemOut"
+      },
+      "type": "array",
+      "title": "Problems"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/StatsOut"
+     },
+     "diff": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Diff",
+      "description": "Keys added, changed and removed against the current version: {added, changed, removed}"
+     }
+    },
+    "type": "object",
+    "required": [
+     "draft_id",
+     "stats"
+    ],
+    "title": "ReplacePreviewOut"
    },
    "ReportIn": {
     "properties": {
@@ -15798,6 +19462,52 @@
     "title": "RunSummaryOut",
     "description": "Итог прогона без шагов, или его ход, пока итога нет.\n\nПоля, которые ядро допишет сверх перечисленных, уезжают как есть: итог\nчитается с тома, и форма его — договор ядра с сайтом, а не выбор службы."
    },
+   "SaveDraftIn": {
+    "properties": {
+     "workspace_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Workspace Id",
+      "description": "Create a new set in this workspace"
+     },
+     "project_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Project Id",
+      "description": "With set_id: add to this set"
+     },
+     "set_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Set Id"
+     },
+     "only_valid": {
+      "type": "boolean",
+      "title": "Only Valid",
+      "default": false
+     }
+    },
+    "type": "object",
+    "title": "SaveDraftIn"
+   },
    "SceneConflictOut": {
     "properties": {
      "error": {
@@ -15929,62 +19639,307 @@
     "title": "SegmentOut",
     "description": "Область образа: сегмент карты TLINK или секция PE с адресом VA."
    },
-   "SessionOut": {
+   "SessionIn": {
     "properties": {
-     "ready": {
-      "type": "boolean",
-      "title": "Ready",
-      "description": "Whether handwriting recognition works for this person. False is a state, not an error: the board still draws and still lets a formula be typed."
-     },
-     "reason": {
+     "preset": {
       "type": "string",
-      "title": "Reason",
-      "description": "Why not, when it is not: `no_keys`. Empty when ready.",
-      "default": ""
+      "enum": [
+       "settings",
+       "wrong",
+       "all_file"
+      ],
+      "title": "Preset",
+      "description": "settings: my settings; wrong: every card whose last answer is No; all_file: the whole set in file order",
+      "default": "settings"
      },
-     "scheme": {
+     "keys": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array",
+        "maxItems": 10000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Keys",
+      "description": "Play exactly these cards in this order instead of a preset; unknown keys are skipped"
+     }
+    },
+    "type": "object",
+    "title": "SessionIn"
+   },
+   "SessionStartedOut": {
+    "properties": {
+     "session_id": {
       "type": "string",
-      "title": "Scheme",
-      "description": "`wss` or `ws`, as seen from this request",
-      "default": ""
+      "title": "Session Id"
      },
-     "host": {
-      "type": "string",
-      "title": "Host",
-      "description": "Host this request came to. The recognition library builds the socket address out of it, so the page appends its own base path before handing it over.",
-      "default": ""
-     },
-     "application_key": {
-      "type": "string",
-      "title": "Application Key",
-      "description": "What to give the recognition library as its application key. A constant, and deliberately not a key: the real one never leaves the service, and the bridge substitutes it on the way out.",
-      "default": "koritsu"
-     },
-     "hmac_key": {
-      "type": "string",
-      "title": "Hmac Key",
-      "description": "What to give the library as its HMAC key. The same constant, for the same reason: the bridge answers the signature challenge itself.",
-      "default": "koritsu"
-     },
-     "requests_this_month": {
+     "version": {
       "type": "integer",
-      "title": "Requests This Month",
-      "description": "Recognition requests this month by this person: batch calls plus sockets opened. The tariff counts requests, not strokes, so this is the number to watch.",
-      "default": 0
+      "title": "Version"
      },
-     "opens_this_month": {
-      "type": "integer",
-      "title": "Opens This Month",
-      "description": "Sockets opened this month, of those requests. The live socket is the part a forgotten tab can keep spending on, which is why it is also counted on its own.",
-      "default": 0
+     "keys": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Keys"
+     },
+     "settings": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Settings"
+     },
+     "cards": {
+      "items": {
+       "$ref": "#/components/schemas/CardOut"
+      },
+      "type": "array",
+      "title": "Cards",
+      "description": "The first cards of the plan; the rest by …/cards?keys="
      }
     },
     "type": "object",
     "required": [
-     "ready"
+     "session_id",
+     "version",
+     "keys"
     ],
-    "title": "SessionOut",
-    "description": "Готово ли распознавание рукописи и чем открывать сокет."
+    "title": "SessionStartedOut"
+   },
+   "SetCardOut": {
+    "properties": {
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "set_id": {
+      "type": "string",
+      "title": "Set Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description",
+      "default": ""
+     },
+     "topics": {
+      "type": "integer",
+      "title": "Topics",
+      "default": 0
+     },
+     "cards": {
+      "type": "integer",
+      "title": "Cards",
+      "default": 0
+     },
+     "my_known": {
+      "type": "integer",
+      "title": "My Known",
+      "description": "Cards whose last answer of mine is Yes",
+      "default": 0
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version",
+      "default": 0
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "project_id",
+     "set_id",
+     "title"
+    ],
+    "title": "SetCardOut"
+   },
+   "SetOut": {
+    "properties": {
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "set_id": {
+      "type": "string",
+      "title": "Set Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description",
+      "default": ""
+     },
+     "language": {
+      "type": "string",
+      "title": "Language",
+      "default": ""
+     },
+     "topics": {
+      "items": {
+       "$ref": "#/components/schemas/TopicOut"
+      },
+      "type": "array",
+      "title": "Topics"
+     },
+     "cards_count": {
+      "type": "integer",
+      "title": "Cards Count",
+      "default": 0
+     },
+     "defaults": {
+      "$ref": "#/components/schemas/SettingsModel"
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version",
+      "default": 0
+     },
+     "versions": {
+      "items": {
+       "$ref": "#/components/schemas/VersionOut"
+      },
+      "type": "array",
+      "title": "Versions"
+     },
+     "my_settings": {
+      "$ref": "#/components/schemas/SettingsModel"
+     },
+     "my_progress": {
+      "$ref": "#/components/schemas/ProgressOut"
+     },
+     "open_session": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/OpenSessionOut"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "My unfinished session of the current version younger than the resume window, to offer Continue"
+     },
+     "can_edit": {
+      "type": "boolean",
+      "title": "Can Edit",
+      "default": false
+     },
+     "updated_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "project_id",
+     "set_id",
+     "title",
+     "defaults",
+     "my_settings",
+     "my_progress"
+    ],
+    "title": "SetOut"
+   },
+   "SettingsModel": {
+    "properties": {
+     "session_size": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 10000.0,
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Session Size",
+      "description": "Cards in a session; 0 or null means all",
+      "default": 20
+     },
+     "order": {
+      "type": "string",
+      "title": "Order",
+      "description": "file, random, topic_seq, topic_random or topics_shuffled",
+      "default": "topic_random"
+     },
+     "topics": {
+      "anyOf": [
+       {
+        "items": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "type": "array",
+        "maxItems": 501
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Topics",
+      "description": "Topic ids to play; null in the list is the cards without a topic; the whole field null means every topic"
+     },
+     "include": {
+      "type": "string",
+      "title": "Include",
+      "description": "all, unknown or wrong",
+      "default": "all"
+     },
+     "repeat_wrong": {
+      "type": "boolean",
+      "title": "Repeat Wrong",
+      "description": "Bring a No back three cards later, at most twice a session",
+      "default": true
+     }
+    },
+    "type": "object",
+    "title": "SettingsModel",
+    "description": "Настройки захода: личные или рекомендуемые набора."
    },
    "SolutionIn": {
     "properties": {
@@ -16150,6 +20105,35 @@
      "version"
     ],
     "title": "SourceOut"
+   },
+   "StatsOut": {
+    "properties": {
+     "cards": {
+      "type": "integer",
+      "title": "Cards",
+      "description": "Cards that made it into the set",
+      "default": 0
+     },
+     "topics": {
+      "type": "integer",
+      "title": "Topics",
+      "default": 0
+     },
+     "valid": {
+      "type": "integer",
+      "title": "Valid",
+      "description": "The same as `cards`",
+      "default": 0
+     },
+     "rejected": {
+      "type": "integer",
+      "title": "Rejected",
+      "description": "Cards of the source rejected by problems",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "title": "StatsOut"
    },
    "StatusOut": {
     "properties": {
@@ -16399,6 +20383,24 @@
     "title": "TagPromptIn",
     "description": "Тело правки задания на тег. Пустая строка — «задания нет»."
    },
+   "TargetOut": {
+    "properties": {
+     "project_id": {
+      "type": "string",
+      "title": "Project Id"
+     },
+     "set_id": {
+      "type": "string",
+      "title": "Set Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "project_id",
+     "set_id"
+    ],
+    "title": "TargetOut"
+   },
    "TaskIn": {
     "properties": {
      "text": {
@@ -16580,6 +20582,62 @@
      "available"
     ],
     "title": "ToolchainVersionOut"
+   },
+   "TopicOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "cards": {
+      "type": "integer",
+      "title": "Cards",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title"
+    ],
+    "title": "TopicOut"
+   },
+   "TopicProgressOut": {
+    "properties": {
+     "topic": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Topic",
+      "description": "Topic id; null for cards without one"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title",
+      "default": ""
+     },
+     "known": {
+      "type": "integer",
+      "title": "Known",
+      "default": 0
+     },
+     "total": {
+      "type": "integer",
+      "title": "Total",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "title": "TopicProgressOut"
    },
    "TotalsOut": {
     "properties": {
@@ -16835,6 +20893,40 @@
     "type": "object",
     "title": "UserPatchIn",
     "description": "Тело `PATCH /api/admin/users/{id}`: только то, что владелец и правит.\n\nВсе поля необязательны, и не заданное не трогается: правка «сменить план»\nне должна молча обнулять лимиты, поставленные в прошлый раз."
+   },
+   "VersionOut": {
+    "properties": {
+     "n": {
+      "type": "integer",
+      "title": "N"
+     },
+     "at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "At"
+     },
+     "filename": {
+      "type": "string",
+      "title": "Filename",
+      "default": ""
+     },
+     "cards": {
+      "type": "integer",
+      "title": "Cards",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "n"
+    ],
+    "title": "VersionOut"
    },
    "WishesIn": {
     "properties": {
@@ -17474,6 +21566,63 @@
     "title": "ChatOut",
     "description": "Переписка с репетитором целиком, старые сообщения первыми."
    },
+   "api__modules__board__routes__SessionOut": {
+    "properties": {
+     "ready": {
+      "type": "boolean",
+      "title": "Ready",
+      "description": "Whether handwriting recognition works for this person. False is a state, not an error: the board still draws and still lets a formula be typed."
+     },
+     "reason": {
+      "type": "string",
+      "title": "Reason",
+      "description": "Why not, when it is not: `no_keys`. Empty when ready.",
+      "default": ""
+     },
+     "scheme": {
+      "type": "string",
+      "title": "Scheme",
+      "description": "`wss` or `ws`, as seen from this request",
+      "default": ""
+     },
+     "host": {
+      "type": "string",
+      "title": "Host",
+      "description": "Host this request came to. The recognition library builds the socket address out of it, so the page appends its own base path before handing it over.",
+      "default": ""
+     },
+     "application_key": {
+      "type": "string",
+      "title": "Application Key",
+      "description": "What to give the recognition library as its application key. A constant, and deliberately not a key: the real one never leaves the service, and the bridge substitutes it on the way out.",
+      "default": "koritsu"
+     },
+     "hmac_key": {
+      "type": "string",
+      "title": "Hmac Key",
+      "description": "What to give the library as its HMAC key. The same constant, for the same reason: the bridge answers the signature challenge itself.",
+      "default": "koritsu"
+     },
+     "requests_this_month": {
+      "type": "integer",
+      "title": "Requests This Month",
+      "description": "Recognition requests this month by this person: batch calls plus sockets opened. The tariff counts requests, not strokes, so this is the number to watch.",
+      "default": 0
+     },
+     "opens_this_month": {
+      "type": "integer",
+      "title": "Opens This Month",
+      "description": "Sockets opened this month, of those requests. The live socket is the part a forgotten tab can keep spending on, which is why it is also counted on its own.",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "ready"
+    ],
+    "title": "SessionOut",
+    "description": "Готово ли распознавание рукописи и чем открывать сокет."
+   },
    "api__modules__board__routes__StepOut": {
     "properties": {
      "n": {
@@ -17588,6 +21737,82 @@
     "type": "object",
     "title": "StepsOut",
     "description": "Строки решения и то, не отстали ли они от доски."
+   },
+   "api__modules__cards__routes__SessionOut": {
+    "properties": {
+     "session_id": {
+      "type": "string",
+      "title": "Session Id"
+     },
+     "set_id": {
+      "type": "string",
+      "title": "Set Id"
+     },
+     "version": {
+      "type": "integer",
+      "title": "Version"
+     },
+     "keys": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Keys"
+     },
+     "pos": {
+      "type": "integer",
+      "title": "Pos",
+      "default": 0
+     },
+     "settings": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Settings"
+     },
+     "answers": {
+      "items": {
+       "$ref": "#/components/schemas/AttemptOut"
+      },
+      "type": "array",
+      "title": "Answers"
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     },
+     "ended_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ended At"
+     },
+     "stale": {
+      "type": "boolean",
+      "title": "Stale",
+      "description": "The set was replaced after this session began",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "session_id",
+     "set_id",
+     "version",
+     "keys"
+    ],
+    "title": "SessionOut"
    }
   }
  },
@@ -17609,8 +21834,11 @@
   "build_failed",
   "cancelled",
   "cancelled_before",
+  "cards_generate_failed",
+  "cards_invalid",
   "csrf_failed",
   "diagram_failed",
+  "draft_busy",
   "email_not_confirmed",
   "email_taken",
   "endpoint_required",
@@ -17649,6 +21877,8 @@
   "not_in_trash",
   "not_ready",
   "note_required",
+  "nothing_to_add",
+  "nothing_to_play",
   "parse_failed",
   "personal_workspace",
   "project_exists",
@@ -17684,6 +21914,7 @@
   "unknown_theme",
   "unsupported_type",
   "validation_failed",
+  "version_conflict",
   "worker_lost"
  ]
 }

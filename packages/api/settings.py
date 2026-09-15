@@ -73,7 +73,18 @@ settings — всё, что служба узнаёт снаружи, и бол�
                                  (не больше 200 000)
     ASM_SHOW                     умолч. нет — показывать модуль «Ассемблер» и
                                  без инструментов (для разработки сайта)
-    SSE_POLL_S                   0.5 — как часто поток событий смотрит в базу
+    CARDS_FILE_MAX_BYTES         5 МБ — потолок файла набора карточек и текста
+                                 черновика
+    CARDS_DRAFT_DAYS             7 — сколько дней черновик живёт с последней
+                                 записи
+    CARDS_DRAFTS_MAX             50 — черновиков на человека; сверх потолка
+                                 уходят самые старые
+    CARDS_GENERATE_MAX           200 — карточек за одно задание генерации
+    CARDS_MATERIALS_MAX          20 — файлов на одно задание генерации
+    CARDS_MATERIAL_CHARS_MAX     200 000 — знаков текста с одного файла
+    CARDS_RESUME_HOURS           12 — сколько часов незаконченный заход можно
+                                 продолжить
+    SSE_POLL_S                  0.5 — как часто поток событий смотрит в базу
     SSE_MAX_S                    3600 — сколько живёт одно соединение потока
     DB_URL                       умолч. sqlite в DATA_DIR/koritsu.db
     TRUST_PROXY                  умолч. «да в prod, нет в dev» — верить ли
@@ -300,6 +311,25 @@ class Settings:
     # отладчика верстаются на машине, где TASM нет, а постановка прогона там
     # честно отвечает `503 asm_unavailable`.
     asm_show: bool = False
+    # ── модуль «Тренажёр» ────────────────────────────────────────────────────
+    #
+    # Файл набора — Markdown, который пишут руками и агентом; пять мегабайт —
+    # это тысячи карточек с формулами, и больше в один заход никто не решает.
+    # Тот же потолок держит текст черновика: черновик и есть будущий файл.
+    cards_file_max_bytes: int = 5 * MB
+    # Черновик — промежуточное состояние между загрузкой или генерацией и
+    # сохранением набора. Неделя с последней правки — достаточно, чтобы
+    # вернуться к нему назавтра, и недостаточно, чтобы том копил забытое.
+    cards_draft_days: int = 7
+    cards_drafts_max: int = 50
+    # Генерация: карточек и файлов за одно задание, знаков с одного файла. Всё
+    # это уезжает в промпт и оплачивается человеком.
+    cards_generate_max: int = 200
+    cards_materials_max: int = 20
+    cards_material_chars_max: int = 200_000
+    # «Продолжить» незаконченный заход: полдня — то, что человек называет
+    # «сегодня», а заход трёхдневной давности уже начинают заново.
+    cards_resume_hours: int = 12
     # Как часто поток событий (`api/events`) заглядывает в базу, пока ждёт
     # новых. Полсекунды — потолок задержки события у человека на экране;
     # меньше означало бы столько же запросов в базу на каждого смотрящего.
@@ -381,7 +411,11 @@ class Settings:
                     "pro_quota_bytes", "team_monthly_units",
                     "team_quota_bytes", "sse_poll_s", "sse_max_s",
                     "preview_per_minute", "asm_timeout_s",
-                    "asm_step_limit_max", "asm_mingw_step_limit_max"):
+                    "asm_step_limit_max", "asm_mingw_step_limit_max",
+                    "cards_file_max_bytes", "cards_draft_days",
+                    "cards_drafts_max", "cards_generate_max",
+                    "cards_materials_max", "cards_material_chars_max",
+                    "cards_resume_hours"):
             if getattr(self, имя) <= 0:
                 # Ноль слотов — это воркер, который никогда ничего не берёт, и
                 # очередь, растущая молча. Отказ на старте дешевле.
@@ -541,6 +575,14 @@ class Settings:
             asm_mingw_queue=(get("ASM_MINGW_QUEUE") or "").strip(),
             asm_mingw_step_limit_max=_int(env, "ASM_MINGW_STEP_LIMIT_MAX", 20_000),
             asm_show=_bool(env, "ASM_SHOW", False),
+            cards_file_max_bytes=_int(env, "CARDS_FILE_MAX_BYTES", 5 * MB),
+            cards_draft_days=_int(env, "CARDS_DRAFT_DAYS", 7),
+            cards_drafts_max=_int(env, "CARDS_DRAFTS_MAX", 50),
+            cards_generate_max=_int(env, "CARDS_GENERATE_MAX", 200),
+            cards_materials_max=_int(env, "CARDS_MATERIALS_MAX", 20),
+            cards_material_chars_max=_int(env, "CARDS_MATERIAL_CHARS_MAX",
+                                          200_000),
+            cards_resume_hours=_int(env, "CARDS_RESUME_HOURS", 12),
             sse_poll_s=_float(env, "SSE_POLL_S", 0.5),
             sse_max_s=_float(env, "SSE_MAX_S", 3600.0),
             db_url=(get("DB_URL") or "").strip(),

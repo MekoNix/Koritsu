@@ -62,6 +62,7 @@ const BY_PREFIX: [string, string][] = [
   ['/kadai', 'shell.page.kadai'],
   ['/board', 'shell.page.board'],
   ['/asm', 'shell.page.asm'],
+  ['/cards', 'shell.page.cards'],
   ['/settings', 'shell.page.settings'],
   ['/workspace', 'workspace.title'],
   ['/admin', 'shell.page.admin'],
@@ -82,8 +83,10 @@ export function Breadcrumbs() {
     <nav className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-sm text-muted">
       {пространство && (
         <>
-          <span className="max-w-[14ch] truncate">{пространство}</span>
-          <span aria-hidden="true" className="opacity-50">
+          {/* На узком экране пространство не помещается рядом с модулем; его имя
+              видно в выезжающем меню. */}
+          <span className="max-w-[14ch] truncate max-[640px]:hidden">{пространство}</span>
+          <span aria-hidden="true" className="opacity-50 max-[640px]:hidden">
             /
           </span>
         </>

@@ -11,6 +11,7 @@ handlers — обработчики заданий, по модулю на ви�
     asm_run         сборка и трасса   ключ не нужен и не даётся
     asm_memory      дамп на шаге      ключ не нужен и не даётся
     asm_chat        агент по трассе   нужен ключ модели
+    cards_generate  набор карточек    нужен ключ модели
 
 По модулю на вид, а не одним файлом: обработчик — это место, где служба
 разговаривает с оркестратором, и разговоры у них разные. Общее (endpoint с
@@ -30,11 +31,11 @@ from __future__ import annotations
 def подключить() -> None:
     """Поставить все обработчики прогонов в реестр. Идемпотентно."""
     from . import (agent, asm_chat, asm_memory, asm_run,     # noqa: PLC0415
-                   board_check, build, fill_report, fill_tag, kadai_rework,
-                   kadai_run)
+                   board_check, build, cards_generate, fill_report, fill_tag,
+                   kadai_rework, kadai_run)
 
     for модуль in (fill_tag, fill_report, agent, build, kadai_run, kadai_rework,
-                   board_check, asm_run, asm_memory, asm_chat):
+                   board_check, asm_run, asm_memory, asm_chat, cards_generate):
         модуль._зарегистрировать()
 
 
