@@ -281,6 +281,14 @@ export function MenuBar() {
       <div className="asm-mb-right">
         <button
           type="button"
+          className="asm-mode"
+          title={t('asm.toolchain.chipHint')}
+          onClick={() => ui.openDialog('buildOpts')}
+        >
+          {t(`asm.toolchain.${asm.toolchain.id}.chip`, { version: asm.program?.asmVersion ?? '' })}
+        </button>
+        <button
+          type="button"
           className="asm-runbtn"
           disabled={asm.runBusy}
           title={`${t('asm.menu.build.run')} · Ctrl+Enter`}
@@ -392,10 +400,12 @@ function RunStatus() {
   if (asm.runBusy) {
     tone = 'run'
     const { stage, n } = ui.progress
+    // Ступени сборки — по режиму: `tasm`/`tlink` или `as`/`ld`.
+    const buildStage = !!stage && (stage === asm.toolchain.stages[0] || stage === asm.toolchain.stages[1])
     if (stage === 'trace' || (!stage && run?.status === 'running')) {
       head = t('asm.status.chip.tracing')
       if (stage === 'trace' && n != null) details.push(fmtSteps(n))
-    } else if (stage === 'tasm' || stage === 'tlink' || (!stage && run?.status === 'building')) {
+    } else if (buildStage || (!stage && run?.status === 'building')) {
       head = t('asm.status.chip.building')
       if (stage) details.push(t(`asm.status.stages.${stage}`))
     } else head = t('asm.status.chip.queued')

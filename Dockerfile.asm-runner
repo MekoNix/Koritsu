@@ -1,0 +1,78 @@
+# Koritsu — исполнитель трасс режима «MinGW x64» (`asm-runner`): отдельный образ
+# и отдельный контейнер, а не ещё один слой основного образа.
+#
+# Трасса MinGW x64 — это настоящий `prog.exe` студента под Wine, исполняемый на
+# процессоре машины под своим трассировщиком (`packages/asm/mingw64/wine_tracer.py`).
+# Такой код может звать системные вызовы Linux в обход Wine и видит файловую систему
+# через `\\?\unix\` — настройками Wine это не закрывается. Поэтому он живёт не в
+# воркере с томом данных и секретами, а здесь: без сети, без прав, без тома данных,
+# с корнем только для чтения. С воркером общий только том очереди (`asm-queue`).
+#
+# Что здесь есть и почему — по одной причине на строку:
+#
+#   debian:trixie-slim   тот же Debian, что у основного образа, но без Python
+#                        из python:*-slim: Wine и Python ставятся пакетами.
+#   wine64               64-битный загрузчик и DLL Wine 10.0. Без `wine` (i386):
+#                        лаба — PE32+, 32-битный Wine не нужен ни одним файлом.
+#                        Без Mono и Gecko: `--no-install-recommends`, а в
+#                        префиксе `mscoree,mshtml=` не даёт их спрашивать.
+#   python3              трассировщик и цикл очереди — stdlib и `ctypes`, колёс нет.
+#
+# Чего здесь нет: `binutils` (сборка идёт в воркере, сюда приезжает готовый
+# `prog.exe` и разобранные команды), `packages/` кроме `asm`, `requirements.txt`.
+FROM debian:trixie-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/packages \
+    LANG=C.UTF-8 \
+    KORITSU_ASM_MINGW_QUEUE=/queue \
+    KORITSU_ASM_RUNNER_PREFIX=/opt/koritsu-wine/prefix
+
+RUN apt-get update && apt-get install --no-install-recommends -y \
+        wine64 \
+        python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Свой UID (10002) и общая с воркером группа (10001): файлы задания пишет воркер,
+# результат — исполнитель, и оба читают и удаляют чужое через права группы
+# (`2770` на каталогах, `660` на файлах). UID не совпадает с воркером нарочно:
+# процесс студента не может ни подать сигнал воркеру, ни писать в его файлы
+# вне очереди. Домашнего каталога нет: `HOME` на каждый прогон свой, на tmpfs.
+RUN groupadd --gid 10001 koritsu \
+    && useradd --uid 10002 --gid 10001 --no-create-home --home-dir /nonexistent \
+        --shell /usr/sbin/nologin asmrun
+
+# Общий префикс Wine готовится при сборке: `wineboot --init` занимает 10 с и
+# на каждый прогон не повторяется. Из 770 МБ префикса 760 файлов `system32` —
+# байт в байт DLL пакета, и они заменяются ссылками на файлы пакета: префикс в
+# образе — 11 МБ. `Z:` (ссылка на корень машины) удаляется. Скрипт копируется
+# один, раньше остального кода: слой с префиксом не пересобирается от правок.
+# Готовит префикс пользователь исполнителя — Wine отказывается работать с
+# чужим префиксом; потом префикс отдаётся root и только читается.
+COPY packages/asm/mingw64/wine_prefix.py /opt/koritsu-wine/wine_prefix.py
+RUN mkdir -p /opt/koritsu-wine/prefix /tmp/wine-build \
+    && chown 10002:10001 /opt/koritsu-wine/prefix /tmp/wine-build \
+    && setpriv --reuid=10002 --regid=10001 --clear-groups \
+        env HOME=/tmp/wine-build python3 /opt/koritsu-wine/wine_prefix.py prepare /opt/koritsu-wine/prefix \
+    && chown -R root:root /opt/koritsu-wine/prefix \
+    && chmod -R u=rwX,go=rX /opt/koritsu-wine/prefix \
+    && rm -rf /tmp/wine-build /tmp/.wine-10002
+
+# Точка монтирования тома очереди — с владельцем и правами группы. Named volume
+# Docker берёт их из образа при первом подключении; основной образ заводит
+# `/queue` так же, и кто бы ни подключил том первым, права одинаковые.
+RUN mkdir -p /queue && chown 10001:10001 /queue && chmod 2770 /queue
+
+WORKDIR /app
+COPY packages/asm /app/packages/asm
+
+USER 10002:10001
+
+# Живость — по сердцебиению в очереди: оно же говорит воркеру, что трассы
+# можно отдавать. Проверка не пишет в очередь и ничего не запускает.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD ["python3", "-m", "asm.mingw64.runner_service", "health"]
+
+ENTRYPOINT ["python3", "-m", "asm.mingw64.runner_service"]
+CMD ["serve"]

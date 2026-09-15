@@ -32,8 +32,12 @@ import {
   spacedBytes,
   traceState,
   waitsForInput,
+  hexFlat,
 } from './format'
+import { flatImage, hexOf, pendingCall, regBig, sectionAt, symbolize } from './flat'
 import TraceTrack from './TraceTrack'
+import { winapi } from './winapi'
+import './windows64.css'
 
 /** Команда в одну строку: DebugX разделяет мнемонику и операнды несколькими пробелами. */
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim()
@@ -41,7 +45,8 @@ const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim()
 export default function TraceSlider() {
   const t = useT()
   const asm = useAsm()
-  const { run, step, stepIndex, settings, loadedSteps } = asm
+  const { run, step, stepIndex, settings, loadedSteps, toolchain, getStep } = asm
+  const tasm = toolchain.id === 'tasm'
 
   const trace = hasTrace(run)
   const total = lastStepIndex(run)
@@ -55,15 +60,19 @@ export default function TraceSlider() {
   const marks = useMemo(() => {
     const breakpoints: number[] = []
     const dosCalls: number[] = []
-    if (!trace) return { breakpoints, dosCalls }
+    const apiCalls: { i: number; io: 'in' | 'out' | 'exit' | 'other' }[] = []
+    if (!trace) return { breakpoints, dosCalls, apiCalls }
     // Точка останова — там, где остановится F9: шаг, у которого следующей стоит строка с точкой.
     const bps = new Set(settings.breakpoints)
     for (const s of loadedSteps()) {
       if (s.next?.line != null && bps.has(s.next.line)) breakpoints.push(s.i)
-      if (s.i > 0 && isDosCall(s.asm)) dosCalls.push(s.i)
+      if (s.i <= 0) continue
+      if (tasm) {
+        if (isDosCall(s.asm)) dosCalls.push(s.i)
+      } else if (toolchain.isSysCall(s)) apiCalls.push({ i: s.i, io: winapi(s.call)?.io ?? 'other' })
     }
-    return { breakpoints, dosCalls }
-  }, [trace, loadedSteps, settings.breakpoints])
+    return { breakpoints, dosCalls, apiCalls }
+  }, [trace, loadedSteps, settings.breakpoints, tasm, toolchain])
 
   // ── счётчик ──
   let note: string | null = null
@@ -105,30 +114,53 @@ export default function TraceSlider() {
       </div>
     )
   } else if (next) {
-    const cs = parseHex(next.cs)
-    const ip = parseHex(next.ip)
-    const addr = cs != null && ip != null ? `${hex(cs)}:${hex(ip)}` : `${next.cs}:${next.ip}`
-    const role = cs != null ? segmentRole(run, cs) : null
-    const roleText = role ? t(`asm.slider.seg.${role}`) : null
-    const phys = cs != null && ip != null ? `${hex(linear({ seg: cs, off: ip }), 5)}h` : null
+    let addr: string
+    let roleText: string | null
+    let phys: string | null
+    let addrLabel: string
+    let apiNote: string | null = null
+    if (next.cs == null) {
+      // Плоская память: RIP 16 знаками, секция и символ вместо роли сегмента.
+      const ip = parseHex(next.ip)
+      const img = flatImage(run)
+      addr = ip == null ? next.ip : hexFlat(ip)
+      roleText = ip == null ? null : [sectionAt(img.sections, ip)?.name, symbolize(img, ip)].filter(Boolean).join(' · ') || null
+      phys = null
+      addrLabel = t('asm64.slider.addrLabel')
+      if (pendingCall(step, getStep(stepIndex + 1), img)?.api) apiNote = t('asm64.slider.apiNext')
+    } else {
+      const cs = parseHex(next.cs)
+      const ip = parseHex(next.ip)
+      addr = cs != null && ip != null ? `${hex(cs)}:${hex(ip)}` : `${next.cs}:${next.ip}`
+      const role = cs != null ? segmentRole(run, cs) : null
+      roleText = role ? t(`asm.slider.seg.${role}`) : null
+      phys = cs != null && ip != null ? `${hex(linear({ seg: cs, off: ip }), 5)}h` : null
+      addrLabel = t('asm.slider.addrLabel')
+    }
     const mnem = oneLine(next.asm)
     const lineText = next.line != null ? t('asm.slider.line', { line: next.line }) : t('asm.slider.noLine')
     const bytes = next.bytes ? t('asm.slider.bytes', { bytes: spacedBytes(next.bytes) }) : null
-    const addrText = `${t('asm.slider.addrLabel')} ${addr}${roleText ? ` — ${roleText}` : ''}`
+    const addrText = `${addrLabel} ${addr}${roleText ? ` — ${roleText}` : ''}`
     now = (
       <div className="cmd is-now">
         <CmdMain line={next.line} title={`${t('asm.slider.now')} ${lineText} · ${mnem}`}>
           <span className="lbl">{t('asm.slider.now')}</span> <b>{lineText}</b> · <code>{mnem}</code>
         </CmdMain>
-        <div className="cmd-sub" title={[addrText, bytes].filter(Boolean).join(' · ')}>
+        <div className="cmd-sub" title={[addrText, bytes, apiNote].filter(Boolean).join(' · ')}>
           <span className="addr" title={phys ? t('asm.slider.addrHint', { phys }) : undefined}>
-            {t('asm.slider.addrLabel')} <span className="m">{addr}</span>
+            {addrLabel} <span className="m">{addr}</span>
             {roleText && ` — ${roleText}`}
           </span>
           {bytes && (
             <>
               {' · '}
               <span className="m">{bytes}</span>
+            </>
+          )}
+          {apiNote && (
+            <>
+              {' · '}
+              <span>{apiNote}</span>
             </>
           )}
         </div>
@@ -164,10 +196,14 @@ export default function TraceSlider() {
         : step.changed.length === 0
           ? t('asm.slider.memOnly')
           : t(list.length === 1 ? 'asm.slider.changedOne' : 'asm.slider.changed', { list: list.join(', ') })
+    // Шаг-вызов API: что вызвано и что вернулось в RAX.
+    const rax = step.call ? regBig(step, 'rax') : null
+    const apiDone = step.call ? t('asm64.slider.apiDone', { call: step.call, rax: rax == null ? '?' : hexOf(rax, 16) }) : null
     done = (
       <div className="cmd is-done">
-        <CmdMain line={step.line} title={[`${t('asm.slider.done')} ${lineText}`, mnem, change].filter(Boolean).join(' · ')}>
+        <CmdMain line={step.line} title={[`${t('asm.slider.done')} ${lineText}`, mnem, apiDone, change].filter(Boolean).join(' · ')}>
           <span className="lbl">{t('asm.slider.done')}</span> {lineText} · <code>{mnem}</code>
+          {apiDone && <span className="chg"> · {apiDone}</span>}
           {change && <span className="chg"> · {change}</span>}
         </CmdMain>
       </div>
@@ -219,6 +255,7 @@ export default function TraceSlider() {
           gap={gap}
           breakpoints={marks.breakpoints}
           dosCalls={marks.dosCalls}
+          apiCalls={marks.apiCalls}
           exit={trace && exited ? total : null}
           label={t('asm.slider.aria')}
           valueText={valueText}

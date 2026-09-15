@@ -45,7 +45,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from .model import АсмОшибка
+from ..model import АсмОшибка
 from .tools import Tools
 
 # Адресное пространство DOSBox-X: гостю отдано 16 МБ, остальное — библиотеки SDL. Запуск с

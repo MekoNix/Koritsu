@@ -1,0 +1,208 @@
+
+input.exe:     file format pei-x86-64
+
+Sections:
+Idx Name          Size      VMA               LMA               File off  Algn
+  0 .text         00000100  0000000140001000  0000000140001000  00000400  2**4
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  1 .data         00000070  0000000140002000  0000000140002000  00000600  2**4
+                  CONTENTS, ALLOC, LOAD, DATA
+  2 .rdata        00000020  0000000140003000  0000000140003000  00000800  2**4
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  3 .idata        000000ac  0000000140004000  0000000140004000  00000a00  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+SYMBOL TABLE:
+[  0](sec -2)(fl 0x00)(ty    0)(scl 103) (nx 1) 0x0000000000000025 fake
+File 
+[  2](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000000 hin
+[  3](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000008 hout
+[  4](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000010 nread
+[  5](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000018 nwr
+[  6](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000020 prompt
+[  7](sec -1)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000007 plen
+[  8](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000027 buf
+[  9](sec  1)(fl 0x00)(ty    0)(scl   6) (nx 0) 0x00000000000000a8 done
+[ 10](sec  1)(fl 0x00)(ty    0)(scl   6) (nx 0) 0x0000000000000095 up
+[ 11](sec  1)(fl 0x00)(ty    0)(scl   6) (nx 0) 0x00000000000000a3 skip
+[ 12](sec  1)(fl 0x00)(ty    0)(scl   3) (nx 1) 0x0000000000000000 .text
+AUX scnlen 0xdf nreloc 20 nlnno 0
+[ 14](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 1) 0x0000000000000000 .data
+AUX scnlen 0x67 nreloc 0 nlnno 0
+[ 16](sec  1)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x00000000000000e0 .text
+[ 17](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000070 .data
+[ 18](sec  0)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000000 .bss
+[ 19](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000098 .idata$7
+[ 20](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000058 .idata$5
+[ 21](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000038 .idata$4
+[ 22](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000084 .idata$6
+[ 23](sec  1)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x00000000000000e8 .text
+[ 24](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000070 .data
+[ 25](sec  0)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000000 .bss
+[ 26](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000094 .idata$7
+[ 27](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000050 .idata$5
+[ 28](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000030 .idata$4
+[ 29](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000078 .idata$6
+[ 30](sec  1)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x00000000000000f0 .text
+[ 31](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000070 .data
+[ 32](sec  0)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000000 .bss
+[ 33](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000090 .idata$7
+[ 34](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000048 .idata$5
+[ 35](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000028 .idata$4
+[ 36](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000068 .idata$6
+[ 37](sec -2)(fl 0x00)(ty    0)(scl 103) (nx 1) 0x0000000000000031 fake
+File 
+[ 39](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000028 hname
+[ 40](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000048 fthunk
+[ 41](sec  1)(fl 0x00)(ty    0)(scl   3) (nx 1) 0x0000000000000100 .text
+AUX scnlen 0x0 nreloc 0 nlnno 0
+[ 43](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 1) 0x0000000000000070 .data
+AUX scnlen 0x0 nreloc 0 nlnno 0
+[ 45](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 1) 0x0000000000000000 .idata$2
+AUX scnlen 0x14 nreloc 3 nlnno 0
+[ 47](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000028 .idata$4
+[ 48](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 0) 0x0000000000000048 .idata$5
+[ 49](sec -2)(fl 0x00)(ty    0)(scl 103) (nx 1) 0x000000000000003d fake
+File 
+[ 51](sec  1)(fl 0x00)(ty    0)(scl   3) (nx 1) 0x0000000000000100 .text
+AUX scnlen 0x0 nreloc 0 nlnno 0
+[ 53](sec  2)(fl 0x00)(ty    0)(scl   3) (nx 1) 0x0000000000000070 .data
+AUX scnlen 0x0 nreloc 0 nlnno 0
+[ 55](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 1) 0x0000000000000040 .idata$4
+AUX scnlen 0x8 nreloc 0 nlnno 0
+[ 57](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 1) 0x0000000000000060 .idata$5
+AUX scnlen 0x8 nreloc 0 nlnno 0
+[ 59](sec  4)(fl 0x00)(ty    0)(scl   3) (nx 1) 0x000000000000009c .idata$7
+AUX scnlen 0xd nreloc 0 nlnno 0
+[ 61](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 ___RUNTIME_PSEUDO_RELOC_LIST__
+[ 62](sec  4)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000048 __imp_GetStdHandle
+[ 63](sec  4)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x000000000000009c __lib64_libkernel32_a_iname
+[ 64](sec  2)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __data_start__
+[ 65](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000010 ___DTOR_LIST__
+[ 66](sec  1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 ___tls_start__
+[ 67](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __rt_psrelocs_start
+[ 68](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000160 __dll_characteristics__
+[ 69](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000001000 __size_of_stack_commit__
+[ 70](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000200000 __size_of_stack_reserve__
+[ 71](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000005 __major_subsystem_version__
+[ 72](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000020 ___crt_xl_start__
+[ 73](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000020 ___crt_xi_start__
+[ 74](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000020 ___crt_xi_end__
+[ 75](sec  4)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __bss_start__
+[ 76](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 ___RUNTIME_PSEUDO_RELOC_LIST_END__
+[ 77](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000001000 __size_of_heap_commit__
+[ 78](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000020 ___crt_xd_end__
+[ 79](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000020 ___crt_xp_start__
+[ 80](sec  4)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000050 __imp_ReadFile
+[ 81](sec  1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x00000000000000e8 ReadFile
+[ 82](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000020 ___crt_xp_end__
+[ 83](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __dll__
+[ 84](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __minor_os_version__
+[ 85](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000001000 __section_alignment__
+[ 86](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000020 ___crt_xd_start__
+[ 87](sec  4)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000068 __IAT_end__
+[ 88](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __RUNTIME_PSEUDO_RELOC_LIST__
+[ 89](sec  2)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000070 __data_end__
+[ 90](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __CTOR_LIST__
+[ 91](sec  4)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 _head_lib64_libkernel32_a
+[ 92](sec  4)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __bss_end__
+[ 93](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000020 ___crt_xc_end__
+[ 94](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000020 ___crt_xc_start__
+[ 95](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 ___CTOR_LIST__
+[ 96](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000200 __file_alignment__
+[ 97](sec  1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x00000000000000e0 WriteFile
+[ 98](sec  1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 main
+[ 99](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000004 __major_os_version__
+[100](sec  4)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000048 __IAT_start__
+[101](sec  1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __end__
+[102](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000010 __DTOR_LIST__
+[103](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000100000 __size_of_heap_reserve__
+[104](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000020 ___crt_xt_start__
+[105](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000003 __subsystem__
+[106](sec  4)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000058 __imp_WriteFile
+[107](sec  1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 ___tls_end__
+[108](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __major_image_version__
+[109](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __loader_flags__
+[110](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __rt_psrelocs_end
+[111](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000002 __minor_subsystem_version__
+[112](sec -1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __minor_image_version__
+[113](sec  0)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 mainCRTStartup
+[114](sec  1)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x00000000000000f0 GetStdHandle
+[115](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000000 __RUNTIME_PSEUDO_RELOC_LIST_END__
+[116](sec  3)(fl 0x00)(ty    0)(scl   2) (nx 0) 0x0000000000000020 ___crt_xt_end__
+
+
+
+Disassembly of section .text:
+
+0000000140001000 <___tls_end__>:
+   140001000:	55                   	push   rbp
+   140001001:	48 89 e5             	mov    rbp,rsp
+   140001004:	48 83 ec 30          	sub    rsp,0x30
+   140001008:	48 c7 c1 f6 ff ff ff 	mov    rcx,0xfffffffffffffff6
+   14000100f:	e8 dc 00 00 00       	call   1400010f0 <GetStdHandle>
+   140001014:	48 89 05 e5 0f 00 00 	mov    QWORD PTR [rip+0xfe5],rax        # 140002000 <__data_start__>
+   14000101b:	48 c7 c1 f5 ff ff ff 	mov    rcx,0xfffffffffffffff5
+   140001022:	e8 c9 00 00 00       	call   1400010f0 <GetStdHandle>
+   140001027:	48 89 05 da 0f 00 00 	mov    QWORD PTR [rip+0xfda],rax        # 140002008 <hout>
+   14000102e:	48 8b 0d d3 0f 00 00 	mov    rcx,QWORD PTR [rip+0xfd3]        # 140002008 <hout>
+   140001035:	48 8d 15 e4 0f 00 00 	lea    rdx,[rip+0xfe4]        # 140002020 <prompt>
+   14000103c:	49 c7 c0 07 00 00 00 	mov    r8,0x7
+   140001043:	4c 8d 0d ce 0f 00 00 	lea    r9,[rip+0xfce]        # 140002018 <nwr>
+   14000104a:	48 c7 44 24 20 00 00 	mov    QWORD PTR [rsp+0x20],0x0
+   140001051:	00 00 
+   140001053:	e8 88 00 00 00       	call   1400010e0 <WriteFile>
+   140001058:	48 8b 0d a1 0f 00 00 	mov    rcx,QWORD PTR [rip+0xfa1]        # 140002000 <__data_start__>
+   14000105f:	48 8d 15 c1 0f 00 00 	lea    rdx,[rip+0xfc1]        # 140002027 <buf>
+   140001066:	49 c7 c0 40 00 00 00 	mov    r8,0x40
+   14000106d:	4c 8d 0d 9c 0f 00 00 	lea    r9,[rip+0xf9c]        # 140002010 <nread>
+   140001074:	48 c7 44 24 20 00 00 	mov    QWORD PTR [rsp+0x20],0x0
+   14000107b:	00 00 
+   14000107d:	e8 66 00 00 00       	call   1400010e8 <ReadFile>
+   140001082:	48 8d 35 9e 0f 00 00 	lea    rsi,[rip+0xf9e]        # 140002027 <buf>
+   140001089:	48 8b 0d 80 0f 00 00 	mov    rcx,QWORD PTR [rip+0xf80]        # 140002010 <nread>
+   140001090:	48 85 c9             	test   rcx,rcx
+   140001093:	74 13                	je     1400010a8 <done>
+
+0000000140001095 <up>:
+   140001095:	8a 06                	mov    al,BYTE PTR [rsi]
+   140001097:	3c 61                	cmp    al,0x61
+   140001099:	72 08                	jb     1400010a3 <skip>
+   14000109b:	3c 7a                	cmp    al,0x7a
+   14000109d:	77 04                	ja     1400010a3 <skip>
+   14000109f:	2c 20                	sub    al,0x20
+   1400010a1:	88 06                	mov    BYTE PTR [rsi],al
+
+00000001400010a3 <skip>:
+   1400010a3:	48 ff c6             	inc    rsi
+   1400010a6:	e2 ed                	loop   140001095 <up>
+
+00000001400010a8 <done>:
+   1400010a8:	48 8b 0d 59 0f 00 00 	mov    rcx,QWORD PTR [rip+0xf59]        # 140002008 <hout>
+   1400010af:	48 8d 15 71 0f 00 00 	lea    rdx,[rip+0xf71]        # 140002027 <buf>
+   1400010b6:	4c 8b 05 53 0f 00 00 	mov    r8,QWORD PTR [rip+0xf53]        # 140002010 <nread>
+   1400010bd:	4c 8d 0d 54 0f 00 00 	lea    r9,[rip+0xf54]        # 140002018 <nwr>
+   1400010c4:	48 c7 44 24 20 00 00 	mov    QWORD PTR [rsp+0x20],0x0
+   1400010cb:	00 00 
+   1400010cd:	e8 0e 00 00 00       	call   1400010e0 <WriteFile>
+   1400010d2:	48 8b 05 37 0f 00 00 	mov    rax,QWORD PTR [rip+0xf37]        # 140002010 <nread>
+   1400010d9:	48 83 c4 30          	add    rsp,0x30
+   1400010dd:	5d                   	pop    rbp
+   1400010de:	c3                   	ret
+   1400010df:	90                   	nop
+
+00000001400010e0 <WriteFile>:
+   1400010e0:	ff 25 72 2f 00 00    	jmp    QWORD PTR [rip+0x2f72]        # 140004058 <__imp_WriteFile>
+   1400010e6:	90                   	nop
+   1400010e7:	90                   	nop
+
+00000001400010e8 <ReadFile>:
+   1400010e8:	ff 25 62 2f 00 00    	jmp    QWORD PTR [rip+0x2f62]        # 140004050 <__imp_ReadFile>
+   1400010ee:	90                   	nop
+   1400010ef:	90                   	nop
+
+00000001400010f0 <GetStdHandle>:
+   1400010f0:	ff 25 52 2f 00 00    	jmp    QWORD PTR [rip+0x2f52]        # 140004048 <__IAT_start__>
+   1400010f6:	90                   	nop
+   1400010f7:	90                   	nop
+   1400010f8:	0f 1f 84 00 00 00 00 	nop    DWORD PTR [rax+rax*1+0x0]
+   1400010ff:	00 

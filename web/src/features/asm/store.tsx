@@ -31,6 +31,12 @@
  * без последней правки значило бы показать ошибку, которой в редакторе уже
  * нет. Уход со страницы дописывает правку запросом `keepalive`.
  *
+ * **Режим — свойство программы.** Описатель режима (`toolchain`) лежит в
+ * контексте: всё, что у TASM завязано на 16 бит и сегменты (указатель стека для
+ * «шага с обходом», адреса, засечки вызовов), окна и каркас спрашивают у него.
+ * Пустая программа режима с примером, в которую ещё ни разу не писали,
+ * открывается с примером — он уезжает на том как обычная правка.
+ *
  * **Номера строк прогона — от текста, из которого он собран** (`run.source`).
  * После правки они уже не те: `sourceLineOf` переводит номер сборки в номер
  * нынешнего исходника (строки сопоставляются по содержимому), а номер за концом
@@ -66,15 +72,18 @@ import {
   startAsmRun,
   useAsmProgram,
   useAsmRun,
+  type AsmMemoryRange,
   type AsmProgram,
 } from './api'
 import { focusTab, useDock, type DockApi } from './dock/useDock'
-import type { AsmAnchor, AsmRunSummary, AsmSettings, AsmStep, AsmWindowId, Hex } from './types'
+import { SAMPLE_SOURCE, toolchainDef, type AsmToolchainDef } from './toolchains'
+import type { AsmAnchor, AsmRunSummary, AsmSettings, AsmStep, AsmToolchainId, AsmWindowId } from './types'
 
 // ── договор с окнами ─────────────────────────────────────────────────────────
 
 export interface AsmView {
-  bits: 16 | 32
+  /** 16/32 — по переключателю у TASM; у MinGW x64 всегда 64. */
+  bits: 16 | 32 | 64
   radix: 'hex' | 'dec'
   keyBar: boolean
   traceSlider: boolean
@@ -83,7 +92,10 @@ export interface AsmView {
 export interface AsmContextValue {
   projectId: string
   programId: string
-  program: { name: string; source: string; version: number } | undefined
+  /** Описатель режима программы. */
+  toolchain: AsmToolchainDef
+  /** `version` — счётчик записей исходника; `asmVersion` — версия инструментов. */
+  program: { name: string; source: string; version: number; toolchain: AsmToolchainId; asmVersion: string } | undefined
   /** С отложенным сохранением и 409. */
   setSource(source: string): void
   settings: AsmSettings
@@ -130,7 +142,8 @@ export interface AsmContextValue {
   /** Открывает «Справку» на записи. */
   openDocs(token: string | null): void
   markUnread(id: AsmWindowId): void
-  memory(step: number, ranges: { seg: Hex; off: Hex; len: number }[]): Promise<AsmRunSummary['dumps']>
+  /** `seg: null` — адрес плоской памяти (MinGW x64). */
+  memory(step: number, ranges: AsmMemoryRange[]): Promise<AsmRunSummary['dumps']>
   toast(text: string): void
   /**
    * Последний запрос к справке. `seq` растёт на каждый вызов, даже с тем же
@@ -217,31 +230,35 @@ const С_ТРАССОЙ = new Set<AsmRunSummary['status']>(['done', 'step_limit'
 
 const DEFAULT_VIEW: AsmView = { bits: 16, radix: 'hex', keyBar: true, traceSlider: true }
 
-function readView(): AsmView {
+/** Вид TASM живёт под прежним ключом, у других режимов — свой: разрядность у них разная. */
+function viewKey(tc: AsmToolchainDef): string {
+  return tc.id === 'tasm' ? VIEW_KEY : `${VIEW_KEY}.${tc.id}`
+}
+
+function readView(tc: AsmToolchainDef): AsmView {
+  const base: AsmView = { ...DEFAULT_VIEW, bits: tc.bits }
   try {
-    const raw = localStorage.getItem(VIEW_KEY)
-    if (!raw) return DEFAULT_VIEW
+    const raw = localStorage.getItem(viewKey(tc))
+    if (!raw) return base
     const v = JSON.parse(raw) as Partial<AsmView>
     return {
-      bits: v.bits === 32 ? 32 : 16,
+      bits: tc.bitsSwitch ? (v.bits === 32 ? 32 : 16) : tc.bits,
       radix: v.radix === 'dec' ? 'dec' : 'hex',
       keyBar: v.keyBar !== false,
       traceSlider: v.traceSlider !== false,
     }
   } catch {
-    return DEFAULT_VIEW
+    return base
   }
 }
 
-function writeView(v: AsmView): void {
+function writeView(tc: AsmToolchainDef, v: AsmView): void {
   try {
-    localStorage.setItem(VIEW_KEY, JSON.stringify(v))
+    localStorage.setItem(viewKey(tc), JSON.stringify(v))
   } catch {
     // Вид доживёт до перезагрузки.
   }
 }
-
-const hex = (h: string | undefined) => (h ? parseInt(h, 16) : NaN)
 
 /** Больше клеток таблица сопоставления не заводит: середина правки такого размера — уже другой текст. */
 const СОПОСТАВЛЕНИЕ_МАКС = 4_000_000
@@ -331,6 +348,10 @@ export function AsmProvider({
   const dock = useDock(me.data?.id)
   const programQ = useAsmProgram(projectId, programId)
   const name = programQ.data?.name ?? loaded.name
+  // Режим программы не меняется, версия инструментов — может (PATCH).
+  const toolchainId = loaded.toolchain
+  const toolchain = toolchainDef(toolchainId)
+  const asmVersion = programQ.data?.toolchain_version ?? loaded.toolchain_version
 
   // ── уведомление в строке ──
   const [notice, setNotice] = useState<{ text: string; seq: number } | null>(null)
@@ -452,6 +473,15 @@ export function AsmProvider({
     [saveSource],
   )
 
+  // Пример режима в пустую программу: только если в исходник ещё ни разу не
+  // писали (версия 0). Стёртый человеком текст остаётся стёртым.
+  useEffect(() => {
+    const пример = SAMPLE_SOURCE[loaded.toolchain]
+    if (пример && loaded.version === 0 && !loaded.source.trim()) setSource(пример)
+    // Один раз на открытие программы: провайдер пересоздаётся ключом страницы.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const resolveConflict = useCallback(
     (keep: 'theirs' | 'mine') => {
       if (!conflict) return
@@ -561,7 +591,8 @@ export function AsmProvider({
 
   const progress = useMemo<RunProgress>(() => {
     // Ход задания — кадр `progress` очереди `{step, total, note}`; этап сборки
-    // (`tasm` → `tlink` → `trace`) служба кладёт в `note`, шаги трассы — в `step`/`total`.
+    // (`toolchain.stages`: `tasm` → `tlink` → `trace` или `as` → `ld` → `trace`)
+    // служба кладёт в `note`, шаги трассы — в `step`/`total`.
     let p: RunProgress = { stage: null, n: null, of: null }
     for (const кадр of stream.events) {
       if (кадр.kind !== 'progress') continue
@@ -823,14 +854,16 @@ export function AsmProvider({
       const команда = cur?.next?.asm ?? ''
       if (!cur || !/^\s*call\b/i.test(команда)) return stepInto()
       // После CALL указатель стека ниже; вернулся — значит, подпрограмма кончилась.
-      const sp = hex(cur.reg.sp)
-      const k = await scan(stepIndex + 1, (s) => hex(s.reg.sp) >= sp)
+      // SP или RSP — по режиму, сравнение числом.
+      const sp = toolchain.addr.sp(cur)
+      if (sp == null) return stepInto()
+      const k = await scan(stepIndex + 1, (s) => (toolchain.addr.sp(s) ?? -Infinity) >= sp)
       if (k === null) {
         goto(lastIndex)
         toast(t('asm.status.noReturn'))
       } else goto(k)
     })()
-  }, [traceReady, нетТрассы, loadStep, stepIndex, stepInto, scan, goto, lastIndex, toast, t])
+  }, [traceReady, нетТрассы, loadStep, stepIndex, stepInto, scan, goto, lastIndex, toast, t, toolchain])
 
   const [cursorLine, setCursorLine] = useState<number | null>(null)
   const [selection, setSelection] = useState<AsmAnchor | null>(null)
@@ -863,14 +896,19 @@ export function AsmProvider({
   const toEnd = useCallback(() => (traceReady ? goto(lastIndex) : нетТрассы()), [traceReady, goto, lastIndex, нетТрассы])
 
   // ── вид, окна, запросы к агенту и справке ──
-  const [view, setViewState] = useState<AsmView>(readView)
-  const setView = useCallback((p: Partial<AsmView>) => {
-    setViewState((was) => {
-      const next = { ...was, ...p }
-      writeView(next)
-      return next
-    })
-  }, [])
+  const [view, setViewState] = useState<AsmView>(() => readView(toolchain))
+  const setView = useCallback(
+    (p: Partial<AsmView>) => {
+      setViewState((was) => {
+        const next = { ...was, ...p }
+        // Разрядность без переключателя — всегда разрядность режима.
+        if (!toolchain.bitsSwitch) next.bits = toolchain.bits
+        writeView(toolchain, next)
+        return next
+      })
+    },
+    [toolchain],
+  )
 
   const openWindow = useCallback(
     (id: AsmWindowId, opts?: { focus?: boolean }) => {
@@ -909,7 +947,7 @@ export function AsmProvider({
   )
 
   const memory = useCallback(
-    (step: number, ranges: { seg: Hex; off: Hex; len: number }[]) => {
+    (step: number, ranges: AsmMemoryRange[]) => {
       if (!run) return Promise.reject(new Error('no run'))
       return requestAsmMemory(projectId, programId, run.run_no, step, ranges)
     },
@@ -928,7 +966,8 @@ export function AsmProvider({
     () => ({
       projectId,
       programId,
-      program: { name, source, version },
+      toolchain,
+      program: { name, source, version, toolchain: toolchainId, asmVersion },
       setSource,
       settings,
       updateSettings,
@@ -967,7 +1006,7 @@ export function AsmProvider({
       agentRequest,
     }),
     [
-      projectId, programId, name, source, version, setSource, settings, updateSettings, run, runBusy,
+      projectId, programId, toolchain, toolchainId, asmVersion, name, source, version, setSource, settings, updateSettings, run, runBusy,
       buildAndRun, buildOnly, buildStale, sourceLineOf, stepIndex, step, prevStep, getStep, loadedSteps, goto, stepOver, stepInto, stepBack,
       runToCursor, runToBreakpoint, toStart, toEnd, cursorLine, selection, view, setView, openWindow,
       askAgent, openDocs, dock.markUnread, memory, toast, docsRequest, agentRequest,

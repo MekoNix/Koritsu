@@ -3,7 +3,7 @@
  * с номером шага и метки.
  *
  * Своя, а не `<input type=range>`: на дорожке стоят метки — точки останова,
- * вызовы DOS, выход, свёрнутая середина, — и у нативного ползунка их некуда
+ * вызовы DOS или API, выход, свёрнутая середина, — и у нативного ползунка их некуда
  * положить так, чтобы они совпадали с бегунком во всех браузерах.
  *
  * Метки прореживаются до пикселя: на трассе в сто тысяч шагов вызовов `int 21h`
@@ -33,6 +33,8 @@ interface TraceTrackProps {
   breakpoints: readonly number[]
   /** Шаги с вызовом DOS. */
   dosCalls: readonly number[]
+  /** Шаги, выполнившие вызов API (MinGW x64), с направлением данных — цвет засечки. */
+  apiCalls?: readonly { i: number; io: 'in' | 'out' | 'exit' | 'other' }[]
   /** Шаг выхода программы. */
   exit: number | null
   label: string
@@ -49,7 +51,7 @@ function thin(steps: readonly number[], span: number, width: number): number[] {
   return [...seen]
 }
 
-export default function TraceTrack({ value, total, disabled, gap, breakpoints, dosCalls, exit, label, valueText, gapText, onChange }: TraceTrackProps) {
+export default function TraceTrack({ value, total, disabled, gap, breakpoints, dosCalls, apiCalls, exit, label, valueText, gapText, onChange }: TraceTrackProps) {
   const rail = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   const [drag, setDrag] = useState(false)
@@ -70,6 +72,17 @@ export default function TraceTrack({ value, total, disabled, gap, breakpoints, d
   const pct = (Math.max(0, Math.min(total, value)) / span) * 100
   const bpPx = useMemo(() => thin(breakpoints, span, width), [breakpoints, span, width])
   const dosPx = useMemo(() => thin(dosCalls, span, width), [dosCalls, span, width])
+  // Засечки API прореживаются так же; на одном пикселе ввод, вывод и выход важнее прочих вызовов.
+  const apiPx = useMemo(() => {
+    if (!apiCalls?.length || width <= 0) return []
+    const seen = new Map<number, string>()
+    for (const c of apiCalls) {
+      const px = Math.round((c.i / span) * width)
+      const had = seen.get(px)
+      if (!had || had === 'other') seen.set(px, c.io)
+    }
+    return [...seen.entries()]
+  }, [apiCalls, span, width])
   const exitPx = exit != null && width > 0 ? Math.round((exit / span) * width) : null
 
   const fromPointer = (clientX: number) => {
@@ -169,6 +182,9 @@ export default function TraceTrack({ value, total, disabled, gap, breakpoints, d
         )}
         {dosPx.map((px) => (
           <span key={`d${px}`} className="trk-mk is-dos" aria-hidden="true" style={{ left: px }} />
+        ))}
+        {apiPx.map(([px, io]) => (
+          <span key={`a${px}`} className={`trk-mk is-api io-${io}`} aria-hidden="true" style={{ left: px }} />
         ))}
         {exitPx != null && <span className="trk-mk is-exit" aria-hidden="true" style={{ left: exitPx }} />}
         {bpPx.map((px) => (

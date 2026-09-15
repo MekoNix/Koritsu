@@ -35,9 +35,9 @@ import { t as translate, useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { Spinner } from '@/ui'
 
-import { useAsmUi } from '../store'
+import { useAsm, useAsmUi } from '../store'
 import type { AsmWindowId } from '../types'
-import { WINDOW_BY_ID } from '../windows/registry'
+import { windowDefFor } from '../windows/registry'
 import type { DockGroup, DockNode, DockSplit, DropTarget } from './model'
 import { focusTab } from './useDock'
 
@@ -54,6 +54,10 @@ interface DragState {
 export function Dock() {
   const t = useT()
   const { dock } = useAsmUi()
+  // Окна и заголовки — по режиму программы; id и раскладка общие.
+  const { toolchain } = useAsm()
+  const toolchainRef = useRef(toolchain)
+  toolchainRef.current = toolchain
   const ghost = useRef<HTMLDivElement>(null)
   const drop = useRef<HTMLDivElement>(null)
   const ins = useRef<HTMLDivElement>(null)
@@ -133,7 +137,7 @@ export function Dock() {
         d.on = true
         document.body.classList.add('asm-dragging')
         if (ghost.current) {
-          ghost.current.textContent = translate(WINDOW_BY_ID[d.id].title)
+          ghost.current.textContent = translate(windowDefFor(toolchainRef.current, d.id).title)
           ghost.current.hidden = false
         }
       }
@@ -338,6 +342,7 @@ function SplitChild({ children }: { children: ReactNode }) {
 function GroupView({ group, startDrag, mounted }: NodeProps & { group: DockGroup }) {
   const t = useT()
   const { dock } = useAsmUi()
+  const { toolchain } = useAsm()
   const narrow = group.id === 'narrow'
   mounted.add(group.active)
   const isFocus = dock.focus === group.active
@@ -378,7 +383,7 @@ function GroupView({ group, startDrag, mounted }: NodeProps & { group: DockGroup
     <div className={cn('asm-dk-group', isFocus && 'is-focus')} data-asm-group={group.id}>
       <div className="asm-dk-tabs" role="tablist" data-asm-tabs>
         {group.tabs.map((id) => {
-          const def = WINDOW_BY_ID[id]
+          const def = windowDefFor(toolchain, id)
           const sel = id === group.active
           const title = t(def.title)
           return (
@@ -415,7 +420,7 @@ function GroupView({ group, startDrag, mounted }: NodeProps & { group: DockGroup
         {group.tabs.map((id) => {
           if (!mounted.has(id)) return null
           const active = id === group.active
-          const { Component } = WINDOW_BY_ID[id]
+          const { Component } = windowDefFor(toolchain, id)
           return (
             <section
               key={id}

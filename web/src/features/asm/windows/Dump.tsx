@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 
 import { useAsm } from '@/features/asm/store'
-import type { AsmWindowProps } from '@/features/asm/types'
+import { isSegmentedLoad, type AsmWindowProps } from '@/features/asm/types'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 
@@ -90,7 +90,8 @@ export default function Dump({ active }: AsmWindowProps) {
     setText(`${selection.seg}:${selection.off}`)
   }, [selection])
 
-  const ds = reg(st, 'ds') ?? parseHex(run?.load?.ds)
+  const load = run?.load
+  const ds = reg(st, 'ds') ?? parseHex(isSegmentedLoad(load) ? load.ds : undefined)
   const ptr = (s: 'ds' | 'es' | 'ss', o: 'si' | 'di' | 'sp' | 'dx') => {
     const sv = reg(st, s)
     const ov = reg(st, o)

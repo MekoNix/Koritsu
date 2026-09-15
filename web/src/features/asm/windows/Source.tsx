@@ -19,7 +19,7 @@
  */
 import { defaultKeymap, history, historyKeymap, indentWithTab, redo, undo } from '@codemirror/commands'
 import { HighlightStyle, indentUnit, syntaxHighlighting } from '@codemirror/language'
-import { Annotation, EditorState, MapMode, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state'
+import { Annotation, Compartment, EditorState, MapMode, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state'
 import {
   Decoration,
   EditorView,
@@ -38,7 +38,7 @@ import { useAsm } from '@/features/asm/store'
 import type { AsmWindowProps } from '@/features/asm/types'
 import { t as translate, useT } from '@/i18n'
 
-import { hasTrace, nextOf, textAnchor, useAnchorMenu, useSelectionAsk, type TextAnchor } from './format'
+import { hasTrace, hexFlat, nextOf, parseHex, textAnchor, useAnchorMenu, useSelectionAsk, useToolchainLanguage, type TextAnchor } from './format'
 import { mnemonicOf, tasmLanguage } from './tasmLanguage'
 
 /** Выделение редактора якорем `text`: главный диапазон и строки, которые он задевает. */
@@ -238,8 +238,16 @@ const SENT_MEMORY = 32
 export default function Source({ active }: AsmWindowProps) {
   const t = useT()
   const asm = useAsm()
-  const { program, run, step, stepIndex, settings, cursorLine } = asm
+  const { program, run, step, stepIndex, settings, cursorLine, toolchain } = asm
+  const tasm = toolchain.id === 'tasm'
   const menu = useAnchorMenu()
+  // Подсветка: у TASM — как была, сразу; у остальных режимов — описателя,
+  // лениво, и подставляется в редактор, когда загрузится.
+  const lang = useToolchainLanguage()
+  const langRef = useRef(lang)
+  langRef.current = lang
+  const langSlot = useRef(new Compartment())
+  const mnemonic = (text: string) => (latest.current.toolchain.id === 'tasm' ? mnemonicOf(text) : (langRef.current?.mnemonicOf(text) ?? null))
   const host = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   // Store и меню держим ссылками: редактор создаётся один раз, а его
@@ -297,7 +305,7 @@ export default function Source({ active }: AsmWindowProps) {
         highlightActiveLineGutter(),
         indentUnit.of('        '),
         EditorState.tabSize.of(8),
-        tasmLanguage,
+        langSlot.current.of(latest.current.toolchain.id === 'tasm' ? tasmLanguage : (langRef.current?.language ?? [])),
         syntaxHighlighting(подсветка),
         тема,
         lineMarks,
@@ -338,11 +346,11 @@ export default function Source({ active }: AsmWindowProps) {
             const pos = view.posAtCoords({ x: e.clientX, y: e.clientY })
             if (pos == null) return false
             const line = view.state.doc.lineAt(pos)
-            openMenu.current(e, { kind: 'line', line: line.number }, mnemonicOf(line.text), selectedInView(view))
+            openMenu.current(e, { kind: 'line', line: line.number }, mnemonic(line.text), selectedInView(view))
             return true
           },
         }),
-        EditorView.contentAttributes.of({ 'aria-label': t('asm.source.aria') }),
+        EditorView.contentAttributes.of({ 'aria-label': t(latest.current.toolchain.id === 'tasm' ? 'asm.source.aria' : 'asm64.source.aria') }),
       ],
     })
     const view = new EditorView({ state, parent: host.current })
@@ -355,6 +363,13 @@ export default function Source({ active }: AsmWindowProps) {
     // курсор приходят в него отдельными эффектами ниже.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded])
+
+  // Подсветка режима загрузилась позже редактора — подставить.
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || tasm || !lang) return
+    view.dispatch({ effects: langSlot.current.reconfigure(lang.language) })
+  }, [lang, tasm, loaded])
 
   // Сообщения сборки встают на строки, когда пришёл прогон или текст заменили
   // снаружи, а дальше едут с правками сами (`messagesField`). Номер сборки
@@ -402,6 +417,8 @@ export default function Source({ active }: AsmWindowProps) {
   const doneLine = trace && stepIndex > 0 ? (step?.line ?? null) : null
   const cur = nextLine == null ? null : sourceLineOf(nextLine)
   const was = doneLine == null ? null : sourceLineOf(doneLine)
+  // Плоская память: адрес следующей команды 16 знаками рядом с именем программы.
+  const nextIp = trace && toolchain.memory === 'flat' ? parseHex(nextOf(step)?.ip) : null
 
   const marks = useMemo<Marks>(
     () => ({ bps: new Set(settings.breakpoints), cur, was, stale: buildStale }),
@@ -452,8 +469,9 @@ export default function Source({ active }: AsmWindowProps) {
     <section ref={sectionRef} className="relative flex h-full min-h-0 flex-col" aria-label={t('asm.tabs.source')}>
       <div className="pt">
         <span className="m truncate text-ink">{program?.name ?? ''}</span>
+        {nextIp != null && <span className="m">{`${t('asm64.slider.addrLabel')} ${hexFlat(nextIp)}`}</span>}
         <span className="grow" />
-        <span className="m">{t('asm.source.hint')}</span>
+        <span className="m">{t(tasm ? 'asm.source.hint' : 'asm64.source.hint')}</span>
       </div>
       {loaded ? <div ref={host} className="min-h-0 flex-1 overflow-hidden" /> : <div className="empty">{t('asm.source.loading')}</div>}
       {ask.element}

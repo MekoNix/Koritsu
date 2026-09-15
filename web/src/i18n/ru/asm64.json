@@ -1,0 +1,136 @@
+{
+  "tabs": {
+    "raw": "Отладчик"
+  },
+  "keys": {
+    "env": "GNU as · ld · Windows x64"
+  },
+  "stage": {
+    "as": "as · .obj",
+    "ld": "ld · .exe",
+    "trace": "трасса"
+  },
+  "flagName": {
+    "OF": "переполнение",
+    "DF": "направление",
+    "IF": "прерывания",
+    "TF": "пошаговый режим",
+    "SF": "знак",
+    "ZF": "ноль",
+    "AF": "полуперенос",
+    "PF": "чётность",
+    "CF": "перенос"
+  },
+  "registers": {
+    "afterStep": "после шага {step}",
+    "flagsHead": "ФЛАГИ · RFLAGS",
+    "bit": "бит {n}",
+    "segments": "CS DS SS ES FS GS · плоская модель",
+    "segmentsHint": "В Windows x64 сегментные регистры ни на что не указывают; GS — адрес блока потока (TEB)",
+    "gsNote": "блок потока (TEB)",
+    "parts": "Части: {parts}",
+    "partsHint": "Наведите на регистр — здесь его части: EAX, AX, AH, AL или R8D, R8W, R8B",
+    "signed": "со знаком {v}",
+    "ripLine": "стр. {line}",
+    "rspAlign": "RSP кратен 16",
+    "yes": "да",
+    "no": "нет",
+    "rspAlignHint": "Перед call RSP должен быть кратен 16 — так требует соглашение Microsoft x64. Сразу после call (на входе в процедуру) остаток 8 — это нормально.",
+    "rspAlignBad": "перед call стек не выровнен: RSP mod 16 = {n}",
+    "rspAlignEntry": "остаток {n}",
+    "atRsp": "[RSP]",
+    "atRbp": "[RBP+8]",
+    "ripAt": "RIP →",
+    "call": "Шаг выполнил вызов {name} целиком · RAX = {rax}",
+    "callVolatile": "RCX, RDX, R8–R11 вызов вправе испортить; RBX, RBP, RDI, RSI, R12–R15 сохранены",
+    "volatileMark": "испорчен вызовом",
+    "nextCall": "Следующая команда — вызов {name}: в kernel32 не заходим, вызов — один шаг",
+    "unknown": "??"
+  },
+  "dump": {
+    "address": "адрес",
+    "addressHint": "0x140003000, 140003000h, message, message+8, rsp+32, [rsp], .data",
+    "bad": "адрес не разобран — в Windows-программе адрес одно число: 0x140003000 или message",
+    "unknown": "не прочитан",
+    "fetching": "читаю память на шаге {step}…",
+    "fetchError": "память не прочиталась",
+    "outside": "вне секций образа",
+    "stack": "стек",
+    "sectionHint": "{name} · {start} · {size} Б",
+    "callBuffer": "буфер {name}: {param}",
+    "outCount": "{name}: {param}"
+  },
+  "stack": {
+    "meta": "RSP = {rsp} · RBP = {rbp}",
+    "depth": "от входа {n} Б",
+    "rspMark": "← RSP",
+    "rspMarkOdd": "← RSP = {rsp} (посреди слова)",
+    "rbpMark": "RBP →",
+    "trace": "след: снято со стека",
+    "free": "свободно",
+    "ret": "адрес возврата → стр. {line} · call {target}",
+    "retNoLine": "адрес возврата · call {target}",
+    "retStale": "адрес возврата шага {step} перезаписан",
+    "savedRbp": "сохранённый RBP · шаг {step}",
+    "push": "{asm} · шаг {step}",
+    "frame": "кадр {name} · RBP = {rbp}",
+    "frameNoName": "кадр · RBP = {rbp}",
+    "shadow": "shadow space +{off}",
+    "shadowHint": "32 байта над RSP вызывающий оставляет вызываемой функции: она вправе их испортить",
+    "arg": "{name} · параметр {n}",
+    "argsHead": "Параметры {name} по Microsoft x64",
+    "argsNone": "{name} — без параметров",
+    "misaligned": "RSP = {rsp} не кратен 8: стек съехал на {n} Б. Команда «{asm}» сдвинула RSP не на 8 байт — pop bp снимает 2, pop rbp — 8.",
+    "retWrong": "ret возьмёт из [RSP] значение {value} — там не адрес возврата, программа уйдёт по мусору",
+    "alignCall": "RSP перед call не кратен 16 (остаток {n}) — Windows вправе упасть внутри вызова",
+    "entryRet": "возврат в систему: точку входа вызвал загрузчик",
+    "note": "Выше RSP — стек, ниже — след: push и call кладут туда слова, pop и ret их не стирают. Параметры сверх четырёх лежат с [RSP+32], под ними — 32 байта shadow space.",
+    "pushed": "RSP −{n}",
+    "popped": "RSP +{n}",
+    "text": "«{text}»",
+    "symbol": "→ {name}",
+    "dec": "= {n}"
+  },
+  "listing": {
+    "colAddr": "RIP",
+    "colSource": "исходник GAS"
+  },
+  "source": {
+    "aria": "Исходник GAS",
+    "hint": "Ctrl+Enter — собрать и запустить · комментарий — #"
+  },
+  "build": {
+    "okTracing": "собрано · пишется трасса…",
+    "stopped": "сборка остановлена: ld и трасса не запускались"
+  },
+  "trace": {
+    "building": "Пишется трасса…"
+  },
+  "input": {
+    "stdinLabel": "stdin — строка до Enter на каждый вызов ReadFile или ReadConsoleA",
+    "hintOver": "Ещё {n} раз ввод уже кончился: ReadFile вернул 0 прочитанных байт.",
+    "readAtCall": "прочитан шагом {step} ({call})",
+    "crlf": "Enter программа получает двумя байтами \\r\\n — они входят в число прочитанных."
+  },
+  "watch": {
+    "placeholder": "rax, al, ZF, [rip+handle], rsp+32",
+    "bad": "не разобрать: регистр, флаг, адрес или [адрес]",
+    "at": "по адресу {addr}",
+    "sizes": {
+      "1": "byte",
+      "2": "word",
+      "4": "dword",
+      "8": "qword"
+    }
+  },
+  "raw": {
+    "meta": "сырой вывод трассировщика · шаги {from}–{to}",
+    "loading": "Загружаю вывод трассировщика…",
+    "error": "Вывод трассировщика не загрузился."
+  },
+  "slider": {
+    "addrLabel": "адрес команды RIP =",
+    "apiNext": "в kernel32 не заходим: вызов — один шаг",
+    "apiDone": "вызов {call} → RAX = {rax}"
+  }
+}

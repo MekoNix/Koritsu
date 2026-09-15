@@ -1,6 +1,8 @@
 /**
- * entries — записи справки модуля «Ассемблер»: инструкции 8086, функции DOS
- * и BIOS, регистры и флаги, директивы TASM, адресация, команды DebugX.
+ * entries — записи справки режима TASM: инструкции 8086, функции DOS и BIOS,
+ * регистры и флаги, директивы TASM, адресация, команды DebugX. Здесь же тип
+ * записи и разделы, общие для всех наборов: справка режима MinGW x64 лежит в
+ * `entries64.ts`, окно получает набор из описателя режима (`toolchain.docs()`).
  *
  * Тексты записей — содержимое, а не подписи интерфейса, поэтому живут здесь, а
  * не в словаре i18n: у записи десяток связанных полей, и разнесённые по ключам
@@ -16,7 +18,25 @@
  * остаётся регистром, а не мнемоникой флага IF).
  */
 
-export type DocSection = 'cmd' | 'dos' | 'bios' | 'reg' | 'dir' | 'addr' | 'dbg'
+/**
+ * Раздел записи. TASM: `cmd dos bios reg dir addr dbg`; MinGW x64: `cmd reg addr
+ * gas conv api build pitfall att`. Окно показывает только разделы, в которых у
+ * набора есть записи.
+ */
+export type DocSection =
+  | 'cmd'
+  | 'dos'
+  | 'bios'
+  | 'reg'
+  | 'dir'
+  | 'addr'
+  | 'gas'
+  | 'conv'
+  | 'api'
+  | 'build'
+  | 'pitfall'
+  | 'att'
+  | 'dbg'
 
 /** Регистр или ячейка и что в ней: строка таблицы «Вход» / «Выход». */
 export type DocIoRow = readonly [where: string, what: string]
@@ -50,7 +70,11 @@ export interface DocEntry {
   kw: string
 }
 
-/** Разделы в порядке показа. Названия — часть содержимого справки. */
+/**
+ * Разделы всех наборов в порядке показа. Названия — часть содержимого справки.
+ * Порядок записан так, что и у TASM, и у MinGW x64 разделы идут в своём
+ * привычном порядке, когда лишние отфильтрованы.
+ */
 export const DOC_SECTIONS: readonly { id: DocSection; title: string }[] = [
   { id: 'cmd', title: 'Инструкции' },
   { id: 'dos', title: 'DOS · int 21h' },
@@ -58,6 +82,12 @@ export const DOC_SECTIONS: readonly { id: DocSection; title: string }[] = [
   { id: 'reg', title: 'Регистры и флаги' },
   { id: 'dir', title: 'Директивы TASM' },
   { id: 'addr', title: 'Адресация' },
+  { id: 'gas', title: 'Директивы GAS' },
+  { id: 'conv', title: 'Соглашение Microsoft x64' },
+  { id: 'api', title: 'kernel32' },
+  { id: 'build', title: 'Сборка as и ld' },
+  { id: 'pitfall', title: 'Типовые ошибки' },
+  { id: 'att', title: 'AT&T ↔ Intel' },
   { id: 'dbg', title: 'DebugX' },
 ]
 

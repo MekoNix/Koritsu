@@ -40,6 +40,54 @@ import {
   type MemView,
   type Radix,
 } from './format'
+import { flagBitOf, fmtBig, hex16, hexOf, isFlag64, parseFlatRef, readLE, regBig, signed, subRegister, type Flag64 } from './flat'
+
+/**
+ * Выражение плоской памяти (MinGW x64): флаг RFLAGS, регистр или его часть
+ * (`rax`, `ecx`, `al`, `r8d`), адрес (`rsp+32`, `handle`, `0x140003000`) или
+ * значение по адресу (`[rip+handle]`, `dword ptr [rsp+32]`). Адрес без скобок
+ * тоже читается — значением по нему: наблюдают за содержимым, а не за числом.
+ * Размер без `byte/word/dword/qword` — размер переменной (1, 2, 4 или 8 байт),
+ * иначе восемь байт.
+ */
+function evaluate64(expr: string, step: AsmStep, prev: AsmStep | undefined, run: AsmRunSummary | undefined, mem: MemView, radix: Radix): Evaluated | null {
+  const e = expr.trim()
+  if (isFlag64(e)) {
+    const f = e.toUpperCase() as Flag64
+    const v = regBig(step, 'rflags')
+    const pv = regBig(prev, 'rflags')
+    if (v == null) return null
+    const b = flagBitOf(v, f)
+    return { text: String(b), note: tr(`asm64.flagName.${f}`), anchor: { kind: 'flag', name: f }, changed: pv != null && flagBitOf(pv, f) !== b }
+  }
+  const sub = subRegister(e)
+  if (sub) {
+    const v = regBig(step, e)
+    if (v == null) return null
+    const pv = regBig(prev, e)
+    const digits = sub.bits / 4
+    const s = signed(v, sub.bits)
+    const alt = radix === 'hex' ? `${fmtBig(v)}${s < 0n ? ` / ${fmtBig(s)}` : ''}` : `${hexOf(v, digits)}h`
+    return {
+      text: radix === 'hex' ? hexOf(v, digits) : v.toString(),
+      note: sub.bits === 8 && v >= 32n && v < 127n ? `${alt} «${String.fromCharCode(Number(v))}»` : alt,
+      anchor: { kind: 'register', name: e.toUpperCase() },
+      changed: pv != null && pv !== v,
+    }
+  }
+  const ref = parseFlatRef(e, step, run)
+  if (!ref) return null
+  const symSize = ref.symbol?.size
+  const size = ref.size ?? (symSize === 1 || symSize === 2 || symSize === 4 || symSize === 8 ? symSize : 8)
+  const v = readLE((a) => mem.get(a), ref.addr, size)
+  const at = hex16(ref.addr)
+  return {
+    text: v == null ? '··'.repeat(size) : radix === 'hex' ? hexOf(v, size * 2) : v.toString(),
+    note: `${tr(`asm64.watch.sizes.${size}`)} · ${tr('asm64.watch.at', { addr: at })}`,
+    anchor: { kind: 'cell', seg: null, off: at },
+    changed: Array.from({ length: size }, (_, j) => ref.addr + j).some((a) => mem.changed.has(a)),
+  }
+}
 
 /** Больше выражений окно не держит: длинный список уже не «наблюдение», а дамп. */
 const MAX_WATCHES = 32
@@ -110,6 +158,7 @@ export default function Watch({ active }: AsmWindowProps) {
   const st = trace ? step : undefined
   const prev = trace && stepIndex > 0 ? prevStep : undefined
   const [draft, setDraft] = useState('')
+  const flat = asm.toolchain.memory === 'flat'
 
   const add = (e: FormEvent) => {
     e.preventDefault()
@@ -131,7 +180,7 @@ export default function Watch({ active }: AsmWindowProps) {
           id="asm-watch-input"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={t('asm.watch.placeholder')}
+          placeholder={t(flat ? 'asm64.watch.placeholder' : 'asm.watch.placeholder')}
           autoComplete="off"
           spellCheck={false}
         />
@@ -144,7 +193,7 @@ export default function Watch({ active }: AsmWindowProps) {
           <div className="empty">{t('asm.watch.empty')}</div>
         ) : (
           settings.watches.map((expr, i) => {
-            const v = st ? evaluate(expr, st, prev, run, symbols, mem, view.radix) : null
+            const v = st ? (flat ? evaluate64(expr, st, prev, run, mem, view.radix) : evaluate(expr, st, prev, run, symbols, mem, view.radix)) : null
             return (
               <div
                 key={`${expr}:${i}`}
@@ -157,7 +206,7 @@ export default function Watch({ active }: AsmWindowProps) {
               >
                 <span className="we">{expr}</span>
                 <span className="wv">{v ? v.text : st ? <span className="bad">?</span> : '—'}</span>
-                <span className="wd">{v ? v.note : st ? t('asm.watch.bad') : t('asm.watch.noTrace')}</span>
+                <span className="wd">{v ? v.note : st ? t(flat ? 'asm64.watch.bad' : 'asm.watch.bad') : t('asm.watch.noTrace')}</span>
                 <button
                   type="button"
                   className="x"

@@ -8,7 +8,12 @@
  * **Программа — решение работы.** Служба различает программы парой «работа +
  * решение», как доски; человеку работа не показывается, но в адресах она есть.
  * Окнам пару передавать незачем: её держит `AsmAddressContext`, который ставит
- * страница программы, и хуки вроде `useAsmDebugx` берут адрес оттуда.
+ * страница программы, и хуки вроде `useAsmRaw` берут адрес оттуда.
+ *
+ * **Режим программы** (`toolchain`) и версия инструментов (`toolchain_version`)
+ * приходят в карточке, программе и итоге прогона. Программы и прогоны,
+ * заведённые до появления режимов, полей не несут — это TASM 4.1; умолчание
+ * подставляется здесь, при чтении, и дальше окна его не проверяют.
  *
  * **Адреса и тела проверяются схемой** (`schema.d.ts`), а формы ответов названы
  * здесь явно, как у доски: схема описывает регистры и шаги словарями строк, а
@@ -25,21 +30,50 @@ import { createContext, useContext } from 'react'
 import { ApiError, api, isTerminal, keys, unwrap } from '@/api'
 import type { Job } from '@/api/hooks'
 
-import type { AsmAnchor, AsmRunSummary, AsmSettings, AsmStep } from './types'
+import type {
+  AsmAnchor,
+  AsmRunSummary,
+  AsmSettings,
+  AsmStep,
+  AsmToolchainId,
+  AsmToolchainStatus,
+  Hex,
+} from './types'
 
 function путь(projectId: string, programId: string) {
   return { project_id: projectId, program_id: programId }
 }
 
+// ── режим ────────────────────────────────────────────────────────────────────
+
+/** Версия по умолчанию, если служба её не назвала. */
+export const TOOLCHAIN_DEFAULT_VERSION: Readonly<Record<AsmToolchainId, string>> = {
+  tasm: '4.1',
+  mingw64: '2.44',
+}
+
+/** Режим из ответа службы: нет поля или незнакомое значение — TASM. */
+export function toolchainOf(raw: unknown): AsmToolchainId {
+  return raw === 'mingw64' ? 'mingw64' : 'tasm'
+}
+
+function versionOf(toolchain: AsmToolchainId, raw: unknown): string {
+  return typeof raw === 'string' && raw ? raw : TOOLCHAIN_DEFAULT_VERSION[toolchain]
+}
+
 // ── формы ────────────────────────────────────────────────────────────────────
 
-/** `GET /api/asm/status`: что нашлось из инструментов на машине службы. */
+/**
+ * `GET /api/asm/status`: что нашлось на машине службы. Поля верхнего уровня —
+ * про TASM, как было; `toolchains` — режимы с версиями и готовностью.
+ */
 export interface AsmStatus {
   available: boolean
   dosbox: boolean
   tasm: boolean
   tlink: boolean
   debugx: boolean
+  toolchains: AsmToolchainStatus[]
 }
 
 /** Карточка программы в списке пространства. */
@@ -50,6 +84,8 @@ export interface AsmProgramCard {
   n: number
   updated_at: string | null
   last_status: AsmRunSummary['status'] | null
+  toolchain: AsmToolchainId
+  toolchain_version: string
 }
 
 /** Программа целиком: исходник, версия записи и настройки прогона. */
@@ -59,11 +95,23 @@ export interface AsmProgram {
   name: string
   n: number
   source: string
+  /** Счётчик записей исходника (оптимистическая блокировка), не версия инструментов. */
   version: number
   settings: Partial<AsmSettings>
   breakpoints: number[]
   watches: string[]
   last_run_no: number | null
+  toolchain: AsmToolchainId
+  toolchain_version: string
+}
+
+export interface AsmProgramCreated {
+  project_id: string
+  program_id: string
+  name: string
+  n: number
+  toolchain: AsmToolchainId
+  toolchain_version: string
 }
 
 export interface AsmStepsPage {
@@ -94,16 +142,35 @@ export interface AsmChatSend {
 
 export type AsmDump = AsmRunSummary['dumps'][number]
 
-/** Настройки по умолчанию — те же, что у `RunRequest` ядра. */
-export const DEFAULT_SETTINGS: AsmSettings = {
-  stdin: '',
-  step_limit: 100_000,
-  mode32: false,
-  tasm_flags: ['/zi', '/l'],
-  tlink_flags: ['/v'],
-  breakpoints: [],
-  watches: [],
+/** Диапазон памяти для дочитывания: `seg: null` — адрес плоской памяти. */
+export interface AsmMemoryRange {
+  seg: Hex | null
+  off: Hex
+  len: number
 }
+
+/**
+ * Настройки по умолчанию — те же, что у запроса ядра режима. Флаги чужого
+ * режима лежат рядом с умолчаниями своего: служба хранит их как есть.
+ * У MinGW x64 флаги человека пустые — листинг, выходные имена, `-L` и
+ * `-lkernel32` добавляет ядро.
+ */
+export function defaultSettings(toolchain: AsmToolchainId): AsmSettings {
+  return {
+    stdin: '',
+    step_limit: toolchain === 'mingw64' ? 20_000 : 100_000,
+    mode32: false,
+    tasm_flags: ['/zi', '/l'],
+    tlink_flags: ['/v'],
+    as_flags: [],
+    ld_flags: [],
+    breakpoints: [],
+    watches: [],
+  }
+}
+
+/** Умолчания TASM — прежнее имя. */
+export const DEFAULT_SETTINGS: AsmSettings = defaultSettings('tasm')
 
 /** Потолок лимита шагов; выше служба не примет. */
 export const STEP_LIMIT_MAX = 500_000
@@ -111,17 +178,52 @@ export const STEP_LIMIT_MAX = 500_000
 /** Код отказа при записи исходника поверх чужой версии. */
 export const SOURCE_CONFLICT = 'source_conflict'
 
-/** Настройки из ответа службы: пропущенное поле — значение по умолчанию. */
+/** Настройки из ответа службы: пропущенное поле — значение по умолчанию режима программы. */
 export function settingsOf(p: AsmProgram): AsmSettings {
+  const d = defaultSettings(p.toolchain)
   const s = p.settings ?? {}
   return {
-    stdin: s.stdin ?? DEFAULT_SETTINGS.stdin,
-    step_limit: s.step_limit ?? DEFAULT_SETTINGS.step_limit,
-    mode32: s.mode32 ?? DEFAULT_SETTINGS.mode32,
-    tasm_flags: s.tasm_flags ?? DEFAULT_SETTINGS.tasm_flags,
-    tlink_flags: s.tlink_flags ?? DEFAULT_SETTINGS.tlink_flags,
+    stdin: s.stdin ?? d.stdin,
+    step_limit: s.step_limit ?? d.step_limit,
+    mode32: s.mode32 ?? d.mode32,
+    tasm_flags: s.tasm_flags ?? d.tasm_flags,
+    tlink_flags: s.tlink_flags ?? d.tlink_flags,
+    as_flags: s.as_flags ?? d.as_flags,
+    ld_flags: s.ld_flags ?? d.ld_flags,
     breakpoints: p.breakpoints ?? s.breakpoints ?? [],
     watches: p.watches ?? s.watches ?? [],
+  }
+}
+
+// ── чтение с умолчаниями режима ──────────────────────────────────────────────
+
+type СРежимом = { toolchain?: unknown; toolchain_version?: unknown }
+
+function сРежимом<T extends object>(raw: T & СРежимом): T & { toolchain: AsmToolchainId; toolchain_version: string } {
+  const toolchain = toolchainOf(raw.toolchain)
+  return { ...raw, toolchain, toolchain_version: versionOf(toolchain, raw.toolchain_version) }
+}
+
+/**
+ * Статус без `toolchains` (служба прежнего выпуска) — один режим TASM, собранный
+ * из флагов верхнего уровня: страница «Новая программа» показывает его карточку.
+ */
+function statusOf(raw: Omit<AsmStatus, 'toolchains'> & { toolchains?: AsmToolchainStatus[] | null }): AsmStatus {
+  const toolchains = (raw.toolchains ?? []).filter((x) => x.id === 'tasm' || x.id === 'mingw64')
+  if (toolchains.length) return { ...raw, toolchains }
+  const v = TOOLCHAIN_DEFAULT_VERSION.tasm
+  return {
+    ...raw,
+    toolchains: [
+      {
+        id: 'tasm',
+        title: 'TASM',
+        available: raw.available,
+        default_version: v,
+        versions: [{ id: v, title: 'TASM 4.1 · TLINK 7.1', detail: '', available: raw.available }],
+        parts: { dosbox: raw.dosbox, tasm: raw.tasm, tlink: raw.tlink, debugx: raw.debugx },
+      },
+    ],
   }
 }
 
@@ -152,31 +254,51 @@ export function useAsmAddress(): AsmAddress {
 export function useAsmStatus(): UseQueryResult<AsmStatus> {
   return useQuery({
     queryKey: asmKeys.status,
-    queryFn: () => unwrap<AsmStatus>(api.GET('/api/asm/status')),
+    queryFn: async () => statusOf(await unwrap<AsmStatus>(api.GET('/api/asm/status'))),
     staleTime: 10 * 60_000,
     retry: false,
   })
 }
 
-/** Программы текущего пространства одной лентой. */
+/** Программы текущего пространства одной лентой, обоих режимов. */
 export function useAsmPrograms(workspaceId: string | undefined): UseQueryResult<AsmProgramCard[]> {
   return useQuery({
     queryKey: asmKeys.programs(workspaceId ?? ''),
     enabled: !!workspaceId,
-    queryFn: () =>
-      unwrap<AsmProgramCard[]>(
-        api.GET('/api/asm/programs', { params: { query: { workspace_id: workspaceId ?? '' } } }),
-      ),
+    queryFn: async () =>
+      (
+        await unwrap<AsmProgramCard[]>(
+          api.GET('/api/asm/programs', { params: { query: { workspace_id: workspaceId ?? '' } } }),
+        )
+      ).map((c) => сРежимом(c)),
   })
 }
 
-/** Завести программу, не называя работы: неявную работу находит служба. */
+export interface AsmCreateProgram {
+  workspaceId: string
+  name?: string
+  /** Нет — TASM. */
+  toolchain?: AsmToolchainId
+  /** Нет — версия режима по умолчанию. */
+  toolchainVersion?: string
+}
+
+/** Завести программу, не называя работы: неявную работу находит служба. Режим задаётся здесь и дальше не меняется. */
 export function useCreateAsmProgram() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ workspaceId, name }: { workspaceId: string; name?: string }) =>
-      unwrap<{ project_id: string; program_id: string; name: string; n: number }>(
-        api.POST('/api/asm/programs', { body: { workspace_id: workspaceId, name: name ?? '' } }),
+    mutationFn: async ({ workspaceId, name, toolchain, toolchainVersion }: AsmCreateProgram) =>
+      сРежимом(
+        await unwrap<AsmProgramCreated>(
+          api.POST('/api/asm/programs', {
+            body: {
+              workspace_id: workspaceId,
+              name: name ?? '',
+              toolchain: toolchain ?? 'tasm',
+              ...(toolchainVersion ? { toolchain_version: toolchainVersion } : {}),
+            },
+          }),
+        ),
       ),
     onSuccess: (_ответ, { workspaceId }) => {
       void qc.invalidateQueries({ queryKey: asmKeys.programs(workspaceId) })
@@ -211,11 +333,12 @@ export async function fetchAsmProgram(
   { waitWrites = true }: { waitWrites?: boolean } = {},
 ): Promise<AsmProgram> {
   if (waitWrites) await незаконченныеЗаписи.get(programId)
-  return unwrap<AsmProgram>(
+  const p = await unwrap<AsmProgram>(
     api.GET('/api/projects/{project_id}/asm/programs/{program_id}', {
       params: { path: путь(projectId, programId) },
     }),
   )
+  return сРежимом(p)
 }
 
 /**
@@ -275,19 +398,35 @@ export function putAsmSettings(projectId: string, programId: string, settings: A
   )
 }
 
-export function useRenameAsmProgram() {
+export interface AsmUpdateProgram extends AsmAddress {
+  name?: string
+  /** Версия инструментов в пределах режима; сам режим не меняется. */
+  toolchainVersion?: string
+}
+
+/** Переименовать программу или сменить версию инструментов. */
+export function useUpdateAsmProgram() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ projectId, programId, name }: AsmAddress & { name: string }) =>
+    mutationFn: ({ projectId, programId, name, toolchainVersion }: AsmUpdateProgram) =>
       unwrap(
         api.PATCH('/api/projects/{project_id}/asm/programs/{program_id}', {
           params: { path: путь(projectId, programId) },
-          body: { name },
+          body: {
+            ...(name !== undefined ? { name } : {}),
+            ...(toolchainVersion !== undefined ? { toolchain_version: toolchainVersion } : {}),
+          },
         }),
       ),
-    onSuccess: (_ответ, { projectId, programId, name }) => {
+    onSuccess: (_ответ, { projectId, programId, name, toolchainVersion }) => {
       qc.setQueryData<AsmProgram>(asmKeys.program(projectId, programId), (было) =>
-        было ? { ...было, name } : было,
+        было
+          ? {
+              ...было,
+              ...(name !== undefined ? { name } : {}),
+              ...(toolchainVersion !== undefined ? { toolchain_version: toolchainVersion } : {}),
+            }
+          : было,
       )
       void qc.invalidateQueries({ queryKey: asmKeys.programsAll })
     },
@@ -326,12 +465,13 @@ export function startAsmRun(
   )
 }
 
-export function fetchAsmRun(projectId: string, programId: string, runNo: number): Promise<AsmRunSummary> {
-  return unwrap<AsmRunSummary>(
+export async function fetchAsmRun(projectId: string, programId: string, runNo: number): Promise<AsmRunSummary> {
+  const run = await unwrap<AsmRunSummary>(
     api.GET('/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}', {
       params: { path: { ...путь(projectId, programId), run_no: runNo } },
     }),
   )
+  return сРежимом(run)
 }
 
 /** Сводка прогона без шагов. Идущий прогон перечитывает страница по событиям задания. */
@@ -364,27 +504,31 @@ export function fetchAsmSteps(
 }
 
 /**
- * Сырой вывод DebugX кусок за куском по номерам шагов. Законченный прогон не
- * меняется, поэтому кусок, раз прочитанный, не перечитывается.
+ * Сырой вывод трассировщика (DebugX у TASM) кусок за куском по номерам шагов.
+ * Законченный прогон не меняется, поэтому кусок, раз прочитанный, не
+ * перечитывается.
  */
-export function useAsmDebugx(
+export function useAsmRaw(
   runNo: number | undefined,
   from: number,
   to: number,
 ): UseQueryResult<{ text: string }> {
   const { projectId, programId } = useAsmAddress()
   return useQuery({
-    queryKey: asmKeys.debugx(projectId, programId, runNo ?? 0, from, to),
+    queryKey: asmKeys.raw(projectId, programId, runNo ?? 0, from, to),
     enabled: !!runNo && to >= from,
     queryFn: () =>
       unwrap<{ text: string }>(
-        api.GET('/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/debugx', {
+        api.GET('/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/raw', {
           params: { path: { ...путь(projectId, programId), run_no: runNo as number }, query: { from, to } },
         }),
       ),
     staleTime: Infinity,
   })
 }
+
+/** Прежнее имя `useAsmRaw`. */
+export const useAsmDebugx = useAsmRaw
 
 function fetchJob(id: string): Promise<Job> {
   return unwrap<Job>(api.GET('/api/jobs/{job_id}', { params: { path: { job_id: id } } }))
@@ -409,13 +553,16 @@ export async function waitJob(id: string, timeoutMs = 60_000): Promise<Job> {
   }
 }
 
-/** Дампы памяти на шаге, которых нет в трассе: служба перезапускает программу до шага. */
+/**
+ * Дампы памяти на шаге, которых нет в трассе: служба перезапускает программу до
+ * шага. У TASM `seg` обязателен, у MinGW x64 — `null`, а `off` — адрес.
+ */
 export async function requestAsmMemory(
   projectId: string,
   programId: string,
   runNo: number,
   step: number,
-  ranges: { seg: string; off: string; len: number }[],
+  ranges: AsmMemoryRange[],
 ): Promise<AsmDump[]> {
   const { job_id } = await unwrap<{ job_id: string }>(
     api.POST('/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/memory', {

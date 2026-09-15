@@ -14,7 +14,12 @@ asm_run — сборка программы и трасса её выполне�
 `orchestrator.asm.run`; окно прогона читает его маршрутом `GET …/runs/{n}`. В
 `result` — только статус и числа, чтобы карточка задания говорила, чем кончилось.
 
-**Прогресс — этапами** `tasm` → `tlink` → `trace` (для трассы — шаги из лимита).
+**Режим и версия** — тоже из снимка: инструменты ищутся для них, и прогон
+MinGW x64 без трассировщика в режиме `build` собирается, а в режиме `run`
+отказывает `503 asm_unavailable`.
+
+**Прогресс — этапами режима**: `tasm` → `tlink` → `trace` у TASM, `as` → `ld` →
+`trace` у MinGW x64 (для трассы — шаги из лимита).
 Ядро сообщает о ходе на каждом шаге, а шагов бывает полмиллиона: запись в базу
 на каждый — это полмиллиона транзакций и потолок событий задания за секунду.
 Поэтому этап пишется сразу, как сменился, а ход внутри этапа — не чаще раза в
@@ -43,12 +48,12 @@ from .common import Отмена, отменено
 class Ход:
     """Прогресс ядра `(этап, n, всего)` → `ctx.progress`, прореженный по времени."""
 
-    def __init__(self, ctx, период: float = ХОД_С):
+    def __init__(self, ctx, период: float = ХОД_С, этап: str = "tasm"):
         self.ctx = ctx
         self._период = float(период)
         self._этап: str | None = None
         self._когда = 0.0
-        self.последний: tuple[str, int, int] = ("tasm", 0, 1)
+        self.последний: tuple[str, int, int] = (str(этап), 0, 1)
 
     def __call__(self, этап: str, n: int, всего: int) -> None:
         этап = str(этап or "")
@@ -62,26 +67,33 @@ class Ход:
 
 def собрать_и_запустить(ctx) -> dict:
     """Собрать программу прогона и, в режиме `run`, снять трассу."""
-    from ...modules.asm.routes import инструменты, номер_прогона  # noqa: PLC0415
+    from ...modules.asm.routes import (инструменты,  # noqa: PLC0415
+                                       номер_прогона, окружение_настроек)
 
     payload = ctx.job.payload or {}
     номер = номер_прогона(payload.get("run_no"), where="body.payload.run_no")
     if not ctx.solution:
         raise ApiError("invalid_value", "payload.run_id names the program", 400,
                        where="body.payload.run_id")
-    найдено = инструменты(ctx.settings, where="body.payload")
     проект = ctx.project
     if not ассемблер.run_exists(проект, номер):
         raise ApiError(NOT_FOUND, "Run not found", 404,
                        where="body.payload.run_no")
+    снимок = ассемблер.read_request(проект, номер)
+    набор, версия = ассемблер.run_toolchain(проект, номер)
+    найдено = инструменты(ctx.settings, набор, версия,
+                          trace=снимок.get("mode") != "build",
+                          where="body.payload")
 
-    ход = Ход(ctx)
-    ход("tasm", 0, 1)
+    первый = ассемблер.stages(набор)[0]
+    ход = Ход(ctx, этап=первый)
+    ход(первый, 0, 1)
     отмена = Отмена(ctx)
     if отмена():
-        return отменено(ctx, "tasm")
+        return отменено(ctx, первый)
 
-    итог = ассемблер.run(проект, номер, tools=найдено,
+    итог = ассемблер.run(проект, номер, env=окружение_настроек(ctx.settings),
+                         tools=найдено,
                          timeout_s=float(ctx.settings.asm_timeout_s),
                          progress=ход, cancelled=отмена)
 

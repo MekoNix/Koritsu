@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import re
 
-from .model import BuildMessage, ListingLine, Symbol
+from ..model import BuildMessage, ListingLine, Symbol
 
 # ── сообщения ────────────────────────────────────────────────────────────────
 

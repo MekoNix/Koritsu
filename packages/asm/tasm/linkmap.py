@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 
-from .model import Segment
+from ..model import Segment
 
 _ROW = re.compile(
     r"^\s*(?P<start>[0-9A-F]{5,8})H\s+(?P<stop>[0-9A-F]{5,8})H\s+(?P<len>[0-9A-F]{5,8})H"

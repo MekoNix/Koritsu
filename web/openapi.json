@@ -6464,7 +6464,7 @@
      "asm"
     ],
     "summary": "Whether assembler tools are installed",
-    "description": "Says whether this server can build and trace programs: DOSBox-X, TASM, TLINK and DebugX, each on its own. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.",
+    "description": "Says whether this server can build and trace programs, for each toolchain with its versions and components. The flat DOSBox-X, TASM, TLINK and DebugX flags are the TASM ones. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.",
     "operationId": "asm_status",
     "responses": {
      "200": {
@@ -6496,7 +6496,7 @@
      "asm"
     ],
     "summary": "Assembler programs of a workspace",
-    "description": "Every assembler program of one workspace, most recently edited first, with the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
+    "description": "Every assembler program of one workspace, most recently edited first, with its toolchain and the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
     "operationId": "asm_programs",
     "parameters": [
      {
@@ -6541,7 +6541,7 @@
      "asm"
     ],
     "summary": "Start a new assembler program in a workspace",
-    "description": "Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.",
+    "description": "Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. `toolchain` (tasm by default) is fixed for the life of the program; `toolchain_version` is one from its catalog, the default when null. Neither has to be installed here. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 409 project_exists.",
     "operationId": "asm_create_program",
     "requestBody": {
      "required": true,
@@ -6583,7 +6583,7 @@
      "asm"
     ],
     "summary": "One assembler program",
-    "description": "The source with its version counter, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. Viewer role. 400 invalid_id, 404 not_found.",
+    "description": "The source with its version counter, the toolchain and its version, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. A program started before toolchains existed is tasm 4.1. Viewer role. 400 invalid_id, 404 not_found.",
     "operationId": "asm_program",
     "parameters": [
      {
@@ -6632,8 +6632,8 @@
     "tags": [
      "asm"
     ],
-    "summary": "Rename a program",
-    "description": "Renames the program. An empty name resets it: the interface names it from the module and n again. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "summary": "Rename a program or change its toolchain version",
+    "description": "Renames the program and/or moves it to another version of the same toolchain; a field left null is kept. An empty name resets it: the interface names it from the module and n again. The toolchain itself never changes. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
     "operationId": "asm_rename_program",
     "parameters": [
      {
@@ -6660,7 +6660,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "$ref": "#/components/schemas/RenameIn"
+        "$ref": "#/components/schemas/ProgramPatchIn"
        }
       }
      }
@@ -6671,7 +6671,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/RenameOut"
+         "$ref": "#/components/schemas/ProgramPatchOut"
         }
        }
       }
@@ -6810,7 +6810,7 @@
      "asm"
     ],
     "summary": "Write the run settings of a program",
-    "description": "Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. A build flag is a slash and a short word (`/zi`); the step limit is capped by the server. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
+    "description": "Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. Build flags of the program's own toolchain are checked by its rules (a slash and a short word for TASM, a list of allowed options for GNU as and ld); flags of the other toolchain are stored as they come. The step limit is capped by the server per toolchain. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
     "operationId": "asm_put_settings",
     "parameters": [
      {
@@ -6872,7 +6872,7 @@
      "asm"
     ],
     "summary": "Build, or build and trace, a program",
-    "description": "Takes the source and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are `tasm`, `tlink` and `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.",
+    "description": "Takes the source, toolchain, version and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are the toolchain's: `tasm`, `tlink`, `trace` or `as`, `ld`, `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. MinGW x64 without a tracer builds but does not run. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.",
     "operationId": "asm_start_run",
     "parameters": [
      {
@@ -6941,7 +6941,7 @@
      "asm"
     ],
     "summary": "Summary of one run",
-    "description": "The run without its steps: build result with messages, listing, segments and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "description": "The run without its steps: toolchain and version, build result with messages, listing, segments or sections and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. A run from before toolchains existed is tasm 4.1. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
     "operationId": "asm_run",
     "parameters": [
      {
@@ -7002,7 +7002,7 @@
      "asm"
     ],
     "summary": "A page of trace steps",
-    "description": "Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "description": "Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. With flat memory (MinGW x64) `cs` and `mem[].seg` are null, and a step that called a system function as a whole names it in `call`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
     "operationId": "asm_run_steps",
     "parameters": [
      {
@@ -7085,13 +7085,102 @@
     }
    }
   },
+  "/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/raw": {
+   "get": {
+    "tags": [
+     "asm"
+    ],
+    "summary": "Raw tracer output for a range of steps",
+    "description": "What the tracer printed for steps [from, to), as text (DebugX for TASM), at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "asm_run_raw",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "run_no",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run No"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "From"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 0
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RawOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/debugx": {
    "get": {
     "tags": [
      "asm"
     ],
     "summary": "Raw debugger output for a range of steps",
-    "description": "What DebugX printed for steps [from, to), as text, at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "description": "The same as GET …/raw, under its old address. What the tracer printed for steps [from, to), as text (DebugX for TASM), at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
     "operationId": "asm_run_debugx",
     "parameters": [
      {
@@ -7156,7 +7245,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/DebugxOut"
+         "$ref": "#/components/schemas/RawOut"
         }
        }
       }
@@ -7180,7 +7269,7 @@
      "asm"
     ],
     "summary": "Dump memory at a step of a run",
-    "description": "Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.",
+    "description": "Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. A range has a hex `seg` for TASM and `seg` null with `off` of up to 16 hex digits for MinGW x64. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.",
     "operationId": "asm_run_memory",
     "parameters": [
      {
@@ -11401,7 +11490,7 @@
      "asm"
     ],
     "summary": "Whether assembler tools are installed",
-    "description": "Says whether this server can build and trace programs: DOSBox-X, TASM, TLINK and DebugX, each on its own. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.",
+    "description": "Says whether this server can build and trace programs, for each toolchain with its versions and components. The flat DOSBox-X, TASM, TLINK and DebugX flags are the TASM ones. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.",
     "operationId": "asm_status_v1",
     "responses": {
      "200": {
@@ -11434,7 +11523,7 @@
      "asm"
     ],
     "summary": "Assembler programs of a workspace",
-    "description": "Every assembler program of one workspace, most recently edited first, with the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
+    "description": "Every assembler program of one workspace, most recently edited first, with its toolchain and the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.",
     "operationId": "asm_programs_v1",
     "parameters": [
      {
@@ -11480,7 +11569,7 @@
      "asm"
     ],
     "summary": "Start a new assembler program in a workspace",
-    "description": "Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.",
+    "description": "Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. `toolchain` (tasm by default) is fixed for the life of the program; `toolchain_version` is one from its catalog, the default when null. Neither has to be installed here. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 409 project_exists.",
     "operationId": "asm_create_program_v1",
     "requestBody": {
      "required": true,
@@ -11523,7 +11612,7 @@
      "asm"
     ],
     "summary": "One assembler program",
-    "description": "The source with its version counter, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. Viewer role. 400 invalid_id, 404 not_found.",
+    "description": "The source with its version counter, the toolchain and its version, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. A program started before toolchains existed is tasm 4.1. Viewer role. 400 invalid_id, 404 not_found.",
     "operationId": "asm_program_v1",
     "parameters": [
      {
@@ -11573,8 +11662,8 @@
      "v1",
      "asm"
     ],
-    "summary": "Rename a program",
-    "description": "Renames the program. An empty name resets it: the interface names it from the module and n again. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.",
+    "summary": "Rename a program or change its toolchain version",
+    "description": "Renames the program and/or moves it to another version of the same toolchain; a field left null is kept. An empty name resets it: the interface names it from the module and n again. The toolchain itself never changes. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
     "operationId": "asm_rename_program_v1",
     "parameters": [
      {
@@ -11601,7 +11690,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "$ref": "#/components/schemas/RenameIn"
+        "$ref": "#/components/schemas/ProgramPatchIn"
        }
       }
      }
@@ -11612,7 +11701,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/RenameOut"
+         "$ref": "#/components/schemas/ProgramPatchOut"
         }
        }
       }
@@ -11754,7 +11843,7 @@
      "asm"
     ],
     "summary": "Write the run settings of a program",
-    "description": "Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. A build flag is a slash and a short word (`/zi`); the step limit is capped by the server. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
+    "description": "Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. Build flags of the program's own toolchain are checked by its rules (a slash and a short word for TASM, a list of allowed options for GNU as and ld); flags of the other toolchain are stored as they come. The step limit is capped by the server per toolchain. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.",
     "operationId": "asm_put_settings_v1",
     "parameters": [
      {
@@ -11817,7 +11906,7 @@
      "asm"
     ],
     "summary": "Build, or build and trace, a program",
-    "description": "Takes the source and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are `tasm`, `tlink` and `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.",
+    "description": "Takes the source, toolchain, version and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are the toolchain's: `tasm`, `tlink`, `trace` or `as`, `ld`, `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. MinGW x64 without a tracer builds but does not run. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.",
     "operationId": "asm_start_run_v1",
     "parameters": [
      {
@@ -11887,7 +11976,7 @@
      "asm"
     ],
     "summary": "Summary of one run",
-    "description": "The run without its steps: build result with messages, listing, segments and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "description": "The run without its steps: toolchain and version, build result with messages, listing, segments or sections and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. A run from before toolchains existed is tasm 4.1. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
     "operationId": "asm_run_v1",
     "parameters": [
      {
@@ -11949,7 +12038,7 @@
      "asm"
     ],
     "summary": "A page of trace steps",
-    "description": "Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "description": "Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. With flat memory (MinGW x64) `cs` and `mem[].seg` are null, and a step that called a system function as a whole names it in `call`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
     "operationId": "asm_run_steps_v1",
     "parameters": [
      {
@@ -12032,6 +12121,96 @@
     }
    }
   },
+  "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/raw": {
+   "get": {
+    "tags": [
+     "v1",
+     "asm"
+    ],
+    "summary": "Raw tracer output for a range of steps",
+    "description": "What the tracer printed for steps [from, to), as text (DebugX for TASM), at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "operationId": "asm_run_raw_v1",
+    "parameters": [
+     {
+      "name": "program_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Program Id"
+      }
+     },
+     {
+      "name": "run_no",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run No"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "From"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 0
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "To"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RawOut"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/debugx": {
    "get": {
     "tags": [
@@ -12039,7 +12218,7 @@
      "asm"
     ],
     "summary": "Raw debugger output for a range of steps",
-    "description": "What DebugX printed for steps [from, to), as text, at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
+    "description": "The same as GET …/raw, under its old address. What the tracer printed for steps [from, to), as text (DebugX for TASM), at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.",
     "operationId": "asm_run_debugx_v1",
     "parameters": [
      {
@@ -12104,7 +12283,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/DebugxOut"
+         "$ref": "#/components/schemas/RawOut"
         }
        }
       }
@@ -12129,7 +12308,7 @@
      "asm"
     ],
     "summary": "Dump memory at a step of a run",
-    "description": "Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.",
+    "description": "Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. A range has a hex `seg` for TASM and `seg` null with `off` of up to 16 hex digits for MinGW x64. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.",
     "operationId": "asm_run_memory_v1",
     "parameters": [
      {
@@ -13222,13 +13401,13 @@
       "type": "integer",
       "minimum": 1.0,
       "title": "Step Limit",
-      "description": "How many steps the trace may take before it stops",
+      "description": "How many steps the trace may take before it stops. The ceiling depends on the toolchain",
       "default": 100000
      },
      "mode32": {
       "type": "boolean",
       "title": "Mode32",
-      "description": "Trace 32-bit registers as well",
+      "description": "Trace 32-bit registers as well (TASM)",
       "default": false
      },
      "tasm_flags": {
@@ -13248,6 +13427,24 @@
       "maxItems": 16,
       "title": "Tlink Flags",
       "description": "Command line flags of TLINK, each of the form /x"
+     },
+     "as_flags": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "maxItems": 32,
+      "title": "As Flags",
+      "description": "Command line flags of GNU as (MinGW x64), one argument per item; output and listing flags are added by the server"
+     },
+     "ld_flags": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "maxItems": 32,
+      "title": "Ld Flags",
+      "description": "Command line flags of GNU ld (MinGW x64), one argument per item; output, library path and -lkernel32 are added by the server"
      },
      "breakpoints": {
       "items": {
@@ -13505,6 +13702,7 @@
      "tool": {
       "type": "string",
       "title": "Tool",
+      "description": "tasm, tlink, as or ld",
       "default": ""
      },
      "line": {
@@ -13537,7 +13735,7 @@
      "log": {
       "type": "string",
       "title": "Log",
-      "description": "What TASM and TLINK printed",
+      "description": "What the assembler and the linker printed",
       "default": ""
      },
      "messages": {
@@ -13591,7 +13789,7 @@
        }
       ],
       "title": "Anchor",
-      "description": "What the message is about: {kind: line, line} | {kind: register, name} | {kind: flag, name} | {kind: cell, seg, off} | {kind: doc, id} | {kind: run} | {kind: text, window, text, line_from, line_to} — text is the selected text as is, at most 4000 characters; window is one of source, listing, output, debugx, build; line_from/line_to are source lines or null"
+      "description": "What the message is about: {kind: line, line} | {kind: register, name} | {kind: flag, name} | {kind: cell, seg, off} — seg is null for flat memory | {kind: doc, id} | {kind: run} | {kind: text, window, text, line_from, line_to} — text is the selected text as is, at most 4000 characters; window is one of source, listing, output, raw, build (debugx is the old name of raw); line_from/line_to are source lines or null"
      },
      "step": {
       "anyOf": [
@@ -13739,18 +13937,6 @@
     "type": "object",
     "title": "ContextOut",
     "description": "Общие файлы работы глазами одного решения."
-   },
-   "DebugxOut": {
-    "properties": {
-     "text": {
-      "type": "string",
-      "title": "Text",
-      "description": "Raw DebugX output of those steps",
-      "default": ""
-     }
-    },
-    "type": "object",
-    "title": "DebugxOut"
    },
    "DiagramBuiltOut": {
     "properties": {
@@ -14069,8 +14255,16 @@
       "default": 0
      },
      "seg": {
-      "type": "string",
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
       "title": "Seg",
+      "description": "Segment, hex; null for flat memory",
       "default": ""
      },
      "off": {
@@ -14425,32 +14619,6 @@
     "title": "LiveReportOut",
     "description": "Отчёт из задания наружу: запись решения плюс то, чем его показывают.\n\nПолей меньше, чем у шаблонного отчёта, и это не пропуск: у отчёта из задания\nнет ни бланка, ни числа тегов — работа в нём это список блоков. Зато есть\nстадия и состояние прогона, которых не бывает у шаблонного: он не идёт\nсам, а заполняется по тегу."
    },
-   "LoadOut": {
-    "properties": {
-     "psp": {
-      "type": "string",
-      "title": "Psp",
-      "default": ""
-     },
-     "cs": {
-      "type": "string",
-      "title": "Cs",
-      "default": ""
-     },
-     "ds": {
-      "type": "string",
-      "title": "Ds",
-      "default": ""
-     },
-     "ss": {
-      "type": "string",
-      "title": "Ss",
-      "default": ""
-     }
-    },
-    "type": "object",
-    "title": "LoadOut"
-   },
    "LoginIn": {
     "properties": {
      "email": {
@@ -14475,8 +14643,16 @@
    "MemWriteOut": {
     "properties": {
      "seg": {
-      "type": "string",
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
       "title": "Seg",
+      "description": "Segment, hex; null for flat memory",
       "default": ""
      },
      "off": {
@@ -14560,14 +14736,21 @@
    "MemoryRangeIn": {
     "properties": {
      "seg": {
-      "type": "string",
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
       "title": "Seg",
-      "description": "Segment, hex"
+      "description": "Segment, hex, for TASM; null for MinGW x64 flat memory"
      },
      "off": {
       "type": "string",
       "title": "Off",
-      "description": "Offset, hex"
+      "description": "Offset, hex: up to 8 digits with a segment, up to 16 without"
      },
      "len": {
       "type": "integer",
@@ -14578,7 +14761,6 @@
     },
     "type": "object",
     "required": [
-     "seg",
      "off",
      "len"
     ],
@@ -14672,6 +14854,17 @@
       "title": "N",
       "description": "Which program of its project, from 1"
      },
+     "toolchain": {
+      "type": "string",
+      "title": "Toolchain",
+      "description": "tasm or mingw64",
+      "default": "tasm"
+     },
+     "toolchain_version": {
+      "type": "string",
+      "title": "Toolchain Version",
+      "default": "4.1"
+     },
      "created_at": {
       "anyOf": [
        {
@@ -14731,6 +14924,26 @@
       "title": "Name",
       "description": "What to call it. Empty is fine: the interface names it",
       "default": ""
+     },
+     "toolchain": {
+      "type": "string",
+      "maxLength": 32,
+      "title": "Toolchain",
+      "description": "tasm or mingw64. It is fixed for the life of the program. A toolchain not installed on this server is fine: the source can be written without tools.",
+      "default": "tasm"
+     },
+     "toolchain_version": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 32
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Toolchain Version",
+      "description": "Version from the toolchain catalog; null is its default"
      }
     },
     "type": "object",
@@ -14738,7 +14951,7 @@
      "workspace_id"
     ],
     "title": "ProgramCreateIn",
-    "description": "Тело заведения программы: в каком пространстве и как звать."
+    "description": "Тело заведения программы: в каком пространстве, как звать, какой режим."
    },
    "ProgramCreatedOut": {
     "properties": {
@@ -14757,6 +14970,14 @@
      "n": {
       "type": "integer",
       "title": "N"
+     },
+     "toolchain": {
+      "type": "string",
+      "title": "Toolchain"
+     },
+     "toolchain_version": {
+      "type": "string",
+      "title": "Toolchain Version"
      }
     },
     "type": "object",
@@ -14764,7 +14985,9 @@
      "project_id",
      "program_id",
      "name",
-     "n"
+     "n",
+     "toolchain",
+     "toolchain_version"
     ],
     "title": "ProgramCreatedOut"
    },
@@ -14785,6 +15008,17 @@
      "n": {
       "type": "integer",
       "title": "N"
+     },
+     "toolchain": {
+      "type": "string",
+      "title": "Toolchain",
+      "description": "tasm or mingw64",
+      "default": "tasm"
+     },
+     "toolchain_version": {
+      "type": "string",
+      "title": "Toolchain Version",
+      "default": "4.1"
      },
      "source": {
       "type": "string",
@@ -14848,7 +15082,67 @@
      "settings"
     ],
     "title": "ProgramOut",
-    "description": "Программа целиком: исходник с версией, настройки, последний прогон."
+    "description": "Программа целиком: исходник с версией, режим, настройки, последний прогон."
+   },
+   "ProgramPatchIn": {
+    "properties": {
+     "name": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name",
+      "description": "New name. Empty resets it to the default name; null keeps it"
+     },
+     "toolchain_version": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 32
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Toolchain Version",
+      "description": "Another version of the same toolchain; null keeps it. The toolchain itself does not change"
+     }
+    },
+    "type": "object",
+    "title": "ProgramPatchIn"
+   },
+   "ProgramPatchOut": {
+    "properties": {
+     "program_id": {
+      "type": "string",
+      "title": "Program Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "toolchain": {
+      "type": "string",
+      "title": "Toolchain"
+     },
+     "toolchain_version": {
+      "type": "string",
+      "title": "Toolchain Version"
+     }
+    },
+    "type": "object",
+    "required": [
+     "program_id",
+     "name",
+     "toolchain",
+     "toolchain_version"
+    ],
+    "title": "ProgramPatchOut"
    },
    "ProjectPatchIn": {
     "properties": {
@@ -15005,6 +15299,18 @@
     "title": "ProjectRunPatchIn",
     "description": "Правка записи. Поле одно — имя: всё остальное в записи не редактируется.\n\nМодуль, номер и артефакт — это то, что случилось, а случившееся не правят:\nпереписать модуль у записи значило бы сказать, что схему построил отчёт.\nИмя — единственное, что в записи придумал человек, и единственное, что он\nможет передумать.\n\nОбязательное поле, а не необязательное: у правки с одним полем «поля нет»\nозначало бы «ничего не делать», то есть запрос, на который незачем ходить."
    },
+   "RawOut": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "title": "Text",
+      "description": "Raw tracer output of those steps",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "RawOut"
+   },
    "RecognizeIn": {
     "properties": {
      "lines": {
@@ -15160,39 +15466,6 @@
     ],
     "title": "RegisterIn",
     "description": "Регистрация. Длина пароля проверяется формой, а не обработчиком: беда\nформы уезжает клиенту с адресом поля (`where: body.password`).\n\nНик — обязательное поле: именно он показывается\nвместо почты, и завести человека без него значит завести его безымянным.\nГраницы и знаки ника формой НЕ проверяются намеренно: `422\nvalidation_failed` не отличить от беды в почте, а сайту нужен отдельный код\n`invalid_nickname`, чтобы показать подсказку под нужным полем. Форма здесь\nсторожит только длину строки — от тела запроса в мегабайт."
-   },
-   "RenameIn": {
-    "properties": {
-     "name": {
-      "type": "string",
-      "maxLength": 200,
-      "title": "Name",
-      "description": "New name. Empty resets it to the default name"
-     }
-    },
-    "type": "object",
-    "required": [
-     "name"
-    ],
-    "title": "RenameIn"
-   },
-   "RenameOut": {
-    "properties": {
-     "program_id": {
-      "type": "string",
-      "title": "Program Id"
-     },
-     "name": {
-      "type": "string",
-      "title": "Name"
-     }
-    },
-    "type": "object",
-    "required": [
-     "program_id",
-     "name"
-    ],
-    "title": "RenameOut"
    },
    "ReportIn": {
     "properties": {
@@ -15411,6 +15684,17 @@
       "title": "Status",
       "description": "queued, building or running while the job goes; done, build_error, step_limit, timeout or crashed after"
      },
+     "toolchain": {
+      "type": "string",
+      "title": "Toolchain",
+      "description": "tasm or mingw64",
+      "default": "tasm"
+     },
+     "toolchain_version": {
+      "type": "string",
+      "title": "Toolchain Version",
+      "default": "4.1"
+     },
      "source": {
       "anyOf": [
        {
@@ -15436,12 +15720,27 @@
      "load": {
       "anyOf": [
        {
-        "$ref": "#/components/schemas/LoadOut"
+        "additionalProperties": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "integer"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "type": "object"
        },
        {
         "type": "null"
        }
-      ]
+      ],
+      "title": "Load",
+      "description": "Where the program was loaded, keys by toolchain: psp, cs, ds, ss for TASM; image_base, entry, rsp for MinGW x64"
      },
      "stdin": {
       "type": "string",
@@ -15627,7 +15926,8 @@
      }
     },
     "type": "object",
-    "title": "SegmentOut"
+    "title": "SegmentOut",
+    "description": "Область образа: сегмент карты TLINK или секция PE с адресом VA."
    },
    "SessionOut": {
     "properties": {
@@ -15856,7 +16156,7 @@
      "available": {
       "type": "boolean",
       "title": "Available",
-      "description": "Whether programs can be built and traced here. False is a state of the machine, not an error of the request."
+      "description": "Whether programs of at least one toolchain can be built and traced here. False is a state of the machine, not an error of the request."
      },
      "dosbox": {
       "type": "boolean",
@@ -15877,6 +16177,13 @@
       "type": "boolean",
       "title": "Debugx",
       "description": "DEBUGX.COM is found"
+     },
+     "toolchains": {
+      "items": {
+       "$ref": "#/components/schemas/ToolchainStatusOut"
+      },
+      "type": "array",
+      "title": "Toolchains"
      }
     },
     "type": "object",
@@ -15938,7 +16245,14 @@
    "StepNextOut": {
     "properties": {
      "cs": {
-      "type": "string",
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
       "title": "Cs",
       "default": ""
      },
@@ -16188,6 +16502,84 @@
     ],
     "title": "TemplateOut",
     "description": "Карточка шаблона. Пути на томе в ней нет и быть не может."
+   },
+   "ToolchainStatusOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "tasm or mingw64"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "available": {
+      "type": "boolean",
+      "title": "Available",
+      "description": "Programs of this toolchain can be built and traced here"
+     },
+     "default_version": {
+      "type": "string",
+      "title": "Default Version"
+     },
+     "versions": {
+      "items": {
+       "$ref": "#/components/schemas/ToolchainVersionOut"
+      },
+      "type": "array",
+      "title": "Versions"
+     },
+     "parts": {
+      "additionalProperties": {
+       "type": "boolean"
+      },
+      "type": "object",
+      "title": "Parts",
+      "description": "Each component of the toolchain and whether it is found: dosbox, tasm, tlink, debugx for TASM; as, ld, kernel32, tracer for MinGW x64"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "available",
+     "default_version"
+    ],
+    "title": "ToolchainStatusOut",
+    "description": "Режим ассемблера и его готовность на этой машине."
+   },
+   "ToolchainVersionOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id",
+      "description": "Version id, as programs name it"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title",
+      "description": "What the version is called"
+     },
+     "detail": {
+      "type": "string",
+      "title": "Detail",
+      "description": "Version string found on this server",
+      "default": ""
+     },
+     "available": {
+      "type": "boolean",
+      "title": "Available",
+      "description": "This version is ready here"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "available"
+    ],
+    "title": "ToolchainVersionOut"
    },
    "TotalsOut": {
     "properties": {
@@ -16867,13 +17259,22 @@
       "title": "I"
      },
      "cs": {
-      "type": "string",
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
       "title": "Cs",
+      "description": "Code segment, hex; null for flat memory",
       "default": ""
      },
      "ip": {
       "type": "string",
       "title": "Ip",
+      "description": "IP, EIP or RIP, hex",
       "default": ""
      },
      "line": {
@@ -16951,6 +17352,18 @@
         "type": "null"
        }
       ]
+     },
+     "call": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Call",
+      "description": "The system function this step called as a whole, e.g. kernel32.WriteFile; registers are after its return"
      }
     },
     "additionalProperties": true,

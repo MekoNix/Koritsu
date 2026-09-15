@@ -9,7 +9,7 @@
 import { useMemo, type KeyboardEvent, type ReactNode } from 'react'
 
 import { useAsm } from '@/features/asm/store'
-import type { AsmWindowProps } from '@/features/asm/types'
+import { isSegmentedLoad, type AsmWindowProps } from '@/features/asm/types'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 
@@ -42,7 +42,8 @@ export default function Stack({ active }: AsmWindowProps) {
   const { mem } = useMemView(active)
   const trace = hasTrace(run)
   const st = trace ? step : undefined
-  const ss = reg(st, 'ss') ?? parseHex(run?.load?.ss)
+  const load = run?.load
+  const ss = reg(st, 'ss') ?? parseHex(isSegmentedLoad(load) ? load.ss : undefined)
   const sp = reg(st, 'sp')
   const prevSp = stepIndex > 0 ? reg(trace ? prevStep : undefined, 'sp') : null
   const top = useMemo(() => stackTop(run), [run])

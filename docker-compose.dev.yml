@@ -22,7 +22,12 @@
 #
 # Том свой (`koritsu-data-dev`), и это единственное, что стоит проверять глазами
 # перед запуском: dev, случайно подключённый к боевому тому, пишет в работы
-# живых людей.
+# живых людей. Очередь исполнителя трасс тоже своя (`asm-queue-dev`): иначе
+# dev-воркер отдавал бы программы боевому исполнителю и наоборот.
+#
+# Журналы (`logging`, ротация 3 × 10 МБ) и ограничения `asm-runner` — из боевого
+# файла: оверлей их не переопределяет, и на машине разработчика диск нужен не
+# меньше.
 
 services:
 
@@ -41,15 +46,26 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - koritsu-data-dev:/data
+      - asm-queue-dev:/queue:ro
 
   worker:
     environment:
       KORITSU_ENV: dev
     volumes:
       - koritsu-data-dev:/data
+      - asm-queue-dev:/queue
     # Пониже: на машине разработчика рядом живут редактор и браузер.
     mem_limit: 2g
     cpus: 1.0
+
+  # Один прогон за раз и меньше памяти: хватает, чтобы смотреть трассу самому.
+  asm-runner:
+    volumes:
+      - asm-queue-dev:/queue
+    mem_limit: 768m
+    memswap_limit: 768m
+    environment:
+      KORITSU_ASM_RUNNER_SLOTS: "1"
 
   # Caddy на dev остаётся: он же отдаёт собранный `web/dist`, когда сайт
   # смотрят не через Vite. TLS ему при этом выписывать не на что — домен
@@ -94,3 +110,4 @@ services:
 
 volumes:
   koritsu-data-dev:
+  asm-queue-dev:

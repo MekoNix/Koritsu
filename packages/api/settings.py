@@ -55,7 +55,22 @@ settings — всё, что служба узнаёт снаружи, и бол�
     ASM_DEBUGX                   умолч. /opt/asm/debugx/DEBUGX.COM — отладчик
     ASM_TIMEOUT_S                90 — секунд на весь прогон: сборку, трассу
                                  и перезапуски ради ввода
-    ASM_STEP_LIMIT_MAX           500 000 — потолок лимита шагов программы
+    ASM_STEP_LIMIT_MAX           500 000 — потолок лимита шагов программы TASM
+    ASM_MINGW_PREFIX             умолч. пусто (`x86_64-w64-mingw32-`) — префикс
+                                 имён `as`/`ld` режима «MinGW x64»
+    ASM_MINGW_BIN                умолч. пусто — каталог `as`/`ld`; пусто — PATH
+    ASM_MINGW_LIB                умолч. пусто — каталог `libkernel32.a`; пусто —
+                                 как в образе
+    ASM_MINGW_TRACER             умолч. пусто — трассировщик MinGW x64; пусто —
+                                 единственный установленный
+    ASM_TASM_VERSION             умолч. `4.1` — версия TASM, которая лежит в корне
+                                 `ASM_TOOLS` (версии в подкаталогах `<версия>/`
+                                 находятся сами)
+    ASM_MINGW_QUEUE              умолч. пусто — том очереди исполнителя трасс
+                                 MinGW x64 (`asm-runner`); пусто — трассы MinGW x64
+                                 нет, сборка работает
+    ASM_MINGW_STEP_LIMIT_MAX     20 000 — потолок лимита шагов программы MinGW x64
+                                 (не больше 200 000)
     ASM_SHOW                     умолч. нет — показывать модуль «Ассемблер» и
                                  без инструментов (для разработки сайта)
     SSE_POLL_S                   0.5 — как часто поток событий смотрит в базу
@@ -102,6 +117,11 @@ SECRET_MIN_BYTES = 32
 ENVS = ("dev", "prod")
 
 MB = 1024 * 1024
+
+# Выше этого потолок шагов MinGW x64 не поднимается даже настройкой: трасса
+# программы Windows пишет на шаг больше, чем DebugX, и двести тысяч шагов — уже
+# сотни мегабайт на томе.
+ASM_MINGW_STEP_LIMIT_CEIL = 200_000
 
 # Куда ведёт ссылка в письме, если снаружи не сказали иного. Localhost, а не
 # рабочий домен: умолчание с настоящим доменом означало бы, что забытая
@@ -256,6 +276,26 @@ class Settings:
     # том целиком, и полмиллиона шагов — это уже сотни мегабайт сырого вывода
     # отладчика; дальше — не отладка, а нагрузка на диск.
     asm_step_limit_max: int = 500_000
+    # Версия TASM в корне каталога инструментов. Несколько версий лежат
+    # подкаталогами `<версия>/` и находятся ядром сами; корень без подкаталогов
+    # считается этой версией.
+    asm_tasm_version: str = ""
+    # Режим «MinGW x64»: GNU as/ld и трассировщик программ Windows x64. Пустая
+    # строка — «как в образе»: умолчания префикса, каталогов и трассировщика
+    # знает ядро (`asm.toolchain('mingw64')`), служба передаёт только заданное.
+    asm_mingw_prefix: str = ""
+    asm_mingw_bin: str = ""
+    asm_mingw_lib: str = ""
+    asm_mingw_tracer: str = ""
+    # Том очереди исполнителя трасс (`asm-runner`). Воркер кладёт туда собранную
+    # программу и забирает трассу, служба смотрит сердцебиение исполнителя.
+    # Пусто — трассы MinGW x64 на машине нет.
+    asm_mingw_queue: str = ""
+    # Потолок лимита шагов MinGW x64. Ниже, чем у TASM: шаг трассировщика
+    # программы Windows на порядки дороже команды `T n` DebugX, а таймаут
+    # прогона общий. Двести тысяч — предел, выше которого настройка не
+    # принимается вовсе.
+    asm_mingw_step_limit_max: int = 20_000
     # Показывать модуль без инструментов. Нужно сайту в разработке: окна
     # отладчика верстаются на машине, где TASM нет, а постановка прогона там
     # честно отвечает `503 asm_unavailable`.
@@ -341,11 +381,15 @@ class Settings:
                     "pro_quota_bytes", "team_monthly_units",
                     "team_quota_bytes", "sse_poll_s", "sse_max_s",
                     "preview_per_minute", "asm_timeout_s",
-                    "asm_step_limit_max"):
+                    "asm_step_limit_max", "asm_mingw_step_limit_max"):
             if getattr(self, имя) <= 0:
                 # Ноль слотов — это воркер, который никогда ничего не берёт, и
                 # очередь, растущая молча. Отказ на старте дешевле.
                 raise ConfigError(f"{_env_name(имя)} должен быть больше нуля")
+
+        if self.asm_mingw_step_limit_max > ASM_MINGW_STEP_LIMIT_CEIL:
+            raise ConfigError(f"{_env_name('asm_mingw_step_limit_max')} не больше "
+                              f"{ASM_MINGW_STEP_LIMIT_CEIL}")
 
         # Цены проверяются отдельно и мягче: ноль здесь законен (`probe`
         # бесплатен по построению), а вот отрицательная цена — это задание,
@@ -489,6 +533,13 @@ class Settings:
             asm_debugx=(get("ASM_DEBUGX") or "").strip(),
             asm_timeout_s=_float(env, "ASM_TIMEOUT_S", 90.0),
             asm_step_limit_max=_int(env, "ASM_STEP_LIMIT_MAX", 500_000),
+            asm_tasm_version=(get("ASM_TASM_VERSION") or "").strip(),
+            asm_mingw_prefix=(get("ASM_MINGW_PREFIX") or "").strip(),
+            asm_mingw_bin=(get("ASM_MINGW_BIN") or "").strip(),
+            asm_mingw_lib=(get("ASM_MINGW_LIB") or "").strip(),
+            asm_mingw_tracer=(get("ASM_MINGW_TRACER") or "").strip(),
+            asm_mingw_queue=(get("ASM_MINGW_QUEUE") or "").strip(),
+            asm_mingw_step_limit_max=_int(env, "ASM_MINGW_STEP_LIMIT_MAX", 20_000),
             asm_show=_bool(env, "ASM_SHOW", False),
             sse_poll_s=_float(env, "SSE_POLL_S", 0.5),
             sse_max_s=_float(env, "SSE_MAX_S", 3600.0),

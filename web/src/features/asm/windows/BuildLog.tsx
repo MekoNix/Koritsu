@@ -17,6 +17,19 @@ import { firstError, traceState, useAnchorMenu, useSelectionAsk } from './format
 
 /** Сообщение TASM в логе: `**Error** file.asm(24) текст`, `*Warning* file.asm(7) текст`. */
 const MESSAGE_LINE = /^\s*\*+\s*(error|warning|fatal)\s*\*+\s+.*?\((\d+)\)/i
+/** Сообщение GNU as: `prog.s:12: Error: …`, `prog.s:7: Warning: …`. */
+const GAS_LINE = /^\s*[^\s:]+\.(?:s|S|asm):(\d+):\s*(?:(error|warning|fatal error|note)\s*:)?/i
+
+/** Строка лога — сообщение со строкой исходника? Разбор по режиму: у TASM — `**Error** file.asm(24)`, у GNU as — `file.s:24:`. */
+function messageOf(line: string, tasm: boolean): { line: number; warn: boolean } | null {
+  if (tasm) {
+    const m = MESSAGE_LINE.exec(line)
+    return m ? { line: parseInt(m[2]!, 10), warn: m[1]!.toLowerCase() === 'warning' } : null
+  }
+  const m = GAS_LINE.exec(line)
+  return m ? { line: parseInt(m[1]!, 10), warn: /warning/i.test(m[2] ?? '') } : null
+}
+
 /** Предупреждение — кнопка того же вида, что ошибка, но цвета `--warn`. */
 const WARN_STYLE = { color: 'var(--warn)' }
 /** Пометка сообщения, чей номер строки — от текста до правки. */
@@ -30,6 +43,7 @@ export default function BuildLog({ active }: AsmWindowProps) {
   const t = useT()
   const asm = useAsm()
   const { run } = asm
+  const tasm = asm.toolchain.id === 'tasm'
   const box = useRef<HTMLDivElement | null>(null)
   const menu = useAnchorMenu()
   const ask = useSelectionAsk({ window: 'build', active, root: box })
@@ -100,12 +114,12 @@ export default function BuildLog({ active }: AsmWindowProps) {
       .replace(/\r\n?/g, '\n')
       .split('\n')
       .map((line, i) => {
-        const m = MESSAGE_LINE.exec(line)
+        const m = messageOf(line, tasm)
         const msg = m ? null : build.messages.find((x) => x.line != null && x.text && line.includes(x.text))
-        const lineNo = m ? parseInt(m[2]!, 10) : (msg?.line ?? null)
+        const lineNo = m ? m.line : (msg?.line ?? null)
         if (lineNo != null) {
           logged.add(lineNo)
-          const warn = m ? m[1]!.toLowerCase() === 'warning' : msg?.severity === 'warning'
+          const warn = m ? m.warn : msg?.severity === 'warning'
           return (
             <span key={i}>
               {link(i, line, lineNo, warn)}
@@ -138,9 +152,9 @@ export default function BuildLog({ active }: AsmWindowProps) {
           </span>
         ))}
         {build.ok ? (
-          <Sys tone="ok">{state === 'running' || state === 'queued' ? t('asm.build.okTracing') : t('asm.build.ok')}</Sys>
+          <Sys tone="ok">{state === 'running' || state === 'queued' ? t(tasm ? 'asm.build.okTracing' : 'asm64.build.okTracing') : t('asm.build.ok')}</Sys>
         ) : (
-          <Sys tone="err">{t('asm.build.stopped')}</Sys>
+          <Sys tone="err">{t(tasm ? 'asm.build.stopped' : 'asm64.build.stopped')}</Sys>
         )}
         {run.error && (
           <>

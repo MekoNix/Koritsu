@@ -1,10 +1,11 @@
 /**
  * Docs — окно «Справка».
  *
- * Окно — обвязка `DocsView` вокруг состояния модуля: запрос «открыть справку на
- * записи» приходит из store (`docsRequest`, его кладёт `openDocs(token)` — F1,
- * контекстное меню, меню «Справка»), «Спросить агента» уходит в `askAgent` с
- * якорем записи, «Вставить пример» пишет в исходник.
+ * Окно — обвязка `DocsView` вокруг состояния модуля: набор записей — справка
+ * режима программы (`useDocEntries`, из описателя режима), запрос «открыть
+ * справку на записи» приходит из store (`docsRequest`, его кладёт
+ * `openDocs(token)` — F1, контекстное меню, меню «Справка»), «Спросить агента»
+ * уходит в `askAgent` с якорем записи, «Вставить пример» пишет в исходник.
  *
  * Пример вставляется **после строки под курсором**, а без курсора — в конец
  * через пустую строку: человек, открывший справку по F1 на строке кода, ждёт
@@ -12,15 +13,18 @@
  * не загрузилась) — пример уходит в буфер обмена.
  */
 import { useT } from '@/i18n'
+import { Spinner } from '@/ui'
 
 import { DocsView } from '../docs/DocsView'
 import type { DocEntry } from '../docs/entries'
+import { useDocEntries } from '../docs/useDocEntries'
 import { useAsm } from '../store'
 import type { AsmWindowProps } from '../types'
 
 export default function Docs(_props: AsmWindowProps) {
   const t = useT()
-  const { docsRequest, askAgent, program, setSource, cursorLine, toast } = useAsm()
+  const { docsRequest, askAgent, program, setSource, cursorLine, toast, toolchain } = useAsm()
+  const docs = useDocEntries()
 
   function insert(entry: DocEntry) {
     const ex = entry.ex
@@ -50,8 +54,19 @@ export default function Docs(_props: AsmWindowProps) {
     }
   }
 
+  if (docs.error) return <p className="px-s3 py-s4 text-sm text-err">{t('asm.docs.loadError')}</p>
+  if (!docs.entries)
+    return (
+      <div className="grid h-full place-items-center bg-surface">
+        <Spinner size={16} />
+      </div>
+    )
+
   return (
     <DocsView
+      // Другой режим — другой набор: поиск, раздел и открытая запись начинаются заново.
+      key={toolchain.id}
+      entries={docs.entries}
       request={docsRequest}
       onAsk={(entry) => askAgent({ kind: 'doc', id: entry.id })}
       onInsert={insert}

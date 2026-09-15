@@ -2,13 +2,18 @@
  * AsmListPage — главная модуля «Ассемблер»: программы текущего пространства.
  *
  * Как у доски: работы здесь не видно. Программа на томе — решение работы, но
- * выбирать работу незачем: программу заводят, чтобы написать и прогнать код, и
- * «Новая программа» — одно нажатие, после которого сразу открывается редактор.
+ * выбирать работу незачем: программу заводят, чтобы написать и прогнать код.
  *
- * Если на машине службы нет TASM, TLINK, DOSBox-X или DebugX, список всё равно
- * показывается — писать исходник можно и так, — но полосой сверху сказано, что
- * собрать его сейчас не выйдет. Узнать это после нажатия «Собрать» было бы
- * обиднее.
+ * **Список один на оба режима.** У карточки — чип режима и версии, над лентой —
+ * фильтр «Все / TASM / MinGW x64». Режимы не разнесены по отдельным страницам:
+ * программа другого режима, спрятанная за вкладкой, терялась бы. «Новая
+ * программа» ведёт на `/asm/new`, где выбираются режим, версия и имя; выбранный
+ * фильтр режима там предвыбран.
+ *
+ * Если на машине службы не готов ни один режим, список всё равно показывается —
+ * писать исходник можно и так, — но полосой сверху сказано, что собрать его
+ * сейчас не выйдет. Узнать это после нажатия «Собрать» было бы обиднее.
+ * Готовность каждого режима отдельно видна на странице новой программы.
  */
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -16,17 +21,15 @@ import { Link, useNavigate } from 'react-router-dom'
 import { errorText } from '@/api'
 import { useCurrentWorkspace } from '@/api/hooks'
 import { useT } from '@/i18n'
-import { BetaTag, Button, Chip, Dialog, EmptyState, ErrorState, Icon, Input, SkeletonLines } from '@/ui'
+import { BetaTag, Button, Chip, Dialog, EmptyState, ErrorState, Icon, Input, Segmented, SkeletonLines } from '@/ui'
 import { canEditWorkspace } from '@/features/projects/data'
 import { WorkspaceCaption } from '@/features/workspace/WorkspaceCaption'
 
-import {
-  useAsmPrograms,
-  useAsmStatus,
-  useCreateAsmProgram,
-  useDeleteAsmProgram,
-  type AsmProgramCard,
-} from './api'
+import { useAsmPrograms, useAsmStatus, useDeleteAsmProgram, type AsmProgramCard } from './api'
+import { TOOLCHAIN_IDS } from './toolchains'
+import type { AsmToolchainId } from './types'
+
+type Фильтр = 'all' | AsmToolchainId
 
 export function AsmListPage() {
   const t = useT()
@@ -34,30 +37,32 @@ export function AsmListPage() {
   const workspace = useCurrentWorkspace()
   const programs = useAsmPrograms(workspace.data?.id)
   const status = useAsmStatus()
-  const создать = useCreateAsmProgram()
   const удалить = useDeleteAsmProgram()
   const [query, setQuery] = useState('')
+  const [фильтр, setФильтр] = useState<Фильтр>('all')
   const [сносим, setСносим] = useState<AsmProgramCard | null>(null)
   const canEdit = canEditWorkspace(workspace.data?.role)
 
   const найденные = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const все = programs.data ?? []
+    let все = programs.data ?? []
+    if (фильтр !== 'all') все = все.filter((p) => p.toolchain === фильтр)
     return q ? все.filter((p) => имя(p, t).toLowerCase().includes(q)) : все
-  }, [programs.data, query, t])
+  }, [programs.data, query, фильтр, t])
 
-  function завести() {
-    const ws = workspace.data?.id
-    if (!ws) return
-    создать.mutate({ workspaceId: ws }, { onSuccess: (p) => navigate(`/asm/${p.project_id}/${p.program_id}`) })
-  }
+  const завести = () => navigate(фильтр === 'all' ? '/asm/new' : `/asm/new?toolchain=${фильтр}`)
 
   const кнопка = canEdit ? (
-    <Button variant="primary" loading={создать.isPending} onClick={завести}>
+    <Button variant="primary" onClick={завести}>
       <Icon name="plus" size={16} />
       {t('asm.list.create')}
     </Button>
   ) : null
+
+  const фильтры = [
+    { value: 'all' as const, label: t('asm.list.filter.all') },
+    ...TOOLCHAIN_IDS.map((id) => ({ value: id, label: t(`asm.list.filter.${id}`) })),
+  ]
 
   return (
     <div className="flex flex-col gap-s5">
@@ -80,8 +85,6 @@ export function AsmListPage() {
         </div>
       )}
 
-      {создать.isError && <p className="text-sm text-err">{errorText(создать.error)}</p>}
-
       {programs.isPending ? (
         <SkeletonLines count={4} />
       ) : programs.isError ? (
@@ -90,15 +93,22 @@ export function AsmListPage() {
         <EmptyState icon="queue" title={t('asm.list.emptyTitle')} text={t('asm.list.emptyText')} action={кнопка} />
       ) : (
         <>
-          <Input
-            value={query}
-            className="max-w-[420px]"
-            placeholder={t('asm.list.search')}
-            aria-label={t('asm.list.search')}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <div className="flex flex-wrap items-center gap-s3">
+            <Input
+              value={query}
+              className="max-w-[420px]"
+              placeholder={t('asm.list.search')}
+              aria-label={t('asm.list.search')}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <Segmented value={фильтр} options={фильтры} onChange={setФильтр} label={t('asm.list.filter.label')} size="sm" />
+          </div>
           {найденные.length === 0 ? (
-            <EmptyState icon="queue" title={t('asm.list.nothingFound')} />
+            <EmptyState
+              icon="queue"
+              title={query.trim() ? t('asm.list.nothingFound') : t('asm.list.nothingInMode')}
+              action={!query.trim() ? кнопка : undefined}
+            />
           ) : (
             <ul className="grid gap-s3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
               {найденные.map((p) => (
@@ -112,6 +122,9 @@ export function AsmListPage() {
                       <span className="truncate font-mono font-semibold text-ink-strong">{имя(p, t)}</span>
                     </Link>
                     <span className="mt-auto flex flex-wrap items-center gap-s2 text-xs text-muted">
+                      <Chip tone={p.toolchain === 'tasm' ? 'muted' : 'info'}>
+                        {t(`asm.toolchain.${p.toolchain}.chip`, { version: p.toolchain_version })}
+                      </Chip>
                       {p.last_status && <Chip>{t(`asm.list.last.${p.last_status}`)}</Chip>}
                       {p.updated_at && <span>{когда(p.updated_at)}</span>}
                       {canEdit && (

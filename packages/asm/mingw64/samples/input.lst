@@ -1,0 +1,129 @@
+GAS LISTING input.s 			page 1
+
+
+   1              	    .intel_syntax noprefix
+   2              	    .globl  main
+   3              	    .data
+   4              	    .p2align 4
+   5 0000 00000000 	hin:    .quad   0
+   5      00000000 
+   6 0008 00000000 	hout:   .quad   0
+   6      00000000 
+   7 0010 00000000 	nread:  .quad   0
+   7      00000000 
+   8 0018 00000000 	nwr:    .quad   0
+   8      00000000 
+   9 0020 456E7465 	prompt: .ascii  "Enter: "
+   9      723A20
+  10              	    .equ    plen, .-prompt
+  11 0027 00000000 	buf:    .space  64
+  11      00000000 
+  11      00000000 
+  11      00000000 
+  11      00000000 
+  12 0067 00000000 	    .text
+  12      00000000 
+  12      00
+  13              	main:
+  14 0000 55       	    push    rbp
+  15 0001 4889E5   	    mov     rbp, rsp
+  16 0004 4883EC30 	    sub     rsp, 48
+  17 0008 48C7C1F6 	    mov     rcx, -10            #STD_INPUT_HANDLE
+  17      FFFFFF
+  18 000f E8000000 	    call    GetStdHandle
+  18      00
+  19 0014 48890500 	    mov     [rip+hin], rax
+  19      000000
+  20 001b 48C7C1F5 	    mov     rcx, -11            #STD_OUTPUT_HANDLE
+  20      FFFFFF
+  21 0022 E8000000 	    call    GetStdHandle
+  21      00
+  22 0027 48890508 	    mov     [rip+hout], rax
+  22      000000
+  23 002e 488B0D08 	    mov     rcx, [rip+hout]
+  23      000000
+  24 0035 488D1520 	    lea     rdx, [rip+prompt]
+  24      000000
+  25 003c 49C7C007 	    mov     r8, plen
+  25      000000
+  26 0043 4C8D0D18 	    lea     r9, [rip+nwr]
+  26      000000
+  27 004a 48C74424 	    mov     qword ptr [rsp+32], 0
+  27      20000000 
+  27      00
+  28 0053 E8000000 	    call    WriteFile
+  28      00
+  29 0058 488B0D00 	    mov     rcx, [rip+hin]
+  29      000000
+  30 005f 488D1527 	    lea     rdx, [rip+buf]
+  30      000000
+  31 0066 49C7C040 	    mov     r8, 64
+GAS LISTING input.s 			page 2
+
+
+  31      000000
+  32 006d 4C8D0D10 	    lea     r9, [rip+nread]
+  32      000000
+  33 0074 48C74424 	    mov     qword ptr [rsp+32], 0
+  33      20000000 
+  33      00
+  34 007d E8000000 	    call    ReadFile
+  34      00
+  35              	    #короткий цикл: строчные латинские в заглавные
+  36 0082 488D3527 	    lea     rsi, [rip+buf]
+  36      000000
+  37 0089 488B0D10 	    mov     rcx, [rip+nread]
+  37      000000
+  38 0090 4885C9   	    test    rcx, rcx
+  39 0093 7413     	    jz      done
+  40              	up:
+  41 0095 8A06     	    mov     al, [rsi]
+  42 0097 3C61     	    cmp     al, 'a'
+  43 0099 7208     	    jb      skip
+  44 009b 3C7A     	    cmp     al, 'z'
+  45 009d 7704     	    ja      skip
+  46 009f 2C20     	    sub     al, 32
+  47 00a1 8806     	    mov     [rsi], al
+  48              	skip:
+  49 00a3 48FFC6   	    inc     rsi
+  50 00a6 E2ED     	    loop    up
+  51              	done:
+  52 00a8 488B0D08 	    mov     rcx, [rip+hout]
+  52      000000
+  53 00af 488D1527 	    lea     rdx, [rip+buf]
+  53      000000
+  54 00b6 4C8B0510 	    mov     r8, [rip+nread]
+  54      000000
+  55 00bd 4C8D0D18 	    lea     r9, [rip+nwr]
+  55      000000
+  56 00c4 48C74424 	    mov     qword ptr [rsp+32], 0
+  56      20000000 
+  56      00
+  57 00cd E8000000 	    call    WriteFile
+  57      00
+  58 00d2 488B0510 	    mov     rax, [rip+nread]
+  58      000000
+  59 00d9 4883C430 	    add     rsp, 48
+  60 00dd 5D       	    pop     rbp
+  61 00de C390     	    ret
+GAS LISTING input.s 			page 3
+
+
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 fake
+             input.s:13     .text:0000000000000000 main
+             input.s:5      .data:0000000000000000 hin
+             input.s:6      .data:0000000000000008 hout
+             input.s:7      .data:0000000000000010 nread
+             input.s:8      .data:0000000000000018 nwr
+             input.s:9      .data:0000000000000020 prompt
+             input.s:10     *ABS*:0000000000000007 plen
+             input.s:11     .data:0000000000000027 buf
+             input.s:51     .text:00000000000000a8 done
+             input.s:40     .text:0000000000000095 up
+             input.s:48     .text:00000000000000a3 skip
+
+UNDEFINED SYMBOLS
+GetStdHandle
+WriteFile
+ReadFile

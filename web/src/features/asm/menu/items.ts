@@ -8,7 +8,7 @@
 import { t } from '@/i18n'
 
 import type { AsmContextValue, AsmUi } from '../store'
-import { ASM_WINDOWS } from '../windows/registry'
+import { windowDefFor, windowsFor } from '../windows/registry'
 import type { AsmActions } from './actions'
 
 export type MenuEntry =
@@ -34,6 +34,14 @@ export function buildMenus(asm: AsmContextValue, ui: AsmUi, a: AsmActions): Menu
   const m = (k: string) => t(`asm.menu.${k}`)
   const noTrace = !ui.traceReady
   const cursorBp = asm.cursorLine != null && asm.settings.breakpoints.includes(asm.cursorLine)
+  // Переключатель 16/32 — только у режима, где он что-то значит (TASM).
+  const bits: MenuEntry[] = asm.toolchain.bitsSwitch
+    ? [
+        { label: m('view.bits16'), radio: true, check: asm.view.bits === 16, act: () => asm.setView({ bits: 16 }) },
+        { label: m('view.bits32'), radio: true, check: asm.view.bits === 32, act: () => asm.setView({ bits: 32 }) },
+        'sep',
+      ]
+    : []
 
   return [
     {
@@ -101,9 +109,7 @@ export function buildMenus(asm: AsmContextValue, ui: AsmUi, a: AsmActions): Menu
     {
       label: m('view.title'),
       items: () => [
-        { label: m('view.bits16'), radio: true, check: asm.view.bits === 16, act: () => asm.setView({ bits: 16 }) },
-        { label: m('view.bits32'), radio: true, check: asm.view.bits === 32, act: () => asm.setView({ bits: 32 }) },
-        'sep',
+        ...bits,
         { label: m('view.hex'), radio: true, check: asm.view.radix === 'hex', act: () => asm.setView({ radix: 'hex' }) },
         { label: m('view.dec'), radio: true, check: asm.view.radix === 'dec', act: () => asm.setView({ radix: 'dec' }) },
         'sep',
@@ -120,8 +126,8 @@ export function buildMenus(asm: AsmContextValue, ui: AsmUi, a: AsmActions): Menu
       items: () => [
         { label: m('window.resetLayout'), act: ui.dock.resetLayout },
         'sep',
-        ...ASM_WINDOWS.map((w) => ({
-          label: t(w.title),
+        ...windowsFor(asm.toolchain.id).map((w) => ({
+          label: t(windowDefFor(asm.toolchain, w.id).title),
           check: ui.dock.isOpen(w.id),
           key: w.hotkey ?? '',
           act: () => asm.openWindow(w.id, { focus: true }),

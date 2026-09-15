@@ -39,5 +39,6 @@ web/
 status.md
 CHANGELOG.md
 Dockerfile
+Dockerfile.asm-runner
 docker-compose*.yml
 Caddyfile

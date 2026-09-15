@@ -24,6 +24,7 @@ import {
   firstError,
   hasTrace,
   hex,
+  hexFlat,
   isMenuKey,
   lastStepIndex,
   lineOfNode,
@@ -35,9 +36,11 @@ import {
   useAnchorMenu,
   useRowWindow,
   useSelectionAsk,
+  useToolchainLanguage,
   useTraceScan,
 } from './format'
 import { mnemonicOf, tasmSpans } from './tasmLanguage'
+import './windows64.css'
 
 /** Строки листинга, которые задевает выделение. Конец в самом начале строки её не задевает. */
 function selectionLines(range: Range): readonly [number | null, number | null] {
@@ -82,7 +85,12 @@ interface Row {
 export default function Listing({ active }: AsmWindowProps) {
   const t = useT()
   const asm = useAsm()
-  const { run, step, program, settings, cursorLine, selection, stepIndex } = asm
+  const { run, step, program, settings, cursorLine, selection, stepIndex, toolchain } = asm
+  const tasm = toolchain.id === 'tasm'
+  // Плоская память: смещение строки — уже адрес после связывания, 16 знаков, без сегмента.
+  const flat = toolchain.memory === 'flat'
+  const lang = useToolchainLanguage()
+  const mnemonic = (text: string) => (tasm ? mnemonicOf(text) : (lang?.mnemonicOf(text) ?? null))
   const menu = useAnchorMenu()
   const total = lastStepIndex(run)
   const fullHits = total <= HITS_FULL_LIMIT
@@ -92,12 +100,12 @@ export default function Listing({ active }: AsmWindowProps) {
     const listing = run?.build?.listing
     if (listing && listing.length > 0) {
       return listing.map((l) => {
-        const base = segmentBase(run, l.segment)
+        const base = flat ? null : segmentBase(run, l.segment)
         const off = parseHex(l.offset)
         return {
           line: l.line,
           seg: base == null ? null : hex(base),
-          addr: off == null ? null : hex(off),
+          addr: off == null ? null : flat ? hexFlat(off) : hex(off),
           bytes: l.bytes.trim(),
           text: l.text,
         }
@@ -105,7 +113,7 @@ export default function Listing({ active }: AsmWindowProps) {
     }
     // Сборки ещё не было — показываем исходник как есть, без адресов.
     return (program?.source ?? '').split('\n').map((text, i) => ({ line: i + 1, seg: null, addr: null, bytes: '', text: text.replace(/\r$/, '') }))
-  }, [run, program?.source])
+  }, [run, program?.source, flat])
 
   const indexByLine = useMemo(() => {
     const m = new Map<number, number>()
@@ -163,7 +171,7 @@ export default function Listing({ active }: AsmWindowProps) {
       e.stopPropagation()
       const el = win.ref.current?.querySelector('[data-cursor="true"]')
       const row = rows[indexByLine.get(cursorLine) ?? -1]
-      if (el && row) menu.open(menuPointOf(el), { kind: 'line', line: cursorLine }, mnemonicOf(row.text), ask.current())
+      if (el && row) menu.open(menuPointOf(el), { kind: 'line', line: cursorLine }, mnemonic(row.text), ask.current())
       return
     }
     const page = Math.max(1, Math.floor(win.height / ROW) - 1)
@@ -197,13 +205,13 @@ export default function Listing({ active }: AsmWindowProps) {
         </div>
       )}
       <div ref={win.ref} tabIndex={0} role="grid" aria-label={t('asm.tabs.listing')} onKeyDown={onKeyDown} className="qb">
-        <div className="lst">
+        <div className={cn('lst', flat && 'lst64')}>
           <div role="row" className="lh">
             <span />
             <span>{t('asm.listing.colLine')}</span>
-            <span>{t('asm.listing.colAddr')}</span>
+            <span>{t(flat ? 'asm64.listing.colAddr' : 'asm.listing.colAddr')}</span>
             <span>{t('asm.listing.colBytes')}</span>
-            <span>{t('asm.listing.colSource')}</span>
+            <span>{t(tasm ? 'asm.listing.colSource' : 'asm64.listing.colSource')}</span>
             <span title={fullHits ? t('asm.listing.hitsAll') : t('asm.listing.hitsToStep')}>{t('asm.listing.colHits')}</span>
           </div>
           {rows.length === 0 && <div className="empty">{t('asm.listing.empty')}</div>}
@@ -240,7 +248,7 @@ export default function Listing({ active }: AsmWindowProps) {
                   asm.setCursorLine(r.line)
                   asm.runToCursor()
                 }}
-                onContextMenu={(e) => menu.open(e, { kind: 'line', line: r.line }, mnemonicOf(r.text), ask.current())}
+                onContextMenu={(e) => menu.open(e, { kind: 'line', line: r.line }, mnemonic(r.text), ask.current())}
               >
                 <span
                   className="gut"
@@ -255,15 +263,21 @@ export default function Listing({ active }: AsmWindowProps) {
                 />
                 <span className="no">{first ? r.line : ''}</span>
                 <span className="addr">
-                  {r.addr != null && (
-                    <>
-                      {r.seg != null && <span className="sg">{r.seg}:</span>}
-                      {r.addr}
-                    </>
-                  )}
+                  {r.addr != null &&
+                    (flat ? (
+                      <>
+                        <span className="hi">{r.addr.slice(0, 8)}</span>
+                        {r.addr.slice(8)}
+                      </>
+                    ) : (
+                      <>
+                        {r.seg != null && <span className="sg">{r.seg}:</span>}
+                        {r.addr}
+                      </>
+                    ))}
                 </span>
                 <span className="by">{r.bytes}</span>
-                <span className="src">{tasmSpans(r.text)}</span>
+                <span className="src">{tasm ? tasmSpans(r.text) : lang ? lang.spans(r.text) : r.text}</span>
                 <span className="hits">
                   {isExit && <span className="text-ok">{t('asm.listing.exit')} </span>}
                   {hits ? `×${fmtInt(hits)}` : ''}

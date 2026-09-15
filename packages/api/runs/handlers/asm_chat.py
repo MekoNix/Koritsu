@@ -59,8 +59,8 @@ def ответить(ctx) -> dict:
     """Позвать агента по трассе и дописать вопрос с ответом в переписку."""
     from ...modules.asm.routes import (ИСХОДНИК,                # noqa: PLC0415
                                        СООБЩЕНИЕ_МАКС, СООБЩЕНИЙ_МОДЕЛИ,
-                                       дописать_переписку, сейчас,
-                                       сообщения_записи, якорь)
+                                       дописать_переписку, режим_программы,
+                                       сейчас, сообщения_записи, якорь)
 
     payload = ctx.job.payload or {}
     текст = str(payload.get("text") or "").strip()[:СООБЩЕНИЕ_МАКС]
@@ -77,6 +77,8 @@ def ответить(ctx) -> dict:
 
     история = сообщения_записи(ctx.project)[-СООБЩЕНИЙ_МОДЕЛИ:]
     исходник = str((ctx.project.state(ИСХОДНИК) or {}).get("source") or "")
+    # Режим программы — для разговора без прогона; у прогона свой режим в нём.
+    набор, _ = режим_программы(ctx.project)
     with Прогон(ctx) as прогон:
         ctx.progress(0, 1, note="asm")
         if ctx.cancelled():
@@ -85,7 +87,7 @@ def ответить(ctx) -> dict:
             итог = ассемблер.chat(
                 прогон.project, endpoint=прогон.ep, message=текст,
                 run_no=номер, step=шаг, anchor=привязка, source=исходник,
-                history=история, cancel=прогон.отмена)
+                history=история, cancel=прогон.отмена, toolchain=набор)
         except Exception as беда:                            # noqa: BLE001
             raise ApiError(ASM_CHAT_FAILED, беда_словами(беда), 422,
                            where="body.payload") from None

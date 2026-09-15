@@ -23,7 +23,8 @@
 import { createElement, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 
 import { useAsm } from '@/features/asm/store'
-import type { AsmAnchor, AsmRunSummary, AsmStep, AsmTextWindow } from '@/features/asm/types'
+import type { AsmLanguage } from '@/features/asm/toolchains'
+import { isSegmentedLoad, type AsmAnchor, type AsmRunSummary, type AsmStep, type AsmTextWindow } from '@/features/asm/types'
 import { plural } from '@/features/projects/format'
 import { t } from '@/i18n'
 import { MenuContent, MenuItem, MenuLabel, MenuRoot, MenuSeparator, MenuTrigger } from '@/ui'
@@ -303,9 +304,10 @@ export function segmentBase(run: AsmRunSummary | undefined, name: string | null)
   if (!run || name == null) return null
   const segs = run.build?.segments ?? []
   const s = segs.find((x) => x.name.toUpperCase() === name.toUpperCase())
-  const psp = parseHex(run.load?.psp)
+  const load = isSegmentedLoad(run.load) ? run.load : null
+  const psp = parseHex(load?.psp)
   if (s) {
-    if (s.cls.toUpperCase() === 'CODE' && run.load) return parseHex(run.load.cs)
+    if (s.cls.toUpperCase() === 'CODE' && load) return parseHex(load.cs)
     const start = parseHex(s.start)
     if (start != null && psp != null) return (psp + 0x10 + (start >> 4)) & 0xffff
     return null
@@ -315,12 +317,13 @@ export function segmentBase(run: AsmRunSummary | undefined, name: string | null)
 
 /** Чей это сегмент: PSP, код, данные или стек — подпись у сегментных регистров. */
 export function segmentRole(run: AsmRunSummary | undefined, seg: number): 'psp' | 'code' | 'data' | 'stack' | null {
-  if (!run?.load) return null
-  if (seg === parseHex(run.load.psp)) return 'psp'
-  if (seg === parseHex(run.load.cs)) return 'code'
-  if (seg === parseHex(run.load.ss)) return 'stack'
+  const load = run?.load
+  if (!run || !isSegmentedLoad(load)) return null
+  if (seg === parseHex(load.psp)) return 'psp'
+  if (seg === parseHex(load.cs)) return 'code'
+  if (seg === parseHex(load.ss)) return 'stack'
   // `load.ds` — сегмент данных по карте TLINK, а не DS при загрузке (тот равен PSP).
-  if (seg === parseHex(run.load.ds)) return 'data'
+  if (seg === parseHex(load.ds)) return 'data'
   const data = run.build?.segments.find((s) => s.cls.toUpperCase() === 'DATA')
   if (data && seg === segmentBase(run, data.name)) return 'data'
   return null
@@ -340,9 +343,19 @@ export interface Addr {
   off: number
 }
 
-/** Линейный адрес реального режима: сегмент × 16 + смещение. */
-export function linear(a: Addr): number {
+/**
+ * Линейный адрес реального режима: сегмент × 16 + смещение. `seg = null` —
+ * плоская память: адрес и есть смещение (до 2^53, без побитовых операций).
+ */
+export function linear(a: Addr | { seg: number | null; off: number }): number {
+  if (a.seg == null) return a.off
   return (a.seg * 16 + a.off) & 0xfffff
+}
+
+/** Адрес плоской памяти 16 знаками hex: `0000000140001000`. */
+export function hexFlat(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '0'.repeat(16)
+  return BigInt(Math.floor(n)).toString(16).toUpperCase().padStart(16, '0')
 }
 
 export function fmtAddr(a: Addr): string {
@@ -398,7 +411,7 @@ export function symbolAt(symbols: readonly DataSymbol[], off: number): { sym: Da
 /** Сегменты по умолчанию, пока шага нет: из того, как DOS загрузил программу. */
 function defaultSegment(name: string, run: AsmRunSummary | undefined): number | null {
   const load = run?.load
-  if (!load) return null
+  if (!isSegmentedLoad(load)) return null
   const n = name.toLowerCase()
   if (n === 'cs') return parseHex(load.cs)
   if (n === 'ds' || n === 'es') return parseHex(load.ds)
@@ -556,11 +569,19 @@ export class TraceScan {
   }
 }
 
+/** Адрес записи или дампа: `seg = null` — плоская память; негодный сегмент или смещение — `null`. */
+function placeOf(seg: string | null, offHex: string): { seg: number | null; off: number } | null {
+  const off = parseHex(offHex)
+  if (off == null) return null
+  if (seg == null) return { seg: null, off }
+  const s = parseHex(seg)
+  return s == null ? null : { seg: s, off }
+}
+
 function applyWrite(map: Map<number, Cell>, w: AsmStep['mem'][number], step: number) {
-  const seg = parseHex(w.seg)
-  const off = parseHex(w.off)
-  if (seg == null || off == null) return
-  hexBytes(w.new).forEach((v, j) => map.set(linear({ seg, off: off + j }), { v, s: step }))
+  const at = placeOf(w.seg, w.off)
+  if (!at) return
+  hexBytes(w.new).forEach((v, j) => map.set(linear({ seg: at.seg, off: at.off + j }), { v, s: step }))
 }
 
 const scans = new Map<string, TraceScan>()
@@ -623,18 +644,16 @@ export function memView(scan: TraceScan | null, run: AsmRunSummary | undefined, 
   const dumped = new Map<number, Cell>()
   const dumps = [...(run?.dumps ?? []), ...(scan?.extraDumps ?? [])].filter((d) => d.step <= k).sort((a, b) => a.step - b.step)
   for (const d of dumps) {
-    const seg = parseHex(d.seg)
-    const off = parseHex(d.off)
-    if (seg == null || off == null) continue
-    hexBytes(d.hex).forEach((v, j) => dumped.set(linear({ seg, off: off + j }), { v, s: d.step }))
+    const at = placeOf(d.seg, d.off)
+    if (!at) continue
+    hexBytes(d.hex).forEach((v, j) => dumped.set(linear({ seg: at.seg, off: at.off + j }), { v, s: d.step }))
   }
   const writes = scan?.writesAt(getStep, k) ?? null
   const changed = new Set<number>()
   if (step) for (const w of step.mem) {
-    const seg = parseHex(w.seg)
-    const off = parseHex(w.off)
-    if (seg == null || off == null) continue
-    hexBytes(w.new).forEach((_, j) => changed.add(linear({ seg, off: off + j })))
+    const at = placeOf(w.seg, w.off)
+    if (!at) continue
+    hexBytes(w.new).forEach((_, j) => changed.add(linear({ seg: at.seg, off: at.off + j })))
   }
   const written = new Set<number>(writes ? writes.keys() : [])
   return {
@@ -657,6 +676,74 @@ export function useMemView(enabled: boolean): { mem: MemView; scan: TraceScan | 
   const { run, step, stepIndex, getStep } = useAsm()
   const scan = useTraceScan('current', enabled)
   return { mem: memView(scan, run, step, stepIndex, getStep), scan }
+}
+
+/** Сколько ждать после прокрутки или шага, прежде чем дочитывать память. */
+const FLAT_FETCH_DELAY_MS = 600
+
+/**
+ * Дочитать плоскую память на текущем шаге: `from` — первый неизвестный адрес на
+ * экране (`null` — всё известно), `len` — сколько байт просить. Один и тот же
+ * кусок на том же шаге не просится дважды; прочитанное ложится в
+ * `scan.extraDumps` и дальше видно всем окнам через `memView`.
+ */
+export function useFlatFetch(opts: { active: boolean; scan: TraceScan | null; from: number | null; len: number }): 'idle' | 'loading' | 'error' {
+  const { run, stepIndex, memory } = useAsm()
+  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle')
+  const requested = useRef(new Set<string>())
+  const runNo = run?.run_no ?? -1
+  const { active, scan, from, len } = opts
+  useEffect(() => {
+    if (!active || !scan || from == null || len <= 0) return
+    const key = `${runNo}:${stepIndex}:${from}:${len}`
+    if (requested.current.has(key)) return
+    const timer = window.setTimeout(() => {
+      requested.current.add(key)
+      setState('loading')
+      memory(stepIndex, [{ seg: null, off: hexFlat(from), len }]).then(
+        (dumps) => {
+          scan.extraDumps.push(...dumps)
+          setState('idle')
+        },
+        () => setState('error'),
+      )
+    }, FLAT_FETCH_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [active, scan, from, len, runNo, stepIndex, memory])
+  return state
+}
+
+/* ── подсветка режима ──────────────────────────────────────────────────────── */
+
+const languages = new Map<string, AsmLanguage>()
+
+/**
+ * Подсветка режима программы (`toolchain.language()`), загруженная лениво; пока
+ * грузится — `null`. Загруженная держится на всю страницу: у второго окна
+ * она уже есть с первой отрисовки.
+ */
+export function useToolchainLanguage(): AsmLanguage | null {
+  const { toolchain } = useAsm()
+  const [lang, setLang] = useState<AsmLanguage | null>(() => languages.get(toolchain.id) ?? null)
+  useEffect(() => {
+    const had = languages.get(toolchain.id)
+    if (had) {
+      setLang(had)
+      return
+    }
+    let alive = true
+    toolchain.language().then(
+      (l) => {
+        languages.set(toolchain.id, l)
+        if (alive) setLang(l)
+      },
+      () => {},
+    )
+    return () => {
+      alive = false
+    }
+  }, [toolchain])
+  return lang
 }
 
 /* ── окно строк ────────────────────────────────────────────────────────────── */
@@ -765,7 +852,7 @@ export function anchorLabel(anchor: AsmAnchor): string {
     case 'flag':
       return t('asm.ctx.flag', { name: anchor.name.toUpperCase() })
     case 'cell':
-      return t('asm.ctx.cell', { addr: `${anchor.seg}:${anchor.off}` })
+      return t('asm.ctx.cell', { addr: anchor.seg == null ? anchor.off : `${anchor.seg}:${anchor.off}` })
     case 'doc':
       return anchor.id
     case 'text':
@@ -786,6 +873,9 @@ export interface AnchorMenuState {
 }
 
 type MenuPoint = { clientX: number; clientY: number; preventDefault(): void }
+
+/** Регистры x64, значение которых обычно адрес: у них в меню есть «Показать в дампе». */
+const FLAT_POINTERS = ['RSI', 'RDI', 'RBX', 'RBP', 'RSP', 'RCX', 'RDX', 'R8', 'R9', 'RIP']
 
 /**
  * Контекстное меню якоря: «Спросить агента», «Справка», и дальше по виду якоря —
@@ -841,23 +931,35 @@ export function useAnchorMenu(): {
           }),
         )
     }
-    const watchExpr = anchor.kind === 'register' || anchor.kind === 'flag' ? anchor.name.toUpperCase() : anchor.kind === 'cell' ? `${anchor.seg}:${anchor.off}` : null
+    // Ячейка плоской памяти уходит в наблюдение значением по адресу: `[0x…]`.
+    const watchExpr =
+      anchor.kind === 'register' || anchor.kind === 'flag'
+        ? anchor.name.toUpperCase()
+        : anchor.kind === 'cell'
+          ? anchor.seg == null
+            ? `[0x${anchor.off}]`
+            : `${anchor.seg}:${anchor.off}`
+          : null
     if (watchExpr) {
       items.push(createElement(MenuSeparator, { key: 'sep2' }))
       items.push(
         item('watch', t('asm.ctx.watch'), () => {
           const w = asm.settings.watches
-          if (!w.some((x) => x.toUpperCase() === watchExpr)) asm.updateSettings({ watches: [...w, watchExpr] })
+          if (!w.some((x) => x.toUpperCase() === watchExpr.toUpperCase())) asm.updateSettings({ watches: [...w, watchExpr] })
           asm.openWindow('watch', { focus: true })
         }),
       )
     }
-    const pointer = anchor.kind === 'register' && ['SI', 'DI', 'BX', 'BP', 'SP', 'DX'].includes(anchor.name.toUpperCase())
+    const flat = asm.toolchain.memory === 'flat'
+    const pointer = anchor.kind === 'register' && (flat ? FLAT_POINTERS : ['SI', 'DI', 'BX', 'BP', 'SP', 'DX']).includes(anchor.name.toUpperCase())
     if (pointer || anchor.kind === 'cell') {
       items.push(
         item('dump', t('asm.ctx.toDump'), () => {
           if (anchor.kind === 'cell') asm.select(anchor)
-          else {
+          else if (flat) {
+            const v = parseHex(asm.step?.reg[anchor.name.toLowerCase()])
+            if (v != null) asm.select({ kind: 'cell', seg: null, off: hexFlat(v) })
+          } else {
             const n = anchor.name.toLowerCase()
             const segName = n === 'sp' || n === 'bp' ? 'ss' : n === 'di' ? 'es' : 'ds'
             const seg = reg(asm.step, segName)

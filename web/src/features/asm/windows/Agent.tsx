@@ -40,11 +40,21 @@ import { cn } from '@/lib/cn'
 import { Icon, Spinner } from '@/ui'
 
 import { asmKeys, useAsmChat, usePostAsmChat, type AsmChatMessage, type AsmChatSend } from '../api'
-import { DOC_BY_ID } from '../docs/entries'
+import { entryById } from '../docs/lookup'
+import { useDocEntries } from '../docs/useDocEntries'
 import { useAsm } from '../store'
-import type { AsmAnchor, AsmRunSummary, AsmStep, AsmWindowProps } from '../types'
+import { regHex, type AsmAnchor, type AsmRunSummary, type AsmStep, type AsmWindowProps } from '../types'
+import { apiShortName, winapi } from './winapi'
 
 type T = ReturnType<typeof useT>
+
+/** Что подписи якоря и вопросы берут из режима программы. */
+interface AnchorCtx {
+  /** Заголовок записи справки по id; набор ещё не загружен — сам id. */
+  docName(id: string): string
+  /** Имя регистра флагов в шаге: `flags` у TASM, `rflags` у MinGW x64. */
+  flagsReg: string
+}
 
 /** Кадр потока задания с куском ответа. */
 const EV_TEXT = 'text'
@@ -62,14 +72,20 @@ const handledSeq = new Map<string, number>()
 
 const FLAG_BIT: Record<string, number> = { of: 11, df: 10, if: 9, tf: 8, sf: 7, zf: 6, af: 4, pf: 2, cf: 0 }
 
-function flagValue(step: AsmStep | undefined, name: string): number | null {
+function flagValue(step: AsmStep | undefined, name: string, flagsReg: string): number | null {
   const bit = FLAG_BIT[name.toLowerCase()]
-  if (!step || bit === undefined) return null
-  const flags = parseInt(step.reg.flags, 16)
+  const hex = regHex(step, flagsReg)
+  if (hex === undefined || bit === undefined) return null
+  const flags = parseInt(hex, 16)
   return Number.isNaN(flags) ? null : (flags >> bit) & 1
 }
 
-function anchorLabel(t: T, a: AsmAnchor | null, step: number | null, runNo: number | null): string {
+/** Адрес ячейки якоря: `сегмент:смещение` у TASM, одно смещение в плоской памяти. */
+function cellAddr(a: { seg: string | null; off: string }): string {
+  return a.seg ? `${a.seg}:${a.off}` : a.off
+}
+
+function anchorLabel(t: T, ctx: AnchorCtx, a: AsmAnchor | null, step: number | null, runNo: number | null): string {
   if (!a) return t('asm.agent.anchor.none')
   switch (a.kind) {
     case 'line':
@@ -81,9 +97,9 @@ function anchorLabel(t: T, a: AsmAnchor | null, step: number | null, runNo: numb
     case 'flag':
       return t('asm.agent.anchor.flag', { name: a.name.toUpperCase() })
     case 'cell':
-      return t('asm.agent.anchor.cell', { addr: `${a.seg}:${a.off}` })
+      return t('asm.agent.anchor.cell', { addr: cellAddr(a) })
     case 'doc':
-      return t('asm.agent.anchor.doc', { name: DOC_BY_ID[a.id]?.name ?? a.id })
+      return t('asm.agent.anchor.doc', { name: ctx.docName(a.id) })
     case 'run':
       return runNo !== null ? t('asm.agent.anchor.runNo', { n: runNo }) : t('asm.agent.anchor.run')
     case 'text': {
@@ -107,7 +123,7 @@ function anchorTitle(a: AsmAnchor | null): string | undefined {
 }
 
 /** Вопрос по якорю словами — для поля ввода и быстрых вопросов. */
-function questionFor(t: T, a: AsmAnchor | null, step: AsmStep | undefined): string {
+function questionFor(t: T, ctx: AnchorCtx, a: AsmAnchor | null, step: AsmStep | undefined): string {
   if (!a) return ''
   switch (a.kind) {
     case 'line':
@@ -115,15 +131,15 @@ function questionFor(t: T, a: AsmAnchor | null, step: AsmStep | undefined): stri
     case 'register':
       return t('asm.agent.ask.register', { name: a.name.toUpperCase() })
     case 'flag': {
-      const v = flagValue(step, a.name)
+      const v = flagValue(step, a.name, ctx.flagsReg)
       return v === null
         ? t('asm.agent.ask.flagAny', { name: a.name.toUpperCase() })
         : t('asm.agent.ask.flag', { name: a.name.toUpperCase(), value: v })
     }
     case 'cell':
-      return t('asm.agent.ask.cell', { addr: `${a.seg}:${a.off}` })
+      return t('asm.agent.ask.cell', { addr: cellAddr(a) })
     case 'doc':
-      return t('asm.agent.ask.doc', { name: DOC_BY_ID[a.id]?.name ?? a.id })
+      return t('asm.agent.ask.doc', { name: ctx.docName(a.id) })
     case 'run':
       return t('asm.agent.ask.run')
     case 'text':
@@ -133,14 +149,60 @@ function questionFor(t: T, a: AsmAnchor | null, step: AsmStep | undefined): stri
 
 type Quick = { key: string; label: string; text: string }
 
-function quickFor(t: T, a: AsmAnchor | null, run: AsmRunSummary | undefined, step: AsmStep | undefined): Quick[] {
+/**
+ * Функция kernel32, о которой уместно спросить на этом шаге: та, что вызовется
+ * следующей командой (строка исходника `call WriteFile`), а если нет — та, что
+ * вызвал сам шаг (`step.call`). Строка берётся из исходника прогона: адрес
+ * переходника в дизассемблере имени функции не несёт.
+ */
+function apiOf(step: AsmStep, source: string | null | undefined): string | null {
+  const line = step.next?.line
+  const text = line != null && source ? source.split('\n')[line - 1] : step.next?.asm
+  const m = /^\s*(?:[\w.$]+:\s*)?call\s+(?:qword\s+ptr\s+\[rip\+)?([A-Za-z_][\w@]*)/i.exec(text ?? '')
+  const next = m ? winapi(m[1]) : null
+  if (next) return next.name
+  return step.call ? apiShortName(step.call) : null
+}
+
+/**
+ * Быстрые вопросы режима MinGW x64 — о стеке и вызовах, где у лабораторных
+ * ошибаются чаще всего. Каждый показывается только тогда, когда он о текущем
+ * месте трассы: «выровнен ли RSP» — перед `call`, «почему съехал стек» — после
+ * `ret`, `pop` или `leave`, «почему упала на ret» — у упавшего прогона.
+ */
+function quick64(t: T, run: AsmRunSummary | undefined, step: AsmStep | undefined): Quick[] {
+  const q: Quick[] = []
+  const done = (step?.asm ?? '').trim().toLowerCase()
+  const next = (step?.next?.asm ?? '').trim().toLowerCase()
+  if (run?.status === 'crashed' && (!step || !step.next || /^ret/.test(done) || /^ret/.test(next)))
+    q.push({ key: 'retCrash', label: t('asm.agent.quick.retCrash'), text: t('asm.agent.ask.retCrash') })
+  if (!step) return q
+  const beforeCall = /^call/.test(next)
+  const api = apiOf(step, run?.source)
+  if (/^(ret|pop|leave)/.test(done) || run?.status === 'crashed')
+    q.push({ key: 'stack', label: t('asm.agent.quick.stack'), text: t('asm.agent.ask.stack') })
+  if (beforeCall) q.push({ key: 'align', label: t('asm.agent.quick.align'), text: t('asm.agent.ask.align') })
+  if (api) q.push({ key: 'apiArgs', label: t('asm.agent.quick.apiArgs', { name: api }), text: t('asm.agent.ask.apiArgs', { name: api }) })
+  if (beforeCall || api) q.push({ key: 'shadow', label: t('asm.agent.quick.shadow'), text: t('asm.agent.ask.shadow') })
+  return q
+}
+
+function quickFor(
+  t: T,
+  ctx: AnchorCtx,
+  mingw64: boolean,
+  a: AsmAnchor | null,
+  run: AsmRunSummary | undefined,
+  step: AsmStep | undefined,
+): Quick[] {
   const q: Quick[] = []
   if (run?.status === 'build_error') q.push({ key: 'fix', label: t('asm.agent.quick.fix'), text: t('asm.agent.ask.fix') })
   if (run?.status === 'step_limit') q.push({ key: 'limit', label: t('asm.agent.quick.limit'), text: t('asm.agent.ask.limit') })
   if (run?.status === 'timeout' || run?.status === 'crashed')
     q.push({ key: 'stuck', label: t('asm.agent.quick.stuck'), text: t('asm.agent.ask.stuck') })
+  if (mingw64) q.push(...quick64(t, run, step))
   if (!a) return q
-  q.push({ key: a.kind, label: t(`asm.agent.quick.${a.kind}`), text: questionFor(t, a, step) })
+  q.push({ key: a.kind, label: t(`asm.agent.quick.${a.kind}`), text: questionFor(t, ctx, a, step) })
   if (a.kind === 'text') {
     q.push({ key: 'textBug', label: t('asm.agent.quick.textBug'), text: t('asm.agent.ask.textBug') })
     q.push({ key: 'textRegs', label: t('asm.agent.quick.textRegs'), text: t('asm.agent.ask.textRegs') })
@@ -155,7 +217,16 @@ function quickFor(t: T, a: AsmAnchor | null, run: AsmRunSummary | undefined, ste
 export default function Agent({ active }: AsmWindowProps) {
   const t = useT()
   const qc = useQueryClient()
-  const { projectId, programId, selection, select, stepIndex, step, run, markUnread, agentRequest } = useAsm()
+  const { projectId, programId, selection, select, stepIndex, step, run, markUnread, agentRequest, toolchain } = useAsm()
+  const docs = useDocEntries().entries
+  const mingw64 = toolchain.id === 'mingw64'
+  const ctx = useMemo<AnchorCtx>(
+    () => ({
+      docName: (id) => (docs ? entryById(id, docs)?.name : undefined) ?? id,
+      flagsReg: mingw64 ? 'rflags' : 'flags',
+    }),
+    [docs, mingw64],
+  )
 
   const chat = useAsmChat()
   const send = usePostAsmChat()
@@ -221,20 +292,20 @@ export default function Agent({ active }: AsmWindowProps) {
 
   // Свежие значения для обработчика запроса: сам запрос приходит редко, и
   // перезапускать его эффект на каждом шаге трассы незачем.
-  const latest = useRef({ doSend, anchor, step, active })
+  const latest = useRef({ doSend, anchor, step, active, ctx })
   useEffect(() => {
-    latest.current = { doSend, anchor, step, active }
+    latest.current = { doSend, anchor, step, active, ctx }
   })
 
   useEffect(() => {
     if (!agentRequest || handledSeq.get(programId) === agentRequest.seq) return
     handledSeq.set(programId, agentRequest.seq)
-    const { doSend: go, anchor: here, step: now } = latest.current
+    const { doSend: go, anchor: here, step: now, ctx: names } = latest.current
     const a = agentRequest.anchor ?? here
     if (agentRequest.text) {
       go(agentRequest.text, a)
     } else {
-      setDraft(questionFor(t, a, now))
+      setDraft(questionFor(t, names, a, now))
       inputRef.current?.focus()
     }
   }, [agentRequest, programId, t])
@@ -273,7 +344,7 @@ export default function Agent({ active }: AsmWindowProps) {
     if (jobId) cancel.mutate(jobId, { onError: (e) => setError(errorText(e)) })
   }
 
-  const quick = quickFor(t, anchor, run, step)
+  const quick = quickFor(t, ctx, mingw64, anchor, run, step)
   const empty = !chat.isLoading && messages.length === 0 && !pending
 
   return (
@@ -285,7 +356,7 @@ export default function Agent({ active }: AsmWindowProps) {
           data-testid="asm-agent-anchor"
           title={anchorTitle(anchor)}
         >
-          {anchorLabel(t, anchor, hasTrace ? stepIndex : null, run?.run_no ?? null)}
+          {anchorLabel(t, ctx, anchor, hasTrace ? stepIndex : null, run?.run_no ?? null)}
         </span>
         {selection && (
           <button
@@ -314,7 +385,7 @@ export default function Agent({ active }: AsmWindowProps) {
             key={m.id}
             role={m.role}
             text={m.text}
-            chip={m.role === 'user' && m.anchor ? anchorLabel(t, m.anchor, m.step, m.run_no) : null}
+            chip={m.role === 'user' && m.anchor ? anchorLabel(t, ctx, m.anchor, m.step, m.run_no) : null}
             chipTitle={m.role === 'user' ? anchorTitle(m.anchor) : undefined}
           />
         ))}
@@ -323,7 +394,7 @@ export default function Agent({ active }: AsmWindowProps) {
             <Bubble
               role="user"
               text={pending.text}
-              chip={pending.anchor ? anchorLabel(t, pending.anchor, pending.step, pending.run_no) : null}
+              chip={pending.anchor ? anchorLabel(t, ctx, pending.anchor, pending.step, pending.run_no) : null}
               chipTitle={anchorTitle(pending.anchor)}
             />
             {busy && <Bubble role="assistant" text={answer} waiting />}

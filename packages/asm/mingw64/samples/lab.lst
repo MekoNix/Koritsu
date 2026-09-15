@@ -1,0 +1,112 @@
+GAS LISTING lab.s 			page 1
+
+
+   1              	    .intel_syntax noprefix      #включаем режим интеловской нотации 
+   2              	    .globl  main                #определяем имя точки входа в програ�
+   3              	    .data
+   4              	    .p2align 4
+   5 0000 00000000 	handle:     .quad   0           #дескриптор консоли (8 байт достаточн
+   5      00000000 
+   6 0008 00000000 	written:    .quad   0           #сюда WriteFile положит число записанных 
+   6      00000000 
+   7 0010 3333B3BF 	num1:       .float  -1.4
+   8 0014 CDCCCCCC 	num2:       .double 101.2
+   8      CC4C5940 
+   9 001c 00000000 	arra:       .space  64
+   9      00000000 
+   9      00000000 
+   9      00000000 
+   9      00000000 
+  10 005c 48656C6C 	message:    .asciz  "Hello GAS\n"       #текст выводимого сообщения
+  10      6F204741 
+  10      530A00
+  11              	    .equ    meslen, .-message-1         #длина без нулевого байта
+  12 0067 00000000 	    .text
+  12      00000000 
+  12      00
+  13              	main:                           #старт программы
+  14 0000 55       	    push    rbp
+  15 0001 4889E5   	    mov     rbp, rsp
+  16 0004 4883EC30 	    sub     rsp, 48             #32 байта shadow space + 8 под 5-й параметр, кр�
+  17              	    #получение дескриптора потока вывода на экран
+  18 0008 48C7C1F5 	    mov     rcx, -11            #STD_OUTPUT_HANDLE
+  18      FFFFFF
+  19 000f E8000000 	    call    GetStdHandle
+  19      00
+  20 0014 48890500 	    mov     [rip+handle], rax
+  20      000000
+  21              	    #тело программы
+  22 001b B05A     	    mov     al, 0x5A            #байт для преобразования
+  23 001d E8320000 	    call    hextochar           #в AH - символ '5', в AL - символ 'A'
+  23      00
+  24              	    #вывод строки на экран
+  25 0022 488B0D00 	    mov     rcx, [rip+handle]           #первый параметр - дескриптор фа�
+  25      000000
+  26 0029 488D155C 	    lea     rdx, [rip+message]          #второй параметр - адрес строки
+  26      000000
+  27 0030 49C7C00A 	    mov     r8,  meslen                 #третий параметр - длина строки
+  27      000000
+  28 0037 4C8D0D08 	    lea     r9,  [rip+written]          #четвёртый параметр - куда запис�
+  28      000000
+  29 003e 48C74424 	    mov     qword ptr [rsp+32], 0       #пятый параметр - lpOverlapped = NULL
+  29      20000000 
+  29      00
+  30 0047 E8000000 	    call    WriteFile                   #вывод на консоль
+  30      00
+  31 004c 4883C430 	    add     rsp, 48
+  32 0050 31C0     	    xor     eax, eax            #код возврата 0
+  33 0052 5D       	    pop     rbp
+  34 0053 C3       	    ret
+  35              	#-------------------------------------------------------------------
+GAS LISTING lab.s 			page 2
+
+
+  36              	#Преобразование байта из AL в два символа, его представ�
+  37              	#Результат возвращается в AX: AH - старшая цифра, AL - младш
+  38              	#-------------------------------------------------------------------
+  39              	hextochar:
+  40 0054 9C       	    pushf
+  41 0055 B400     	    mov     ah, 0               #AX = 00 AL
+  42 0057 66C1E004 	    shl     ax, 4               #старший полубайт уходит в AH
+  43 005b C0E804   	    shr     al, 4               #младший полубайт возвращается в AL
+  44 005e 3C09     	    cmp     al, 9               #обрабатываем младшую цифру (AL)
+  45 0060 7F04     	    jg      over91
+  46 0062 0430     	    add     al, '0'
+  47 0064 EB04     	    jmp     next1
+  48              	over91:
+  49 0066 0441     	    add     al, 'A'
+  50 0068 2C0A     	    sub     al, 10
+  51              	next1:
+  52 006a 80FC09   	    cmp     ah, 9               #обрабатываем старшую цифру (AH)
+  53 006d 7F05     	    jg      over92
+  54 006f 80C430   	    add     ah, '0'
+  55 0072 EB06     	    jmp     next2
+  56              	over92:
+  57 0074 80C441   	    add     ah, 'A'
+  58 0077 80EC0A   	    sub     ah, 10
+  59              	next2:
+  60 007a 9D       	    popf
+  61 007b C3909090 	    ret
+  61      90
+GAS LISTING lab.s 			page 3
+
+
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 fake
+               lab.s:13     .text:0000000000000000 main
+               lab.s:5      .data:0000000000000000 handle
+               lab.s:6      .data:0000000000000008 written
+               lab.s:7      .data:0000000000000010 num1
+               lab.s:8      .data:0000000000000014 num2
+               lab.s:9      .data:000000000000001c arra
+               lab.s:10     .data:000000000000005c message
+               lab.s:11     *ABS*:000000000000000a meslen
+               lab.s:39     .text:0000000000000054 hextochar
+               lab.s:48     .text:0000000000000066 over91
+               lab.s:51     .text:000000000000006a next1
+               lab.s:56     .text:0000000000000074 over92
+               lab.s:59     .text:000000000000007a next2
+
+UNDEFINED SYMBOLS
+GetStdHandle
+WriteFile

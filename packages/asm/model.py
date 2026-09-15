@@ -16,6 +16,21 @@
 
 `out` — байты вывода программы в кодировке CP866, переводы строк `\\r\\n` сведены к `\\n`,
 одиночный `\\r` оставлен как есть.
+
+**Формы общие у наборов инструментов** (`toolchain.py`). Всё, чем MinGW x64 отличается от
+TASM, добавлено полями с умолчаниями, а не переименованием: итоги и трассы TASM, уже лежащие на
+томе, читаются без миграции. Смысл полей по набору:
+
+- `seg = None` (`Step.cs`, `next.cs`, `MemWrite.seg`, `Dump.seg`) — плоская память: адрес —
+  одно `ip`/`off`, у MinGW x64 это 64-битный виртуальный адрес, 16 hex-знаков;
+- `Step.reg` — словарь, порядок ключей = порядок показа: у TASM 14 регистров 8086, у MinGW x64
+  64-битные регистры и сегментные; `reg32` у MinGW x64 — `None`;
+- `Step.call` — имя функции (`kernel32.WriteFile`), если шаг перешагнул вызов API целиком; у
+  TASM его нет, и в JSON шага поле не пишется, пока оно `None`;
+- `RunResult.load` — словарь по набору: `{psp, cs, ds, ss}` у TASM, `{image_base, entry, rsp}`
+  у MinGW x64; `BuildResult.segments` — сегменты `.map` или секции PE с `start` по VA;
+- `RunResult.toolchain`/`version` — какой набор и какая его версия сняли прогон; в итогах,
+  записанных до появления этих полей, их нет, и читатель подставляет `tasm`/`4.1`.
 """
 from __future__ import annotations
 
@@ -50,7 +65,7 @@ class RunRequest:
 @dataclass
 class BuildMessage:
     severity: Literal["error", "warning"]
-    tool: Literal["tasm", "tlink"]
+    tool: Literal["tasm", "tlink", "as", "ld"]
     line: int | None
     text: str
 
@@ -103,7 +118,7 @@ class BuildResult:
 
 @dataclass
 class MemWrite:
-    seg: str
+    seg: str | None            # None — плоская память
     off: str
     old: str
     new: str
@@ -114,7 +129,7 @@ class MemWrite:
 @dataclass
 class Step:
     i: int
-    cs: str
+    cs: str | None             # None — плоская память
     ip: str
     line: int | None
     asm: str
@@ -126,8 +141,15 @@ class Step:
     out: str
     stdin_pos: int
     next: dict | None = None   # {cs, ip, line, asm, bytes}
+    call: str | None = None    # 'kernel32.WriteFile' — вызов API, выполненный шагом целиком
 
-    to_json = _json
+    def to_json(self) -> dict:
+        # `call` без значения не пишется: шаг TASM в `trace.jsonl` остаётся байт в байт прежним,
+        # а у трассы в полмиллиона шагов лишний `"call": null` на каждом — мегабайты.
+        data = asdict(self)
+        if data.get("call") is None:
+            data.pop("call", None)
+        return data
 
 
 @dataclass
@@ -142,7 +164,7 @@ class Truncation:
 @dataclass
 class Dump:
     step: int
-    seg: str
+    seg: str | None            # None — плоская память
     off: str
     hex: str
 
@@ -181,6 +203,8 @@ class RunResult:
     truncated: Truncation | None = None
     dumps: list[Dump] = field(default_factory=list)
     error: str | None = None
+    toolchain: str = "tasm"    # id набора инструментов (`Toolchain.id`)
+    version: str = "4.1"       # id версии из каталога набора
 
     to_json = _json
 

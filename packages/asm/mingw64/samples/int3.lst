@@ -1,0 +1,62 @@
+GAS LISTING int3.s 			page 1
+
+
+   1              	    .intel_syntax noprefix
+   2              	    .globl  main
+   3              	    .data
+   4 0000 00000000 	hout:   .quad   0
+   4      00000000 
+   5 0008 00000000 	nwr:    .quad   0
+   5      00000000 
+   6 0010 61667465 	msg:    .ascii  "after int3\n"
+   6      7220696E 
+   6      74330A
+   7              	    .equ    mlen, .-msg
+   8 001b 00000000 	    .text
+   8      00
+   9              	main:
+  10 0000 55       	    push    rbp
+  11 0001 4889E5   	    mov     rbp, rsp
+  12 0004 4883EC30 	    sub     rsp, 48
+  13 0008 48C7C1F5 	    mov     rcx, -11
+  13      FFFFFF
+  14 000f E8000000 	    call    GetStdHandle
+  14      00
+  15 0014 48890500 	    mov     [rip+hout], rax
+  15      000000
+  16 001b CC       	    int3
+  17 001c 488B0D00 	    mov     rcx, [rip+hout]
+  17      000000
+  18 0023 488D1510 	    lea     rdx, [rip+msg]
+  18      000000
+  19 002a 49C7C00B 	    mov     r8, mlen
+  19      000000
+  20 0031 4C8D0D08 	    lea     r9, [rip+nwr]
+  20      000000
+  21 0038 48C74424 	    mov     qword ptr [rsp+32], 0
+  21      20000000 
+  21      00
+  22 0041 E8000000 	    call    WriteFile
+  22      00
+  23 0046 B8030000 	    mov     eax, 3
+  23      00
+  24 004b 4883C430 	    add     rsp, 48
+  25 004f 5D       	    pop     rbp
+  26 0050 C3909090 	    ret
+  26      90909090 
+  26      90909090 
+  26      90909090 
+GAS LISTING int3.s 			page 2
+
+
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 fake
+              int3.s:9      .text:0000000000000000 main
+              int3.s:4      .data:0000000000000000 hout
+              int3.s:5      .data:0000000000000008 nwr
+              int3.s:6      .data:0000000000000010 msg
+              int3.s:7      *ABS*:000000000000000b mlen
+
+UNDEFINED SYMBOLS
+GetStdHandle
+WriteFile

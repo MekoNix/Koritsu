@@ -195,8 +195,12 @@ export const keys = {
       ['projects', 'one', projectId, 'asm-program', programId] as const,
     run: (projectId: string, programId: string, runNo: number) =>
       ['projects', 'one', projectId, 'asm-run', programId, runNo] as const,
+    /** Сырой вывод трассировщика кусками по шагам. */
+    raw: (projectId: string, programId: string, runNo: number, from: number, to: number) =>
+      ['projects', 'one', projectId, 'asm-raw', programId, runNo, from, to] as const,
+    /** Прежнее имя `raw`, тот же ключ. */
     debugx: (projectId: string, programId: string, runNo: number, from: number, to: number) =>
-      ['projects', 'one', projectId, 'asm-debugx', programId, runNo, from, to] as const,
+      ['projects', 'one', projectId, 'asm-raw', programId, runNo, from, to] as const,
     chat: (projectId: string, programId: string) =>
       ['projects', 'one', projectId, 'asm-chat', programId] as const,
   },

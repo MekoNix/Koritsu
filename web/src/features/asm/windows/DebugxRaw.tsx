@@ -1,5 +1,6 @@
 /**
- * DebugxRaw — сырой вывод DebugX вокруг текущего шага.
+ * DebugxRaw — сырой вывод отладчика вокруг текущего шага: DebugX у TASM,
+ * трассировщика у MinGW x64. Заголовок — по описателю режима (`titles.raw`).
  *
  * Всё, что показывают остальные окна, разобрано из этого текста. Когда
  * разобранное кажется странным, сверяться надо с первоисточником, поэтому он
@@ -8,7 +9,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 
-import { useAsmDebugx } from '@/features/asm/api'
+import { useAsmRaw } from '@/features/asm/api'
 import { useAsm } from '@/features/asm/store'
 import type { AsmWindowProps } from '@/features/asm/types'
 import { useT } from '@/i18n'
@@ -26,7 +27,10 @@ const SETTLE_MS = 250
 
 export default function DebugxRaw({ active }: AsmWindowProps) {
   const t = useT()
-  const { run, stepIndex } = useAsm()
+  const { run, stepIndex, toolchain } = useAsm()
+  const tasm = toolchain.id === 'tasm'
+  /** Ветка строк окна: у TASM — прежние, у остальных режимов — трассировщика. */
+  const k = tasm ? 'asm.debugx' : 'asm64.raw'
   const trace = hasTrace(run)
   const runNo = run?.run_no
 
@@ -43,7 +47,7 @@ export default function DebugxRaw({ active }: AsmWindowProps) {
   const from = Math.max(0, to - Math.min(MAX_SPAN, BEFORE + 1 + extra))
 
   // Скрытая вкладка и прогон без трассы кусков не просят: номер прогона не передаётся.
-  const query = useAsmDebugx(active && trace ? runNo : undefined, from, to)
+  const query = useAsmRaw(active && trace ? runNo : undefined, from, to)
 
   // Пока грузится следующий кусок, показываем прошлый, а не «загрузка» на каждый шаг.
   const shown = useRef<{ text: string; from: number; to: number } | null>(null)
@@ -57,9 +61,9 @@ export default function DebugxRaw({ active }: AsmWindowProps) {
   const ask = useSelectionAsk({ window: 'debugx', active, root: box })
 
   return (
-    <section className="relative flex h-full min-h-0 flex-col" aria-label={t('asm.tabs.debugx')}>
+    <section className="relative flex h-full min-h-0 flex-col" aria-label={t(toolchain.titles.raw)}>
       <div className="pt">
-        <span className="m">{data ? t('asm.debugx.meta', { from: fmtInt(data.from), to: fmtInt(data.to - 1) }) : ''}</span>
+        <span className="m">{data ? t(`${k}.meta`, { from: fmtInt(data.from), to: fmtInt(data.to - 1) }) : ''}</span>
         <span className="grow" />
         {trace && from > 0 && (
           <button type="button" className="tb" onClick={() => setExtra((n) => n + MORE)}>
@@ -80,9 +84,9 @@ export default function DebugxRaw({ active }: AsmWindowProps) {
           {veil ? (
             <span className="sys">{veil}</span>
           ) : query.isError && !data ? (
-            <span className="sys err">{t('asm.debugx.error')}</span>
+            <span className="sys err">{t(`${k}.error`)}</span>
           ) : !data ? (
-            <span className="sys">{t('asm.debugx.loading')}</span>
+            <span className="sys">{t(`${k}.loading`)}</span>
           ) : (
             <>
               {data.from > 0 && (
@@ -95,7 +99,7 @@ export default function DebugxRaw({ active }: AsmWindowProps) {
                 .replace(/\r\n?/g, '\n')
                 .split('\n')
                 .map((line, i) => (
-                  <span key={i} className={/^-[a-z]/i.test(line) ? 'cmd' : undefined}>
+                  <span key={i} className={(tasm ? /^-[a-z]/i : /^=>/).test(line) ? 'cmd' : undefined}>
                     {line}
                     {'\n'}
                   </span>

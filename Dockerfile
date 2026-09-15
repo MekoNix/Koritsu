@@ -32,10 +32,24 @@
 #                        исполняются в DOSBox-X, трасса снимается DebugX.
 #                        Подробности — ниже, отдельным слоем. Сами TASM и
 #                        TLINK в образ не входят: они приезжают томом.
+#   binutils-mingw-w64,  режим «MinGW x64»: `as`, `ld` и `objdump` для Windows
+#   libkernel32.a        x64 и библиотека импорта kernel32. Программа только
+#                        собирается здесь; исполняет её под Wine отдельный
+#                        контейнер `asm-runner` (`Dockerfile.asm-runner`).
 #
 # Чего здесь нет: `git` (код приезжает слоем, а не клоном), компиляторов (все
-# зависимости ставятся колёсами) и `/web` (сайт собирает Vite снаружи и отдаёт
-# Caddy статикой).
+# зависимости ставятся колёсами), `/web` (сайт собирает Vite снаружи и отдаёт
+# Caddy статикой) и Wine (он только в образе исполнителя).
+
+# ── библиотека импорта kernel32 ──────────────────────────────────────────
+# `ld` лабы зовётся с `-lkernel32`, и нужен ему ровно один файл —
+# `libkernel32.a` (1,5 МБ). Пакет, в котором он лежит (`mingw-w64-x86-64-dev`),
+# весит 130 МБ заголовков и библиотек CRT, которые сборке не нужны, поэтому он
+# ставится во временной стадии, а в образ копируется один файл.
+FROM debian:trixie-slim AS mingw-kernel32
+RUN apt-get update && apt-get install --no-install-recommends -y mingw-w64-x86-64-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 FROM python:3.12-slim
 
 # Питон в контейнере: без буфера (журнал виден сразу, а не после падения), без
@@ -155,6 +169,17 @@ RUN apt-get update \
     && python -c "import zipfile; zipfile.ZipFile('/tmp/debugx.zip').extract('DEBUGX.COM', '/opt/asm/debugx')" \
     && rm -f /tmp/debugx.zip
 
+# ── Ассемблер: MinGW x64 ─────────────────────────────────────────────────
+# GNU as и ld для Windows x64 — пакет Debian (binutils 2.44, та версия, что
+# показывается у режима), около 30 МБ. `objdump` из того же пакета даёт текст
+# команд трассы: исполнителю разборщик команд не нужен. Библиотека импорта
+# kernel32 — одним файлом из временной стадии выше.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y binutils-mingw-w64-x86-64 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=mingw-kernel32 /usr/x86_64-w64-mingw32/lib/libkernel32.a \
+    /usr/x86_64-w64-mingw32/lib/libkernel32.a
+
 # Непривилегированный пользователь с **фиксированным** UID: контейнер работает
 # не от root, и файлы на томе тоже не root'овы. Фиксированным — потому что тот
 # же UID стоит на файлах тома на хосте, и уехавший номер означает контейнер,
@@ -178,6 +203,11 @@ COPY README.md /app/README.md
 # оказался бы root'овым, а служба — без права записи в него.
 RUN mkdir -p /data && chown -R koritsu:koritsu /data
 VOLUME ["/data"]
+
+# Очередь исполнителя трасс MinGW x64 (`KORITSU_ASM_MINGW_QUEUE`): том, общий с
+# контейнером `asm-runner`. Права группы `2770` — у исполнителя свой UID, но та
+# же группа; образ исполнителя заводит `/queue` так же.
+RUN mkdir -p /queue && chown koritsu:koritsu /queue && chmod 2770 /queue
 
 USER koritsu
 

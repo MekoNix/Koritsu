@@ -1,6 +1,14 @@
 /**
  * DocsView — справка: поиск, разделы, список записей и карточка записи.
  *
+ * ── Набор записей приходит снаружи ───────────────────────────────────────────
+ *
+ * Справка у каждого режима своя (TASM — `entries.ts`, MinGW x64 —
+ * `entries64.ts`), и окно получает набор пропом. Разделы, поиск, «см. также» и
+ * запись по токену считаются по этому набору, а разделы без записей не
+ * показываются. Примеры набора GAS подсвечиваются тем же разбором, что и
+ * редактор (`gasLanguage.ts`), примеры TASM — прежней построчной подсветкой.
+ *
  * ── Широко рядом, узко по очереди ────────────────────────────────────────────
  *
  * Окно справки живёт во вкладке дока, и его ширину задаёт группа, а не экран:
@@ -21,17 +29,9 @@ import { useT } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { Icon } from '@/ui'
 
-import {
-  DOC_BY_ID,
-  DOC_ENTRIES,
-  DOC_SECTIONS,
-  FLAG_NAMES,
-  SECTION_TITLE,
-  type DocEntry,
-  type DocIoRow,
-  type DocSection,
-} from './entries'
-import { findEntry, lookup, searchEntries, seeAlso } from './lookup'
+import { tokenize as gasTokenize, type GasTokenKind } from '../windows/gasLanguage'
+import { DOC_ENTRIES, FLAG_NAMES, SECTION_TITLE, type DocEntry, type DocIoRow, type DocSection } from './entries'
+import { entryById, findEntry, lookup, searchEntries, sectionsOf, seeAlso } from './lookup'
 
 export interface DocsRequest {
   /** Токен из кода или id записи; `null` — просто показать справку. */
@@ -41,6 +41,8 @@ export interface DocsRequest {
 }
 
 export interface DocsViewProps {
+  /** Набор записей режима программы. */
+  entries: readonly DocEntry[]
   request?: DocsRequest | null
   onAsk?: (entry: DocEntry) => void
   /** Нет — кнопки «Вставить пример» нет. */
@@ -49,10 +51,8 @@ export interface DocsViewProps {
 
 /** С какой ширины окна список и карточка стоят рядом. */
 const WIDE_PX = 560
-/** Запись, открытая до первого запроса. */
-const FIRST_ID = 'cmd-mov'
 
-export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
+export function DocsView({ entries, request, onAsk, onInsert }: DocsViewProps) {
   const t = useT()
   const uid = useId()
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -60,28 +60,36 @@ export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
   const cardRef = useRef<HTMLElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
+  /** Набор GAS: у него свои подсказка поиска и подсветка примеров. */
+  const gas = useMemo(() => entries.some((e) => e.sec === 'gas'), [entries])
+  const sections = useMemo(() => sectionsOf(entries), [entries])
+  /** Запись, открытая до первого запроса: первая команда набора (`mov`). */
+  const firstId = entries[0]?.id ?? ''
+
   const [wide, setWide] = useState(false)
   const [sec, setSec] = useState<DocSection | 'all'>('all')
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
-  const [openId, setOpenId] = useState(FIRST_ID)
+  const [openId, setOpenId] = useState(firstId)
   /** Узкое окно: показана карточка, а не список. На широком не читается. */
   const [cardMode, setCardMode] = useState(false)
 
   useEffect(() => {
     const el = rootRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver((entries) => {
-      const box = entries[0]
+    const ro = new ResizeObserver((boxes) => {
+      const box = boxes[0]
       if (box) setWide(box.contentRect.width >= WIDE_PX)
     })
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
 
-  const shown = useMemo(() => searchEntries(query, sec), [query, sec])
+  // Раздел, которого в наборе нет, — это «все».
+  const secShown: DocSection | 'all' = sec !== 'all' && !sections.some((s) => s.id === sec) ? 'all' : sec
+  const shown = useMemo(() => searchEntries(query, secShown, entries), [query, secShown, entries])
   const activeIdx = Math.max(0, Math.min(active, shown.length - 1))
-  const entry = DOC_BY_ID[openId] ?? DOC_BY_ID[FIRST_ID]
+  const entry = entryById(openId, entries) ?? entryById(firstId, entries)
 
   /**
    * Открыть запись. Запрос извне (`fromUser = false`) сбрасывает поиск и раздел,
@@ -90,13 +98,13 @@ export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
    */
   const open = useCallback(
     (token: string, fromUser: boolean) => {
-      const e = findEntry(token)
+      const e = findEntry(token, entries)
       if (!e) return false
       let pool = shown
       if (!pool.includes(e) && !fromUser) {
         setQuery('')
         setSec('all')
-        pool = searchEntries('', 'all')
+        pool = searchEntries('', 'all', entries)
       }
       const idx = pool.indexOf(e)
       if (idx >= 0) setActive(idx)
@@ -104,7 +112,7 @@ export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
       setCardMode(true)
       return true
     },
-    [shown],
+    [shown, entries],
   )
 
   const handled = useRef<number | null>(null)
@@ -116,7 +124,7 @@ export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
       inputRef.current?.focus()
       return
     }
-    if (lookup(token)) {
+    if (lookup(token, entries)) {
       open(token, false)
       cardRef.current?.focus({ preventScroll: true })
     } else {
@@ -125,7 +133,7 @@ export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
       setActive(0)
       setCardMode(false)
     }
-  }, [request, open])
+  }, [request, open, entries])
 
   useEffect(() => {
     cardRef.current?.scrollTo({ top: 0 })
@@ -160,7 +168,7 @@ export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
     }
   }
 
-  const grouped = !query.trim() && sec === 'all'
+  const grouped = !query.trim() && secShown === 'all'
   const listVisible = wide || !cardMode
   const cardVisible = wide || cardMode
   const listId = `${uid}-list`
@@ -176,7 +184,7 @@ export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
             autoComplete="off"
             spellCheck={false}
             value={query}
-            placeholder={t('asm.docs.placeholder')}
+            placeholder={t(gas ? 'asm.docs.placeholder64' : 'asm.docs.placeholder')}
             aria-label={t('asm.docs.search')}
             aria-controls={listId}
             className="min-w-0 flex-1 border-0 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
@@ -189,19 +197,19 @@ export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
           />
           {query && (
             <span className="whitespace-nowrap font-mono text-xs text-muted" aria-live="polite">
-              {t('asm.docs.count', { n: shown.length, total: DOC_ENTRIES.length })}
+              {t('asm.docs.count', { n: shown.length, total: entries.length })}
             </span>
           )}
         </label>
         <div className="flex flex-wrap gap-1" role="group" aria-label={t('asm.docs.sections')}>
-          {[{ id: 'all' as const, title: t('asm.docs.all') }, ...DOC_SECTIONS].map((s) => (
+          {[{ id: 'all' as const, title: t('asm.docs.all') }, ...sections].map((s) => (
             <button
               key={s.id}
               type="button"
-              aria-pressed={sec === s.id}
+              aria-pressed={secShown === s.id}
               className={cn(
                 'rounded-full border px-2 py-px text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
-                sec === s.id
+                secShown === s.id
                   ? 'border-accent bg-accent-bg text-accent'
                   : 'border-line text-muted hover:border-line-strong hover:text-ink',
               )}
@@ -237,7 +245,9 @@ export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
             )}
             onKeyDown={onKey}
           >
-            {shown.length === 0 && <p className="px-s3 py-s4 text-muted">{t('asm.docs.empty')}</p>}
+            {shown.length === 0 && (
+              <p className="px-s3 py-s4 text-muted">{t(gas ? 'asm.docs.empty64' : 'asm.docs.empty')}</p>
+            )}
             {shown.map((e, i) => {
               const head = grouped && (i === 0 || shown[i - 1]?.sec !== e.sec)
               return (
@@ -283,6 +293,8 @@ export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
           >
             <EntryCard
               entry={entry}
+              entries={entries}
+              gas={gas}
               showBack={!wide}
               onBack={() => {
                 setCardMode(false)
@@ -303,6 +315,8 @@ export function DocsView({ request, onAsk, onInsert }: DocsViewProps) {
 
 function EntryCard({
   entry,
+  entries,
+  gas,
   showBack,
   onBack,
   onOpen,
@@ -310,6 +324,8 @@ function EntryCard({
   onInsert,
 }: {
   entry: DocEntry
+  entries: readonly DocEntry[]
+  gas: boolean
   showBack: boolean
   onBack: () => void
   onOpen: (id: string) => void
@@ -317,8 +333,9 @@ function EntryCard({
   onInsert?: (entry: DocEntry) => void
 }) {
   const t = useT()
-  const see = seeAlso(entry)
+  const see = seeAlso(entry, entries)
   const h = 'mb-1.5 mt-s4 text-[11px] font-semibold uppercase tracking-wider text-muted'
+  const CodeView = gas ? GasCode : Code
 
   return (
     <>
@@ -335,7 +352,7 @@ function EntryCard({
 
       {entry.syntax && (
         <pre className="mt-s3 overflow-x-auto whitespace-pre rounded-sm border border-line bg-surface-3 px-2.5 py-2 font-mono text-xs text-ink-strong">
-          <Code code={entry.syntax} />
+          <CodeView code={entry.syntax} />
         </pre>
       )}
       <p className="mt-2.5 max-w-[68ch]">
@@ -386,7 +403,7 @@ function EntryCard({
         <>
           <div className={h}>{t('asm.docs.example')}</div>
           <pre className="m-0 overflow-x-auto whitespace-pre rounded-sm border border-line bg-surface-3 px-2.5 py-2 font-mono text-xs leading-relaxed text-ink">
-            <Code code={entry.ex} />
+            <CodeView code={entry.ex} />
           </pre>
         </>
       )}
@@ -566,6 +583,41 @@ function Code({ code }: { code: string }) {
       last = at + tok.length
     }
     if (last < line.length) out.push(line.slice(last))
+  })
+  return <>{out}</>
+}
+
+const GAS_CLASS: Partial<Record<GasTokenKind, string>> = {
+  comment: 'italic text-[color:var(--code-comment)]',
+  string: 'text-[color:var(--code-str)]',
+  number: 'text-[color:var(--code-num)]',
+  mnemonic: 'text-[color:var(--code-fn)]',
+  directive: 'text-[color:var(--code-kw)]',
+  register: 'text-ink-strong',
+}
+
+/**
+ * Подсветка GAS для примеров — разбором редактора (`gasLanguage.ts`): `#` —
+ * комментарий, `;` — разделитель команд, как у самого `as`. Цвета — те же
+ * токены темы `--code-*`, что у примеров TASM.
+ */
+function GasCode({ code }: { code: string }) {
+  const out: ReactNode[] = []
+  let key = 0
+  code.split('\n').forEach((line, li) => {
+    if (li) out.push('\n')
+    for (const tok of gasTokenize(line)) {
+      const cls = GAS_CLASS[tok.kind]
+      out.push(
+        cls ? (
+          <span key={key++} className={cls}>
+            {tok.text}
+          </span>
+        ) : (
+          tok.text
+        ),
+      )
+    }
   })
   return <>{out}</>
 }

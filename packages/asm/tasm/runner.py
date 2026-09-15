@@ -53,7 +53,6 @@ DebugX на диске появляется только при выходе э�
 """
 from __future__ import annotations
 
-import collections
 import hashlib
 import json
 import os
@@ -62,19 +61,22 @@ import secrets
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from . import dosbox
 from .debugx import Block, Parser, dump_command
 from .feed import ENCODING, Feed, Read, read_at, waits_keyboard, normalize
 from .linkmap import parse_map
-from .model import (АсмОшибка, BuildMessage, BuildResult, Dump, ListingLine, MemWrite,
-                    RunRequest, RunResult, Segment, Step, Truncation)
+from ..model import (АсмОшибка, BuildMessage, BuildResult, Dump, ListingLine, MemWrite,
+                     RunRequest, RunResult, Segment, Step, Truncation)
+from ..sink import HEAD, TAIL, TraceSink
+from ..toolchain import Cancelled, Progress
 from .tasm import parse_listing, parse_symbols, tasm_messages, tlink_messages
 from .tools import Tools, find_file
 
-Progress = Callable[[str, int, int], None]
-Cancelled = Callable[[], bool]
+# Индекс сырого вывода DebugX: где в `debugx<N>.txt` блок каждого шага трассы.
+RAW_INDEX = "debugx.idx.json"
+# Версия, которую итог называет, когда запрос её не несёт (голый `RunRequest`).
+DEFAULT_VERSION = "4.1"
 
 SOURCE_MAX = 512_000            # знаков исходника
 STDIN_MAX = 64_000              # знаков ввода
@@ -86,11 +88,7 @@ DUMP_STEPS_MAX = 5000
 DUMP_LINES_BUDGET = 60_000
 DATA_WINDOW_MAX = 0x400
 STACK_WINDOW = 0x80
-HEAD = 1000
-TAIL = 1000
-# Сколько шагов держать в `trace.jsonl` целиком, если программа завершилась сама. Больше —
-# середина сворачивается так же, как на лимите: 20 000 шагов — около 9 МБ JSON.
-TRACE_KEEP_MAX = 20_000
+# HEAD, TAIL и потолок целой трассы — в `sink.py`: свёртка у всех наборов одна.
 MAX_RESTARTS = 96               # 64 чтения ввода и запас на обрывы пачек и ступени
 FIRST_REACH = 500               # шагов в первой ступени трассы с дампами
 REACH_GROWTH = 16
@@ -440,57 +438,6 @@ class _Plan:
             return cls(key)
 
 
-# ── запись шагов ─────────────────────────────────────────────────────────────
-
-class _Sink:
-    """Шаги в `trace.jsonl` потоком: начало пишется сразу, хвост держится в памяти строками
-    JSON, пока не ясно, сворачивать ли середину."""
-
-    def __init__(self, workdir: Path) -> None:
-        self.workdir = workdir
-        self.fh = open(workdir / "trace.jsonl.tmp", "w", encoding="utf-8")
-        self.count = 0
-        self.head_idx: list[dict] = []
-        self.tail: collections.deque = collections.deque(maxlen=TRACE_KEEP_MAX - HEAD)
-        self.dumps: dict[int, list[Dump]] = {}
-
-    def add(self, step: Step, idx: dict) -> None:
-        line = json.dumps(step.to_json(), ensure_ascii=False)
-        if self.count < HEAD:
-            self.fh.write(line + "\n")
-            self.head_idx.append(idx)
-        else:
-            self.tail.append((step.i, line, idx))
-        self.count += 1
-
-    def add_dumps(self, step: int, dumps: list[Dump]) -> None:
-        if dumps:
-            self.dumps[step] = dumps
-
-    def finish(self, fold: bool) -> tuple[Truncation | None, list[Dump]]:
-        rest = list(self.tail)
-        truncated = None
-        spilled = self.count - HEAD - len(rest)       # вытеснено из хвоста
-        if (fold and len(rest) > TAIL) or spilled > 0:
-            keep = rest[-TAIL:]
-            truncated = Truncation(head=min(self.count, HEAD),
-                                   skipped=self.count - HEAD - len(keep), tail=len(keep))
-            rest = keep
-        for _, line, _ in rest:
-            self.fh.write(line + "\n")
-        self.fh.close()
-        (self.workdir / "trace.jsonl.tmp").replace(self.workdir / "trace.jsonl")
-        index = self.head_idx + [idx for _, _, idx in rest]
-        _write_json(self.workdir / "debugx.idx.json", index)
-        kept = set(range(min(self.count, HEAD))) | {i for i, _, _ in rest}
-        dumps = [d for step in sorted(self.dumps) if step in kept for d in self.dumps[step]]
-        return truncated, dumps
-
-    def abandon(self) -> None:
-        if not self.fh.closed:
-            self.fh.close()
-
-
 # ── трасса ───────────────────────────────────────────────────────────────────
 
 _REG16 = ("ax", "bx", "cx", "dx", "si", "di", "bp", "sp", "ip", "cs", "ds", "ss", "es", "flags")
@@ -690,7 +637,7 @@ class _Walk:
         self.parser = parser
         self.out_name = out_name
         self.feed = Feed(tracer.req.stdin)
-        self.sink = _Sink(tracer.workdir) if tracer.with_dumps else None
+        self.sink = TraceSink(tracer.workdir, RAW_INDEX) if tracer.with_dumps else None
         self.seen = 0
         self.open: int | None = None
         self.dump_ptr = 0
@@ -1003,12 +950,18 @@ def _summary(workdir: Path, result: RunResult) -> None:
         pass
 
 
+def _version(req: RunRequest) -> str:
+    """Версия TASM для итога: её несёт запрос набора (`asm.tasm.TasmRequest`)."""
+    return str(getattr(req, "version", "") or DEFAULT_VERSION)
+
+
 def _crashed(req: RunRequest, error: str, build: BuildResult | None = None,
              ms: int = 0) -> RunResult:
     return RunResult(status="crashed", build=build or BuildResult(ok=False, log=""),
                      load=None, stdin=normalize(req.stdin) if isinstance(req.stdin, str) else "",
                      step_limit=req.step_limit, mode32=req.mode32,
-                     totals={"steps": 0, "ms": ms, "exit_code": None}, error=error)
+                     totals={"steps": 0, "ms": ms, "exit_code": None}, error=error,
+                     toolchain="tasm", version=_version(req))
 
 
 def run(req: RunRequest, tools: Tools, workdir: Path, *, timeout_s: float,
@@ -1022,12 +975,12 @@ def run(req: RunRequest, tools: Tools, workdir: Path, *, timeout_s: float,
     built: _Built | None = None
     try:
         workdir.mkdir(parents=True, exist_ok=True)
-        for stale in ("trace.jsonl", "debugx.idx.json", "summary.json", "plan.json"):
+        for stale in ("trace.jsonl", RAW_INDEX, "summary.json", "plan.json"):
             (workdir / stale).unlink(missing_ok=True)
         _check(req)
         built = _build(req, tools, workdir, deadline, progress, cancelled)
         base = dict(build=built.result, stdin=normalize(req.stdin), step_limit=req.step_limit,
-                    mode32=req.mode32)
+                    mode32=req.mode32, toolchain="tasm", version=_version(req))
         if built.cancelled:
             result = RunResult(status="crashed", load=None, error="Прогон отменён",
                                totals={"steps": 0, "ms": ms(), "exit_code": None}, **base)
@@ -1066,7 +1019,7 @@ def run(req: RunRequest, tools: Tools, workdir: Path, *, timeout_s: float,
     # чтобы служба читала их одинаково при любом итоге.
     if not (workdir / "trace.jsonl").exists():
         (workdir / "trace.jsonl").write_text("", encoding="utf-8")
-        _write_json(workdir / "debugx.idx.json", [])
+        _write_json(workdir / RAW_INDEX, [])
     _summary(workdir, result)
     return result
 

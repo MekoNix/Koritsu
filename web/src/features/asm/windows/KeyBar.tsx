@@ -8,22 +8,31 @@
 import { useAsm } from '@/features/asm/store'
 import { useT } from '@/i18n'
 
-import { mnemonicOf } from './tasmLanguage'
-
 export default function KeyBar() {
   const t = useT()
   const asm = useAsm()
   const { selection, cursorLine, program, settings } = asm
 
-  const docToken = (): string | null => {
+  // Мнемонику строки узнаёт язык режима программы: у TASM и GAS разные
+  // комментарии, метки и директивы. Язык грузится лениво, поэтому F1 ждёт его.
+  const docToken = async (): Promise<string | null> => {
     if (!selection) return null
     if (selection.kind === 'register' || selection.kind === 'flag') return selection.name.toUpperCase()
     if (selection.kind === 'doc') return selection.id
     if (selection.kind === 'line') {
       const text = (program?.source ?? '').split('\n')[selection.line - 1]
-      return text ? mnemonicOf(text) : null
+      if (!text) return null
+      const language = await asm.toolchain.language()
+      return language.mnemonicOf(text)
     }
     return null
+  }
+
+  const openDocs = () => {
+    void docToken().then(
+      (token) => asm.openDocs(token),
+      () => asm.openDocs(null),
+    )
   }
 
   const toggleBp = () => {
@@ -38,7 +47,7 @@ export default function KeyBar() {
   }
 
   const keys: [string, string, () => void][] = [
-    ['F1', t('asm.keys.help'), () => asm.openDocs(docToken())],
+    ['F1', t('asm.keys.help'), openDocs],
     ['F2', t('asm.keys.bp'), toggleBp],
     ['F4', t('asm.keys.cursor'), asm.runToCursor],
     ['F7', t('asm.keys.into'), asm.stepInto],

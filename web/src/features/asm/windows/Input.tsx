@@ -30,7 +30,8 @@ const SAVE_DELAY_MS = 400
 export default function Input({ active }: AsmWindowProps) {
   const t = useT()
   const asm = useAsm()
-  const { run, step, stepIndex, settings, view, runBusy } = asm
+  const { run, step, stepIndex, settings, view, runBusy, toolchain } = asm
+  const tasm = toolchain.id === 'tasm'
   const scan = useTraceScan('current', active)
   const trace = hasTrace(run)
 
@@ -76,7 +77,7 @@ export default function Input({ active }: AsmWindowProps) {
   let hint: string
   if (trace) {
     hint = t('asm.input.hintRead', { step: fmtInt(stepIndex), read: Math.min(read, chars.length), total: chars.length })
-    if (read > chars.length) hint += ' ' + t('asm.input.hintOver', { n: read - chars.length })
+    if (read > chars.length) hint += ' ' + t(tasm ? 'asm.input.hintOver' : 'asm64.input.hintOver', { n: read - chars.length })
     const nextAt = scan?.reads[read]
     if (read < chars.length && nextAt != null) hint += ' ' + t('asm.input.hintNext', { step: fmtInt(nextAt) })
   } else hint = t('asm.input.noTrace')
@@ -88,7 +89,7 @@ export default function Input({ active }: AsmWindowProps) {
       </div>
       <div className="inp">
         <div className="fld">
-          <label htmlFor="asm-stdin">{t('asm.input.stdinLabel')}</label>
+          <label htmlFor="asm-stdin">{t(tasm ? 'asm.input.stdinLabel' : 'asm64.input.stdinLabel')}</label>
           <textarea
             id="asm-stdin"
             rows={3}
@@ -111,11 +112,14 @@ export default function Input({ active }: AsmWindowProps) {
           ) : (
             chars.slice(0, CHARS_SHOWN).map((c, i) => {
               const at = scan?.reads[i]
+              // Вызов чтения забирает строку целиком: клетка подписана шагом вызова и функцией.
+              const call = !tasm && at != null ? asm.getStep(at)?.call : null
+              const readTitle = at == null ? t('asm.input.readDone') : call ? t('asm64.input.readAtCall', { step: fmtInt(at), call }) : t('asm.input.readAt', { step: fmtInt(at) })
               return (
                 <span
                   key={i}
                   className={cn(i < read && 'rd', trace && i === read && 'nx')}
-                  title={i < read ? (at != null ? t('asm.input.readAt', { step: fmtInt(at) }) : t('asm.input.readDone')) : t('asm.input.notRead')}
+                  title={i < read ? readTitle : t('asm.input.notRead')}
                 >
                   {visibleChar(c)}
                 </span>
@@ -128,6 +132,7 @@ export default function Input({ active }: AsmWindowProps) {
           {hint}
           {dirty && <span className="dirty"> {t('asm.input.dirty')}</span>}
         </div>
+        {!tasm && source.includes('\n') && <div className="hint">{t('asm64.input.crlf')}</div>}
         <div className="row">
           <div className="fld">
             <label htmlFor="asm-step-limit">{t('asm.input.limitLabel')}</label>
@@ -145,16 +150,18 @@ export default function Input({ active }: AsmWindowProps) {
               }}
             />
           </div>
-          <div className="fld">
-            <span className="lbl-s">{t('asm.input.bitsLabel')}</span>
-            <div className="seg" role="group" aria-label={t('asm.input.bitsLabel')}>
-              {([16, 32] as const).map((b) => (
-                <button key={b} type="button" aria-pressed={view.bits === b} onClick={() => setBits(b)}>
-                  {b === 16 ? t('asm.input.bits16') : t('asm.input.bits32')}
-                </button>
-              ))}
+          {toolchain.bitsSwitch && (
+            <div className="fld">
+              <span className="lbl-s">{t('asm.input.bitsLabel')}</span>
+              <div className="seg" role="group" aria-label={t('asm.input.bitsLabel')}>
+                {([16, 32] as const).map((b) => (
+                  <button key={b} type="button" aria-pressed={view.bits === b} onClick={() => setBits(b)}>
+                    {b === 16 ? t('asm.input.bits16') : t('asm.input.bits32')}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           <span className="grow" />
           <Button
             variant="primary"
@@ -168,7 +175,7 @@ export default function Input({ active }: AsmWindowProps) {
             {t('asm.input.run')}
           </Button>
         </div>
-        {view.bits === 32 && trace && run && !run.mode32 && <div className="hint dirty">{t('asm.input.no32')}</div>}
+        {toolchain.bitsSwitch && view.bits === 32 && trace && run && !run.mode32 && <div className="hint dirty">{t('asm.input.no32')}</div>}
       </div>
     </section>
   )

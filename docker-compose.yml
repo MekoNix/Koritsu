@@ -1,10 +1,13 @@
-# Koritsu, боевой выкат: один образ, четыре контейнера.
+# Koritsu, боевой выкат: основной образ на три контейнера, образ исполнителя трасс
+# и два чужих образа.
 #
-#   migrate  один прогон миграций до всего остального, потом выходит
-#   api      HTTP, лёгкий; в покое около 100 МБ
-#   worker   очередь: прогоны модели, LibreOffice, разбор файлов; 300–500 МБ
-#   caddy    TLS, статика сайта, единственный, кто смотрит наружу
-#   anubis   проверка работой перед сайтом; только здесь, dev его не поднимает
+#   migrate     один прогон миграций до всего остального, потом выходит
+#   api         HTTP, лёгкий; в покое около 100 МБ
+#   worker      очередь: прогоны модели, LibreOffice, разбор файлов; 300–500 МБ
+#   asm-runner  исполнитель трасс «Ассемблера» MinGW x64: программа студента под
+#               Wine; без сети, без прав и без тома данных
+#   caddy       TLS, статика сайта, единственный, кто смотрит наружу
+#   anubis      проверка работой перед сайтом; только здесь, dev его не поднимает
 #
 # Порт наружу торчит **только** у Caddy. `api` и `worker` разговаривают по
 # внутренней сети compose и общему тому — так же, как будут разговаривать с
@@ -15,6 +18,16 @@
 # Остановка: docker compose down          (том остаётся, `down -v` его сносит)
 # Секреты: файл `.env` рядом с этим, на хосте, вне репозитория. Образец —
 # `.env.example`.
+
+# Журналы контейнеров — у всех одинаково: `json-file` с ротацией, три файла по
+# 10 МБ. Без потолка драйвер Docker пишет журнал без конца, и зациклившийся
+# сервис (или программа, печатающая в stderr) съедает диск машины — а на нём же
+# живут том данных и образы. 30 МБ на сервис хватает, чтобы разобрать сбой.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
 
@@ -31,6 +44,7 @@ services:
     volumes:
       - koritsu-data:/data
     restart: "no"
+    logging: *logging
 
   # ── служба ──────────────────────────────────────────────────────────────
   api:
@@ -47,6 +61,9 @@ services:
       # они (`/api/asm/status`); прогоны идут в воркере. Каталога нет — Docker
       # заведёт пустой, и модуль покажется недоступным.
       - ${KORITSU_ASM_TOOLS_HOST:-./asm-tools}:/opt/asm-tools:ro
+      # Очередь исполнителя трасс MinGW x64 — только для чтения: служба смотрит
+      # в ней сердцебиение исполнителя, чтобы говорить, готов ли режим.
+      - asm-queue:/queue:ro
     # Порт не публикуется: снаружи в него ходит только Caddy, по внутренней
     # сети. `ports:` здесь означал бы сайт, доступный мимо TLS и мимо Anubis.
     expose: ["8000"]
@@ -57,6 +74,7 @@ services:
       start_period: 20s
       retries: 3
     restart: unless-stopped
+    logging: *logging
 
   # ── воркер ──────────────────────────────────────────────────────────────
   # Потолки памяти и CPU стоят **здесь**, а не у службы, и это половина довода
@@ -78,6 +96,9 @@ services:
       - koritsu-data:/data
       # Тот же каталог TASM/TLINK, что у `api`: сборку и трассу исполняет воркер.
       - ${KORITSU_ASM_TOOLS_HOST:-./asm-tools}:/opt/asm-tools:ro
+      # Очередь исполнителя трасс MinGW x64: воркер собирает программу сам, а
+      # исполнять её отдаёт `asm-runner` через этот том (`KORITSU_ASM_MINGW_QUEUE`).
+      - asm-queue:/queue
     mem_limit: 3g
     cpus: 1.5
     # SIGTERM для воркера — «доделай начатое и не бери новых» (`jobs/worker.py`).
@@ -86,6 +107,61 @@ services:
     # меньше обычной сборки PDF — иначе каждый выкат теряет по отчёту.
     stop_grace_period: 120s
     restart: unless-stopped
+    logging: *logging
+
+  # ── исполнитель трасс MinGW x64 ─────────────────────────────────────────
+  # Код студента здесь исполняется по-настоящему: `prog.exe` под Wine на
+  # процессоре машины. Wine не мешает программе звать системные вызовы Linux и
+  # открывать файлы машины по пути `\\?\unix\`, поэтому граница — сам контейнер,
+  # и каждая строка ниже — её часть:
+  #
+  #   network_mode: none   ни одного интерфейса, кроме петли
+  #   без env_file         секреты службы из `.env` сюда не попадают
+  #   только asm-queue     ни тома данных, ни каталога TASM; в очереди — только
+  #                        файлы заданий
+  #   user 10002:10001     свой UID, общая с воркером группа ради очереди
+  #   cap_drop ALL,        ни одной capability и без повышения прав через setuid;
+  #   no-new-privileges    трассировщику они не нужны: он трассирует своего
+  #                        потомка (`PTRACE_TRACEME`), seccomp Docker это пускает
+  #   read_only + tmpfs    писать можно только во временный каталог прогона;
+  #                        `exec` на tmpfs нужен — Wine отображает `prog.exe` и
+  #                        префикс прогона с правом исполнения
+  #   init                 wineserver отцепляется от запустившего его процесса, и
+  #                        без жнеца на PID 1 копятся зомби
+  #   mem_limit, cpus,     потолки на всё сразу: прогонов одновременно
+  #   pids_limit           `KORITSU_ASM_RUNNER_SLOTS`, у каждого wineserver и
+  #                        процесс программы с потоками; tmpfs считается в память
+  #
+  # Нужен хост с `kernel.yama.ptrace_scope` не выше 1 (умолчание Debian и
+  # Ubuntu): при 2 и 3 трассировать потомка без прав нельзя.
+  asm-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.asm-runner
+    image: koritsu-asm-runner:local
+    command: ["serve"]
+    user: "10002:10001"
+    network_mode: none
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,exec,nosuid,nodev,size=256m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    environment:
+      KORITSU_ASM_MINGW_QUEUE: /queue
+      KORITSU_ASM_RUNNER_SLOTS: "${KORITSU_ASM_RUNNER_SLOTS:-2}"
+      KORITSU_ASM_RUNNER_TIMEOUT_MAX_S: "${KORITSU_ASM_RUNNER_TIMEOUT_MAX_S:-300}"
+      KORITSU_ASM_RUNNER_JOB_TTL_S: "${KORITSU_ASM_RUNNER_JOB_TTL_S:-900}"
+    volumes:
+      - asm-queue:/queue
+    stop_grace_period: 30s
+    restart: unless-stopped
+    logging: *logging
 
   # ── прокси и сайт ───────────────────────────────────────────────────────
   # Один контейнер на двоих, и это не экономия: образ Docker с сайтом — это
@@ -145,6 +221,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     restart: unless-stopped
+    logging: *logging
 
   # ── проверка работой ────────────────────────────────────────────────────
   # Anubis (TecharoHQ) — самостоятельный прокси-фильтр: выдаёт браузеру задачу
@@ -171,11 +248,15 @@ services:
       SERVE_ROBOTS_TXT: "true"        # проверить по docs
     expose: ["8923"]
     restart: unless-stopped
+    logging: *logging
 
 volumes:
   # Единственное состояние службы: сам контейнер без состояния, всё живое —
   # только в `/data`. Резервная копия — restic по cron на хосте, отсюда же.
   koritsu-data:
+  # Очередь исполнителя трасс: задания живут в ней секунды, результат забирает
+  # воркер, брошенное удаляет исполнитель по сроку. Резервной копии не нужно.
+  asm-queue:
   # Сертификаты Let's Encrypt: без своего тома Caddy выписывает их заново на
   # каждый `up`, а у центра сертификации на это есть недельный лимит.
   caddy-data:

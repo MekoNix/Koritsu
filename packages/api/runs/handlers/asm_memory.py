@@ -32,7 +32,7 @@ ASM_FAILED = "asm_failed"
 def снять_дамп(ctx) -> dict:
     """Перезапустить трассу до шага и снять дамп названных диапазонов."""
     from ...modules.asm.routes import (диапазоны, инструменты,  # noqa: PLC0415
-                                       номер_прогона)
+                                       номер_прогона, окружение_настроек)
 
     payload = ctx.job.payload or {}
     номер = номер_прогона(payload.get("run_no"), where="body.payload.run_no")
@@ -40,21 +40,26 @@ def снять_дамп(ctx) -> dict:
     if not isinstance(шаг, int) or isinstance(шаг, bool) or шаг < 0:
         raise ApiError("invalid_value", "payload.step is a step number from 0",
                        400, where="body.payload.step")
-    куски = диапазоны(payload.get("ranges"), where="body.payload.ranges")
     if not ctx.solution:
         raise ApiError("invalid_value", "payload.run_id names the program", 400,
                        where="body.payload.run_id")
-    найдено = инструменты(ctx.settings, where="body.payload")
     проект = ctx.project
     if not ассемблер.run_exists(проект, номер):
         raise ApiError(NOT_FOUND, "Run not found", 404,
                        where="body.payload.run_no")
+    # Форма адреса и инструменты — режима самого прогона, а не программы.
+    набор, версия = ассемблер.run_toolchain(проект, номер)
+    куски = диапазоны(payload.get("ranges"), where="body.payload.ranges",
+                      toolchain=набор)
+    найдено = инструменты(ctx.settings, набор, версия, where="body.payload")
 
     ctx.progress(0, 1, note="memory")
     if ctx.cancelled():
         return отменено(ctx, "memory")
     try:
-        дампы = ассемблер.memory(проект, номер, шаг, куски, tools=найдено,
+        дампы = ассемблер.memory(проект, номер, шаг, куски,
+                                 env=окружение_настроек(ctx.settings),
+                                 tools=найдено,
                                  timeout_s=float(ctx.settings.asm_timeout_s))
     except Exception as беда:                                # noqa: BLE001
         # Ядро бросает своё, и ловить его по имени службе незачем: написанное

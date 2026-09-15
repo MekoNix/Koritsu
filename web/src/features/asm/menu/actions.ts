@@ -7,13 +7,11 @@
 import { useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { errorText } from '@/api'
-import { useCurrentWorkspace } from '@/api/hooks'
 import { useT } from '@/i18n'
 
-import { useCreateAsmProgram } from '../api'
 import { useAsm, useAsmUi } from '../store'
-import type { AsmAnchor, AsmWindowId } from '../types'
+import { SOURCE_EXT } from '../toolchains'
+import { regHex, type AsmAnchor, type AsmWindowId } from '../types'
 
 /** Директивы и мнемоники, по которым в справке есть запись, берутся из строки как слово. */
 const СЛОВО = /^\s*(?:[A-Za-z_@$?][\w@$?]*:)?\s*(\.?[A-Za-z@][\w@]*)/
@@ -50,9 +48,9 @@ function download(name: string, text: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-/** Имя файла из имени программы: DOS и TASM не любят пробелов и кириллицы в имени. */
+/** Имя файла из имени программы: DOS, TASM и командная строка сборки не любят пробелов и кириллицы в имени. */
 export function fileBase(name: string): string {
-  const base = name.trim().replace(/\.asm$/i, '').replace(/[^\w.-]+/g, '_')
+  const base = name.trim().replace(/\.(asm|s)$/i, '').replace(/[^\w.-]+/g, '_')
   return base || 'program'
 }
 
@@ -61,8 +59,7 @@ export function useAsmActions() {
   const asm = useAsm()
   const ui = useAsmUi()
   const navigate = useNavigate()
-  const workspace = useCurrentWorkspace()
-  const create = useCreateAsmProgram()
+  const ext = SOURCE_EXT[asm.toolchain.id]
 
   /** Окно для перехода к строке: то из двух, что человек смотрит, иначе исходник. */
   const lineWindow = useCallback((): AsmWindowId => {
@@ -105,10 +102,10 @@ export function useAsmActions() {
     if (!a) text = ''
     else if (a.kind === 'line') text = (asm.program?.source.split('\n')[a.line - 1] ?? '').trimEnd()
     else if (a.kind === 'register') {
-      const v = step?.reg[a.name.toLowerCase() as keyof typeof step.reg] ?? step?.reg32?.[a.name.toLowerCase()]
+      const v = regHex(step, a.name) ?? step?.reg32?.[a.name.toLowerCase()]
       text = v ? `${a.name.toUpperCase()}=${v}` : a.name.toUpperCase()
     } else if (a.kind === 'flag') text = a.name.toUpperCase()
-    else if (a.kind === 'cell') text = `${a.seg}:${a.off}`
+    else if (a.kind === 'cell') text = a.seg == null ? a.off : `${a.seg}:${a.off}`
     else if (a.kind === 'doc') text = a.id
     else if (a.kind === 'text') text = a.text
     if (!text) {
@@ -134,22 +131,15 @@ export function useAsmActions() {
     [asm],
   )
 
+  // Новая программа — через страницу выбора режима; режим текущей программы предвыбран.
   const newProgram = useCallback(() => {
-    const ws = workspace.data?.id
-    if (!ws) return
-    create.mutate(
-      { workspaceId: ws },
-      {
-        onSuccess: (p) => navigate(`/asm/${p.project_id}/${p.program_id}`),
-        onError: (e) => asm.toast(errorText(e)),
-      },
-    )
-  }, [workspace.data?.id, create, navigate, asm])
+    navigate(`/asm/new?toolchain=${asm.toolchain.id}`)
+  }, [navigate, asm.toolchain.id])
 
   const openFromDisk = useCallback(() => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.asm,.inc,.txt,text/plain'
+    input.accept = '.asm,.inc,.s,.S,.txt,text/plain'
     input.onchange = async () => {
       const file = input.files?.[0]
       if (!file) return
@@ -161,8 +151,8 @@ export function useAsmActions() {
   }, [asm])
 
   const downloadSource = useCallback(() => {
-    download(`${fileBase(asm.program?.name ?? '')}.asm`, asm.program?.source ?? '')
-  }, [asm.program])
+    download(`${fileBase(asm.program?.name ?? '')}.${ext}`, asm.program?.source ?? '')
+  }, [asm.program, ext])
 
   const exportListing = useCallback(() => {
     const listing = asm.run?.build?.listing

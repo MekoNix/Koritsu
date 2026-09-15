@@ -13,17 +13,18 @@ import { useNavigate } from 'react-router-dom'
 import { errorText } from '@/api'
 import { useCurrentWorkspace } from '@/api/hooks'
 import { useT } from '@/i18n'
-import { Button, Dialog, Input } from '@/ui'
+import { Button, Dialog, Input, Select } from '@/ui'
 
 import {
   fetchAsmProgram,
   putAsmSettings,
   putAsmSource,
+  useAsmStatus,
   useCreateAsmProgram,
-  useRenameAsmProgram,
+  useUpdateAsmProgram,
 } from '../api'
 import { useAsm, useAsmUi, type AsmDialogId } from '../store'
-import type { AsmStep } from '../types'
+import { regHex, type AsmSettings, type AsmStep } from '../types'
 import { fileBase, useAsmActions } from './actions'
 
 const FORM = 'asm-dialog-form'
@@ -184,7 +185,7 @@ function parseAddress(text: string, step: AsmStep | undefined): { seg: string; o
   const part = (s: string, regs: readonly string[]) => {
     const low = s.toLowerCase()
     if (regs.includes(low)) {
-      const v = step?.reg[low as keyof AsmStep['reg']]
+      const v = regHex(step, low)
       return v ? v.toUpperCase().padStart(4, '0') : null
     }
     return /^[0-9a-f]{1,4}$/i.test(s) ? s.toUpperCase().padStart(4, '0') : null
@@ -195,6 +196,52 @@ function parseAddress(text: string, step: AsmStep | undefined): { seg: string; o
 }
 
 function AddrDialog() {
+  const asm = useAsm()
+  return asm.toolchain.memory === 'flat' ? <FlatAddrDialog /> : <SegmentedAddrDialog />
+}
+
+/**
+ * Адрес плоской памяти: число (`0x140003000`, `140003000h`), имя переменной,
+ * регистр — разбирает описатель режима по текущему шагу и символам сборки.
+ */
+function FlatAddrDialog() {
+  const t = useT()
+  const asm = useAsm()
+  const ui = useAsmUi()
+  const tc = asm.toolchain
+  const start = asm.selection?.kind === 'cell' && asm.selection.seg == null ? `0x${asm.selection.off}` : ''
+  const [v, setV] = useState(start)
+  const [err, setErr] = useState<string>()
+
+  const submit = () => {
+    const a = tc.addr.parse(v, asm.step, asm.run)
+    if (!a) return setErr(t('asm.dialog.addr.badFlat'))
+    ui.closeDialog()
+    asm.select({ kind: 'cell', seg: null, off: a.off.toString(16).toUpperCase().padStart(tc.addr.width, '0') })
+    asm.openWindow('dump', { focus: true })
+  }
+
+  return (
+    <Shell title={t('asm.dialog.addr.title')} ok={t('asm.dialog.addr.ok')} onSubmit={submit}>
+      <Input
+        autoFocus
+        label={t('asm.dialog.addr.labelFlat')}
+        value={v}
+        error={err}
+        spellCheck={false}
+        autoComplete="off"
+        className="font-mono"
+        onFocus={(e) => e.currentTarget.select()}
+        onChange={(e) => {
+          setV(e.target.value)
+          setErr(undefined)
+        }}
+      />
+    </Shell>
+  )
+}
+
+function SegmentedAddrDialog() {
   const t = useT()
   const asm = useAsm()
   const ui = useAsmUi()
@@ -238,6 +285,23 @@ const РЕГИСТРЫ = new Set([
 ])
 const ФЛАГИ = new Set(['of', 'df', 'if', 'sf', 'zf', 'af', 'pf', 'cf'])
 
+/** Регистры x86-64 со всеми половинками: rax/eax/ax/al/ah, rsi/esi/si/sil, r8/r8d/r8w/r8b, rip, rflags. */
+const РЕГИСТР_64 = /^(?:[re]?[abcd]x|[abcd][lh]|[re]?(?:si|di|bp|sp)|(?:si|di|bp|sp)l|r(?:[89]|1[0-5])[dwb]?|[re]?ip|r?e?flags|[cdsefg]s)$/
+
+/**
+ * Годится ли выражение наблюдения в плоской памяти: регистр, флаг (с TF), адрес
+ * или имя переменной. С трассой адрес проверяет описатель режима; без неё имён
+ * ещё нет — верим на слово, проверит окно.
+ */
+function watchValidFlat(expr: string, asm: ReturnType<typeof useAsm>): boolean {
+  const e = expr.trim().toLowerCase()
+  if (РЕГИСТР_64.test(e) || ФЛАГИ.has(e) || e === 'tf') return true
+  if (asm.toolchain.addr.parse(expr, asm.step, asm.run)) return true
+  const sized = /^(?:(?:byte|word|dword|qword)(?:\s+ptr)?\s*)?\[[^\]]+\]$/.test(e)
+  if (sized) return true
+  return !asm.run?.build?.symbols.length && /^[a-z_.$@?][\w.$@?]*(?:\s*(?:\[\s*\d+\s*\]|\+\s*(?:0x)?[0-9a-f]+))?$/.test(e)
+}
+
 /** Годится ли выражение наблюдения: регистр, флаг, адрес или переменная `[индекс]`. */
 function watchValid(expr: string, symbols: string[] | null): boolean {
   const e = expr.trim().toLowerCase()
@@ -259,8 +323,10 @@ function WatchDialog() {
   const submit = () => {
     const expr = v.trim()
     if (!expr) return setErr(t('asm.dialog.watch.empty'))
+    const flat = asm.toolchain.memory === 'flat'
     const symbols = asm.run?.build?.symbols.map((s) => s.name.toLowerCase()) ?? null
-    if (!watchValid(expr, symbols?.length ? symbols : null)) return setErr(t('asm.dialog.watch.bad'))
+    const ok = flat ? watchValidFlat(expr, asm) : watchValid(expr, symbols?.length ? symbols : null)
+    if (!ok) return setErr(t(flat ? 'asm.dialog.watch.badFlat' : 'asm.dialog.watch.bad'))
     const was = asm.settings.watches
     if (!was.some((w) => w.toLowerCase() === expr.toLowerCase())) asm.updateSettings({ watches: [...was, expr] })
     ui.closeDialog()
@@ -271,7 +337,7 @@ function WatchDialog() {
     <Shell title={t('asm.dialog.watch.title')} ok={t('asm.dialog.watch.ok')} onSubmit={submit}>
       <Input
         autoFocus
-        label={t('asm.dialog.watch.label')}
+        label={t(asm.toolchain.memory === 'flat' ? 'asm.dialog.watch.labelFlat' : 'asm.dialog.watch.label')}
         value={v}
         error={err}
         spellCheck={false}
@@ -286,7 +352,110 @@ function WatchDialog() {
   )
 }
 
+/** «Параметры сборки» — по режиму программы: галки TASM или строки ключей `as`/`ld`. */
 function BuildOptsDialog() {
+  const asm = useAsm()
+  return asm.toolchain.id === 'tasm' ? <TasmBuildOpts /> : <GnuBuildOpts />
+}
+
+/**
+ * Версия инструментов в пределах режима. Поле видно, только если версий больше
+ * одной: одна версия — выбирать нечего. Меняется запросом `PATCH` при сохранении
+ * диалога и действует со следующей сборки.
+ */
+function useVersionField() {
+  const t = useT()
+  const asm = useAsm()
+  const status = useAsmStatus()
+  const update = useUpdateAsmProgram()
+  const versions = status.data?.toolchains.find((x) => x.id === asm.toolchain.id)?.versions ?? []
+  const current = asm.program?.asmVersion ?? ''
+  const [v, setV] = useState(current)
+  const field =
+    versions.length > 1 ? (
+      <Select label={t('asm.dialog.build.version')} value={v} onChange={(e) => setV(e.target.value)}>
+        {versions.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.available ? x.title : `${x.title} · ${t('asm.new.versionMissing')}`}
+          </option>
+        ))}
+      </Select>
+    ) : null
+  const apply = async () => {
+    if (versions.length > 1 && v && v !== current)
+      await update.mutateAsync({ projectId: asm.projectId, programId: asm.programId, toolchainVersion: v })
+  }
+  return { field, apply, busy: update.isPending }
+}
+
+/** Ключи из настроек как список строк: у `keys` описателя тип — любое поле настроек. */
+function flagsOf(s: AsmSettings, key: keyof AsmSettings): string[] {
+  const v = s[key]
+  return Array.isArray(v) ? v.map(String) : []
+}
+
+const splitFlags = (text: string) => (text.trim() ? text.trim().split(/\s+/) : [])
+
+/**
+ * Ключи GNU `as` и `ld` строкой через пробел. Проверяет их служба по перечню
+ * разрешённого; листинг, имена файлов, `-L` и `-lkernel32` добавляет ядро, в
+ * настройки они не пишутся. Превью — команды так, как их набирают руками.
+ */
+function GnuBuildOpts() {
+  const t = useT()
+  const asm = useAsm()
+  const ui = useAsmUi()
+  const tc = asm.toolchain
+  const [k0, k1] = tc.buildFlags.keys
+  const [a, setA] = useState(flagsOf(asm.settings, k0).join(' '))
+  const [b, setB] = useState(flagsOf(asm.settings, k1).join(' '))
+  const [err, setErr] = useState<string>()
+  const version = useVersionField()
+  const base = fileBase(asm.program?.name ?? '')
+  const next = { ...asm.settings, [k0]: splitFlags(a), [k1]: splitFlags(b) } as AsmSettings
+
+  const submit = async () => {
+    try {
+      await version.apply()
+    } catch (e) {
+      return setErr(errorText(e))
+    }
+    asm.updateSettings({ [k0]: next[k0], [k1]: next[k1] } as Partial<AsmSettings>)
+    ui.closeDialog()
+    asm.toast(t('asm.dialog.build.applied'))
+  }
+
+  return (
+    <Shell title={t('asm.dialog.build.title')} ok={t('asm.dialog.build.ok')} busy={version.busy} onSubmit={() => void submit()}>
+      {version.field}
+      <Input
+        autoFocus
+        label={t('asm.dialog.build.flagsOf', { tool: tc.tools[0] })}
+        value={a}
+        spellCheck={false}
+        autoComplete="off"
+        className="font-mono"
+        onChange={(e) => setA(e.target.value)}
+      />
+      <Input
+        label={t('asm.dialog.build.flagsOf', { tool: tc.tools[1] })}
+        value={b}
+        spellCheck={false}
+        autoComplete="off"
+        className="font-mono"
+        onChange={(e) => setB(e.target.value)}
+      />
+      <p className="text-xs text-muted">{t('asm.dialog.build.flagsHint')}</p>
+      <p className="text-xs text-muted">{t('asm.dialog.build.commands')}</p>
+      <pre className="whitespace-pre-wrap rounded-sm border border-line bg-surface-3 px-s3 py-s2 font-mono text-xs">
+        {tc.buildFlags.preview(next, base)}
+      </pre>
+      {err && <p className="text-sm text-err">{err}</p>}
+    </Shell>
+  )
+}
+
+function TasmBuildOpts() {
   const t = useT()
   const asm = useAsm()
   const ui = useAsmUi()
@@ -295,6 +464,8 @@ function BuildOptsDialog() {
   const [zi, setZi] = useState(has(tasm_flags, '/zi'))
   const [l, setL] = useState(has(tasm_flags, '/l'))
   const [v, setV] = useState(has(tlink_flags, '/v'))
+  const [err, setErr] = useState<string>()
+  const version = useVersionField()
   const base = fileBase(asm.program?.name ?? '')
 
   // Прочие ключи, заданные раньше, не теряются: диалог правит только свои три.
@@ -302,7 +473,12 @@ function BuildOptsDialog() {
   const tasm = [...(zi ? ['/zi'] : []), ...(l ? ['/l'] : []), ...other(tasm_flags, ['/zi', '/l'])]
   const tlink = [...(v ? ['/v'] : []), ...other(tlink_flags, ['/v'])]
 
-  const submit = () => {
+  const submit = async () => {
+    try {
+      await version.apply()
+    } catch (e) {
+      return setErr(errorText(e))
+    }
     asm.updateSettings({ tasm_flags: tasm, tlink_flags: tlink })
     ui.closeDialog()
     asm.toast(t('asm.dialog.build.applied'))
@@ -318,14 +494,16 @@ function BuildOptsDialog() {
   )
 
   return (
-    <Shell title={t('asm.dialog.build.title')} ok={t('asm.dialog.build.ok')} onSubmit={submit}>
+    <Shell title={t('asm.dialog.build.title')} ok={t('asm.dialog.build.ok')} busy={version.busy} onSubmit={() => void submit()}>
+      {version.field}
       {box(zi, setZi, '/zi', t('asm.dialog.build.zi'))}
       {box(l, setL, '/l', t('asm.dialog.build.l'))}
       {box(v, setV, '/v', t('asm.dialog.build.v'))}
       <pre className="whitespace-pre-wrap rounded-sm border border-line bg-surface-3 px-s3 py-s2 font-mono text-xs">
-        {`tasm ${tasm.join(' ')} ${base}.asm\ntlink ${tlink.join(' ')} ${base}.obj`.replace(/ {2,}/g, ' ')}
+        {asm.toolchain.buildFlags.preview({ ...asm.settings, tasm_flags: tasm, tlink_flags: tlink }, base)}
       </pre>
       {!l && <p className="text-sm text-warn">{t('asm.dialog.build.noListing')}</p>}
+      {err && <p className="text-sm text-err">{err}</p>}
     </Shell>
   )
 }
@@ -372,7 +550,7 @@ function RenameDialog() {
   const t = useT()
   const asm = useAsm()
   const ui = useAsmUi()
-  const rename = useRenameAsmProgram()
+  const rename = useUpdateAsmProgram()
   const [v, setV] = useState(asm.program?.name ?? '')
   const [err, setErr] = useState<string>()
 
@@ -402,8 +580,9 @@ function RenameDialog() {
 }
 
 /**
- * «Сохранить как» — новая программа того же пространства с текущим исходником и
- * настройками. Прогоны и переписка не копируются: они про прежнюю программу.
+ * «Сохранить как» — новая программа того же пространства, того же режима и версии
+ * инструментов, с текущим исходником и настройками. Прогоны и переписка не
+ * копируются: они про прежнюю программу.
  */
 function SaveAsDialog() {
   const t = useT()
@@ -423,7 +602,12 @@ function SaveAsDialog() {
     if (!ws) return
     setBusy(true)
     try {
-      const p = await create.mutateAsync({ workspaceId: ws, name })
+      const p = await create.mutateAsync({
+        workspaceId: ws,
+        name,
+        toolchain: asm.toolchain.id,
+        ...(asm.program?.asmVersion ? { toolchainVersion: asm.program.asmVersion } : {}),
+      })
       const fresh = await fetchAsmProgram(p.project_id, p.program_id)
       await putAsmSource(p.project_id, p.program_id, asm.program?.source ?? '', fresh.version)
       await putAsmSettings(p.project_id, p.program_id, asm.settings)

@@ -2049,7 +2049,7 @@ export interface paths {
         };
         /**
          * Whether assembler tools are installed
-         * @description Says whether this server can build and trace programs: DOSBox-X, TASM, TLINK and DebugX, each on its own. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.
+         * @description Says whether this server can build and trace programs, for each toolchain with its versions and components. The flat DOSBox-X, TASM, TLINK and DebugX flags are the TASM ones. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.
          */
         get: operations["asm_status"];
         put?: never;
@@ -2069,13 +2069,13 @@ export interface paths {
         };
         /**
          * Assembler programs of a workspace
-         * @description Every assembler program of one workspace, most recently edited first, with the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
+         * @description Every assembler program of one workspace, most recently edited first, with its toolchain and the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
          */
         get: operations["asm_programs"];
         put?: never;
         /**
          * Start a new assembler program in a workspace
-         * @description Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.
+         * @description Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. `toolchain` (tasm by default) is fixed for the life of the program; `toolchain_version` is one from its catalog, the default when null. Neither has to be installed here. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 409 project_exists.
          */
         post: operations["asm_create_program"];
         delete?: never;
@@ -2093,7 +2093,7 @@ export interface paths {
         };
         /**
          * One assembler program
-         * @description The source with its version counter, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. Viewer role. 400 invalid_id, 404 not_found.
+         * @description The source with its version counter, the toolchain and its version, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. A program started before toolchains existed is tasm 4.1. Viewer role. 400 invalid_id, 404 not_found.
          */
         get: operations["asm_program"];
         put?: never;
@@ -2106,8 +2106,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Rename a program
-         * @description Renames the program. An empty name resets it: the interface names it from the module and n again. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * Rename a program or change its toolchain version
+         * @description Renames the program and/or moves it to another version of the same toolchain; a field left null is kept. An empty name resets it: the interface names it from the module and n again. The toolchain itself never changes. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
          */
         patch: operations["asm_rename_program"];
         trace?: never;
@@ -2142,7 +2142,7 @@ export interface paths {
         get?: never;
         /**
          * Write the run settings of a program
-         * @description Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. A build flag is a slash and a short word (`/zi`); the step limit is capped by the server. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
+         * @description Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. Build flags of the program's own toolchain are checked by its rules (a slash and a short word for TASM, a list of allowed options for GNU as and ld); flags of the other toolchain are stored as they come. The step limit is capped by the server per toolchain. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
          */
         put: operations["asm_put_settings"];
         post?: never;
@@ -2163,7 +2163,7 @@ export interface paths {
         put?: never;
         /**
          * Build, or build and trace, a program
-         * @description Takes the source and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are `tasm`, `tlink` and `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.
+         * @description Takes the source, toolchain, version and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are the toolchain's: `tasm`, `tlink`, `trace` or `as`, `ld`, `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. MinGW x64 without a tracer builds but does not run. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.
          */
         post: operations["asm_start_run"];
         delete?: never;
@@ -2181,7 +2181,7 @@ export interface paths {
         };
         /**
          * Summary of one run
-         * @description The run without its steps: build result with messages, listing, segments and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         * @description The run without its steps: toolchain and version, build result with messages, listing, segments or sections and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. A run from before toolchains existed is tasm 4.1. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
          */
         get: operations["asm_run"];
         put?: never;
@@ -2201,9 +2201,29 @@ export interface paths {
         };
         /**
          * A page of trace steps
-         * @description Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         * @description Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. With flat memory (MinGW x64) `cs` and `mem[].seg` are null, and a step that called a system function as a whole names it in `call`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
          */
         get: operations["asm_run_steps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Raw tracer output for a range of steps
+         * @description What the tracer printed for steps [from, to), as text (DebugX for TASM), at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["asm_run_raw"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2221,7 +2241,7 @@ export interface paths {
         };
         /**
          * Raw debugger output for a range of steps
-         * @description What DebugX printed for steps [from, to), as text, at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         * @description The same as GET …/raw, under its old address. What the tracer printed for steps [from, to), as text (DebugX for TASM), at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
          */
         get: operations["asm_run_debugx"];
         put?: never;
@@ -2243,7 +2263,7 @@ export interface paths {
         put?: never;
         /**
          * Dump memory at a step of a run
-         * @description Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.
+         * @description Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. A range has a hex `seg` for TASM and `seg` null with `off` of up to 16 hex digits for MinGW x64. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.
          */
         post: operations["asm_run_memory"];
         delete?: never;
@@ -3461,7 +3481,7 @@ export interface paths {
         };
         /**
          * Whether assembler tools are installed
-         * @description Says whether this server can build and trace programs: DOSBox-X, TASM, TLINK and DebugX, each on its own. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.
+         * @description Says whether this server can build and trace programs, for each toolchain with its versions and components. The flat DOSBox-X, TASM, TLINK and DebugX flags are the TASM ones. `available` false is a state, not an error: the module can be shown for development without the tools, and starting a run then answers 503 asm_unavailable. 401 unauthenticated.
          */
         get: operations["asm_status_v1"];
         put?: never;
@@ -3481,13 +3501,13 @@ export interface paths {
         };
         /**
          * Assembler programs of a workspace
-         * @description Every assembler program of one workspace, most recently edited first, with the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
+         * @description Every assembler program of one workspace, most recently edited first, with its toolchain and the status of its last run. Works in the trash are left out. Viewer role. 400 invalid_id, 404 not_found, 422 validation_failed.
          */
         get: operations["asm_programs_v1"];
         put?: never;
         /**
          * Start a new assembler program in a workspace
-         * @description Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 403 forbidden, 404 not_found, 409 project_exists.
+         * @description Starts a program without naming a work: a journal entry and its own directory on the volume, in the workspace assembler work, created on the first program. `toolchain` (tasm by default) is fixed for the life of the program; `toolchain_version` is one from its catalog, the default when null. Neither has to be installed here. The source starts empty and nothing is built or charged here. Editor role in the workspace. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found, 409 project_exists.
          */
         post: operations["asm_create_program_v1"];
         delete?: never;
@@ -3505,7 +3525,7 @@ export interface paths {
         };
         /**
          * One assembler program
-         * @description The source with its version counter, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. Viewer role. 400 invalid_id, 404 not_found.
+         * @description The source with its version counter, the toolchain and its version, the run settings and the number of the last run. A program nobody has typed in yet has an empty source with version 0, which is not an error. A program started before toolchains existed is tasm 4.1. Viewer role. 400 invalid_id, 404 not_found.
          */
         get: operations["asm_program_v1"];
         put?: never;
@@ -3518,8 +3538,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Rename a program
-         * @description Renames the program. An empty name resets it: the interface names it from the module and n again. Editor role. 400 invalid_id, 403 forbidden, 404 not_found.
+         * Rename a program or change its toolchain version
+         * @description Renames the program and/or moves it to another version of the same toolchain; a field left null is kept. An empty name resets it: the interface names it from the module and n again. The toolchain itself never changes. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
          */
         patch: operations["asm_rename_program_v1"];
         trace?: never;
@@ -3554,7 +3574,7 @@ export interface paths {
         get?: never;
         /**
          * Write the run settings of a program
-         * @description Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. A build flag is a slash and a short word (`/zi`); the step limit is capped by the server. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
+         * @description Replaces the input, step limit, 16/32-bit mode, build flags, breakpoints and watches at once. Build flags of the program's own toolchain are checked by its rules (a slash and a short word for TASM, a list of allowed options for GNU as and ld); flags of the other toolchain are stored as they come. The step limit is capped by the server per toolchain. Editor role. 400 invalid_id, 400 invalid_value, 403 forbidden, 404 not_found.
          */
         put: operations["asm_put_settings_v1"];
         post?: never;
@@ -3575,7 +3595,7 @@ export interface paths {
         put?: never;
         /**
          * Build, or build and trace, a program
-         * @description Takes the source and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are `tasm`, `tlink` and `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.
+         * @description Takes the source, toolchain, version and settings as they are now and queues an `asm_run` job: `build` assembles and links, `run` also traces the whole program up to the step limit. Progress stages are the toolchain's: `tasm`, `tlink`, `trace` or `as`, `ld`, `trace`. The run number answers at once; its summary is read from GET …/runs/{run_no}. MinGW x64 without a tracer builds but does not run. Editor role. 400 invalid_id, 402 limit_exhausted, 403 forbidden, 404 not_found, 503 asm_unavailable.
          */
         post: operations["asm_start_run_v1"];
         delete?: never;
@@ -3593,7 +3613,7 @@ export interface paths {
         };
         /**
          * Summary of one run
-         * @description The run without its steps: build result with messages, listing, segments and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         * @description The run without its steps: toolchain and version, build result with messages, listing, segments or sections and symbols, load addresses, totals, truncation and memory dumps. While the job goes, `status` is queued, building or running and the rest is empty; a job cancelled or failed before a summary answers `crashed` with the reason in `error`. A run from before toolchains existed is tasm 4.1. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
          */
         get: operations["asm_run_v1"];
         put?: never;
@@ -3613,9 +3633,29 @@ export interface paths {
         };
         /**
          * A page of trace steps
-         * @description Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         * @description Steps with numbers in [from, to), at most 2000 at a time. Step 0 is the state before the first command; step i is the command executed and the state after it, with `next` the command to run after. `total` is how many steps the whole run executed; when the middle of a long trace is folded (`truncated`), steps from it are simply absent. With flat memory (MinGW x64) `cs` and `mem[].seg` are null, and a step that called a system function as a whole names it in `call`. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
          */
         get: operations["asm_run_steps_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/asm/programs/{program_id}/runs/{run_no}/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Raw tracer output for a range of steps
+         * @description What the tracer printed for steps [from, to), as text (DebugX for TASM), at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         */
+        get: operations["asm_run_raw_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3633,7 +3673,7 @@ export interface paths {
         };
         /**
          * Raw debugger output for a range of steps
-         * @description What DebugX printed for steps [from, to), as text, at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
+         * @description The same as GET …/raw, under its old address. What the tracer printed for steps [from, to), as text (DebugX for TASM), at most 2000 steps and two megabytes at a time. Viewer role. 400 invalid_id, 400 invalid_value, 404 not_found.
          */
         get: operations["asm_run_debugx_v1"];
         put?: never;
@@ -3655,7 +3695,7 @@ export interface paths {
         put?: never;
         /**
          * Dump memory at a step of a run
-         * @description Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.
+         * @description Queues an `asm_memory` job that replays the run with the same source and input up to `step` and dumps the ranges asked for. The job result carries `dumps`. For cells the trace did not record after the first few thousand steps. A range has a hex `seg` for TASM and `seg` null with `off` of up to 16 hex digits for MinGW x64. Editor role. 400 invalid_id, 400 invalid_value, 402 limit_exhausted, 403 forbidden, 404 not_found, 409 run_not_ready, 503 asm_unavailable.
          */
         post: operations["asm_run_memory_v1"];
         delete?: never;
@@ -4060,13 +4100,13 @@ export interface components {
             stdin: string;
             /**
              * Step Limit
-             * @description How many steps the trace may take before it stops
+             * @description How many steps the trace may take before it stops. The ceiling depends on the toolchain
              * @default 100000
              */
             step_limit: number;
             /**
              * Mode32
-             * @description Trace 32-bit registers as well
+             * @description Trace 32-bit registers as well (TASM)
              * @default false
              */
             mode32: boolean;
@@ -4080,6 +4120,16 @@ export interface components {
              * @description Command line flags of TLINK, each of the form /x
              */
             tlink_flags?: string[];
+            /**
+             * As Flags
+             * @description Command line flags of GNU as (MinGW x64), one argument per item; output and listing flags are added by the server
+             */
+            as_flags?: string[];
+            /**
+             * Ld Flags
+             * @description Command line flags of GNU ld (MinGW x64), one argument per item; output, library path and -lkernel32 are added by the server
+             */
+            ld_flags?: string[];
             /**
              * Breakpoints
              * @description Source lines with a breakpoint, from 1
@@ -4224,6 +4274,7 @@ export interface components {
             severity: string;
             /**
              * Tool
+             * @description tasm, tlink, as or ld
              * @default
              */
             tool: string;
@@ -4244,7 +4295,7 @@ export interface components {
             ok: boolean;
             /**
              * Log
-             * @description What TASM and TLINK printed
+             * @description What the assembler and the linker printed
              * @default
              */
             log: string;
@@ -4263,7 +4314,7 @@ export interface components {
             text: string;
             /**
              * Anchor
-             * @description What the message is about: {kind: line, line} | {kind: register, name} | {kind: flag, name} | {kind: cell, seg, off} | {kind: doc, id} | {kind: run} | {kind: text, window, text, line_from, line_to} — text is the selected text as is, at most 4000 characters; window is one of source, listing, output, debugx, build; line_from/line_to are source lines or null
+             * @description What the message is about: {kind: line, line} | {kind: register, name} | {kind: flag, name} | {kind: cell, seg, off} — seg is null for flat memory | {kind: doc, id} | {kind: run} | {kind: text, window, text, line_from, line_to} — text is the selected text as is, at most 4000 characters; window is one of source, listing, output, raw, build (debugx is the old name of raw); line_from/line_to are source lines or null
              */
             anchor?: {
                 [key: string]: unknown;
@@ -4355,15 +4406,6 @@ export interface components {
              * @description Files attached to the project as a whole, in upload order; `selected` says which of them this solution shows the model
              */
             common?: components["schemas"]["ContextFileOut"][];
-        };
-        /** DebugxOut */
-        DebugxOut: {
-            /**
-             * Text
-             * @description Raw DebugX output of those steps
-             * @default
-             */
-            text: string;
         };
         /**
          * DiagramBuiltOut
@@ -4605,9 +4647,10 @@ export interface components {
             step: number;
             /**
              * Seg
+             * @description Segment, hex; null for flat memory
              * @default
              */
-            seg: string;
+            seg: string | null;
             /**
              * Off
              * @default
@@ -4838,29 +4881,6 @@ export interface components {
              */
             updated_at?: string | null;
         };
-        /** LoadOut */
-        LoadOut: {
-            /**
-             * Psp
-             * @default
-             */
-            psp: string;
-            /**
-             * Cs
-             * @default
-             */
-            cs: string;
-            /**
-             * Ds
-             * @default
-             */
-            ds: string;
-            /**
-             * Ss
-             * @default
-             */
-            ss: string;
-        };
         /**
          * LoginIn
          * @description Вход. Длина пароля здесь **не** проверяется: старый пароль может быть
@@ -4876,9 +4896,10 @@ export interface components {
         MemWriteOut: {
             /**
              * Seg
+             * @description Segment, hex; null for flat memory
              * @default
              */
-            seg: string;
+            seg: string | null;
             /**
              * Off
              * @default
@@ -4928,12 +4949,12 @@ export interface components {
         MemoryRangeIn: {
             /**
              * Seg
-             * @description Segment, hex
+             * @description Segment, hex, for TASM; null for MinGW x64 flat memory
              */
-            seg: string;
+            seg?: string | null;
             /**
              * Off
-             * @description Offset, hex
+             * @description Offset, hex: up to 8 digits with a segment, up to 16 without
              */
             off: string;
             /** Len */
@@ -5009,6 +5030,17 @@ export interface components {
              * @description Which program of its project, from 1
              */
             n: number;
+            /**
+             * Toolchain
+             * @description tasm or mingw64
+             * @default tasm
+             */
+            toolchain: string;
+            /**
+             * Toolchain Version
+             * @default 4.1
+             */
+            toolchain_version: string;
             /** Created At */
             created_at?: string | null;
             /**
@@ -5024,7 +5056,7 @@ export interface components {
         };
         /**
          * ProgramCreateIn
-         * @description Тело заведения программы: в каком пространстве и как звать.
+         * @description Тело заведения программы: в каком пространстве, как звать, какой режим.
          */
         ProgramCreateIn: {
             /**
@@ -5038,6 +5070,17 @@ export interface components {
              * @default
              */
             name: string;
+            /**
+             * Toolchain
+             * @description tasm or mingw64. It is fixed for the life of the program. A toolchain not installed on this server is fine: the source can be written without tools.
+             * @default tasm
+             */
+            toolchain: string;
+            /**
+             * Toolchain Version
+             * @description Version from the toolchain catalog; null is its default
+             */
+            toolchain_version?: string | null;
         };
         /** ProgramCreatedOut */
         ProgramCreatedOut: {
@@ -5049,10 +5092,14 @@ export interface components {
             name: string;
             /** N */
             n: number;
+            /** Toolchain */
+            toolchain: string;
+            /** Toolchain Version */
+            toolchain_version: string;
         };
         /**
          * ProgramOut
-         * @description Программа целиком: исходник с версией, настройки, последний прогон.
+         * @description Программа целиком: исходник с версией, режим, настройки, последний прогон.
          */
         ProgramOut: {
             /** Project Id */
@@ -5063,6 +5110,17 @@ export interface components {
             name: string;
             /** N */
             n: number;
+            /**
+             * Toolchain
+             * @description tasm or mingw64
+             * @default tasm
+             */
+            toolchain: string;
+            /**
+             * Toolchain Version
+             * @default 4.1
+             */
+            toolchain_version: string;
             /**
              * Source
              * @default
@@ -5089,6 +5147,30 @@ export interface components {
              * @description Number of the last run, null when never run
              */
             last_run_no?: number | null;
+        };
+        /** ProgramPatchIn */
+        ProgramPatchIn: {
+            /**
+             * Name
+             * @description New name. Empty resets it to the default name; null keeps it
+             */
+            name?: string | null;
+            /**
+             * Toolchain Version
+             * @description Another version of the same toolchain; null keeps it. The toolchain itself does not change
+             */
+            toolchain_version?: string | null;
+        };
+        /** ProgramPatchOut */
+        ProgramPatchOut: {
+            /** Program Id */
+            program_id: string;
+            /** Name */
+            name: string;
+            /** Toolchain */
+            toolchain: string;
+            /** Toolchain Version */
+            toolchain_version: string;
         };
         /**
          * ProjectPatchIn
@@ -5185,6 +5267,15 @@ export interface components {
              * @description New name for this run. Empty resets it: the interface draws the default name from the module and n again.
              */
             name: string;
+        };
+        /** RawOut */
+        RawOut: {
+            /**
+             * Text
+             * @description Raw tracer output of those steps
+             * @default
+             */
+            text: string;
         };
         /**
          * RecognizeIn
@@ -5295,21 +5386,6 @@ export interface components {
             password: string;
             /** Nickname */
             nickname: string;
-        };
-        /** RenameIn */
-        RenameIn: {
-            /**
-             * Name
-             * @description New name. Empty resets it to the default name
-             */
-            name: string;
-        };
-        /** RenameOut */
-        RenameOut: {
-            /** Program Id */
-            program_id: string;
-            /** Name */
-            name: string;
         };
         /**
          * ReportIn
@@ -5448,12 +5524,29 @@ export interface components {
              */
             status: string;
             /**
+             * Toolchain
+             * @description tasm or mingw64
+             * @default tasm
+             */
+            toolchain: string;
+            /**
+             * Toolchain Version
+             * @default 4.1
+             */
+            toolchain_version: string;
+            /**
              * Source
              * @description The source this run was built from. Line numbers in build messages, the listing and steps refer to it
              */
             source?: string | null;
             build?: components["schemas"]["BuildOut"] | null;
-            load?: components["schemas"]["LoadOut"] | null;
+            /**
+             * Load
+             * @description Where the program was loaded, keys by toolchain: psp, cs, ds, ss for TASM; image_base, entry, rsp for MinGW x64
+             */
+            load?: {
+                [key: string]: string | number | null;
+            } | null;
             /**
              * Stdin
              * @default
@@ -5562,7 +5655,10 @@ export interface components {
              */
             at?: string | null;
         };
-        /** SegmentOut */
+        /**
+         * SegmentOut
+         * @description Область образа: сегмент карты TLINK или секция PE с адресом VA.
+         */
         SegmentOut: {
             /**
              * Name
@@ -5735,7 +5831,7 @@ export interface components {
         StatusOut: {
             /**
              * Available
-             * @description Whether programs can be built and traced here. False is a state of the machine, not an error of the request.
+             * @description Whether programs of at least one toolchain can be built and traced here. False is a state of the machine, not an error of the request.
              */
             available: boolean;
             /**
@@ -5758,6 +5854,8 @@ export interface components {
              * @description DEBUGX.COM is found
              */
             debugx: boolean;
+            /** Toolchains */
+            toolchains?: components["schemas"]["ToolchainStatusOut"][];
         };
         /**
          * StepLineIn
@@ -5802,7 +5900,7 @@ export interface components {
              * Cs
              * @default
              */
-            cs: string;
+            cs: string | null;
             /**
              * Ip
              * @default
@@ -5959,6 +6057,59 @@ export interface components {
              * @description Whether this is the template the work is built from. Only listed for templates attached to a project: on the personal shelf the question has no meaning.
              */
             active?: boolean | null;
+        };
+        /**
+         * ToolchainStatusOut
+         * @description Режим ассемблера и его готовность на этой машине.
+         */
+        ToolchainStatusOut: {
+            /**
+             * Id
+             * @description tasm or mingw64
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /**
+             * Available
+             * @description Programs of this toolchain can be built and traced here
+             */
+            available: boolean;
+            /** Default Version */
+            default_version: string;
+            /** Versions */
+            versions?: components["schemas"]["ToolchainVersionOut"][];
+            /**
+             * Parts
+             * @description Each component of the toolchain and whether it is found: dosbox, tasm, tlink, debugx for TASM; as, ld, kernel32, tracer for MinGW x64
+             */
+            parts?: {
+                [key: string]: boolean;
+            };
+        };
+        /** ToolchainVersionOut */
+        ToolchainVersionOut: {
+            /**
+             * Id
+             * @description Version id, as programs name it
+             */
+            id: string;
+            /**
+             * Title
+             * @description What the version is called
+             */
+            title: string;
+            /**
+             * Detail
+             * @description Version string found on this server
+             * @default
+             */
+            detail: string;
+            /**
+             * Available
+             * @description This version is ready here
+             */
+            available: boolean;
         };
         /** TotalsOut */
         TotalsOut: {
@@ -6388,11 +6539,13 @@ export interface components {
             i: number;
             /**
              * Cs
+             * @description Code segment, hex; null for flat memory
              * @default
              */
-            cs: string;
+            cs: string | null;
             /**
              * Ip
+             * @description IP, EIP or RIP, hex
              * @default
              */
             ip: string;
@@ -6431,6 +6584,11 @@ export interface components {
              */
             stdin_pos: number;
             next?: components["schemas"]["StepNextOut"] | null;
+            /**
+             * Call
+             * @description The system function this step called as a whole, e.g. kernel32.WriteFile; registers are after its return
+             */
+            call?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -11044,7 +11202,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RenameIn"];
+                "application/json": components["schemas"]["ProgramPatchIn"];
             };
         };
         responses: {
@@ -11054,7 +11212,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RenameOut"];
+                    "application/json": components["schemas"]["ProgramPatchOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -11254,6 +11412,42 @@ export interface operations {
             };
         };
     };
+    asm_run_raw: {
+        parameters: {
+            query?: {
+                from?: number;
+                to?: number | null;
+            };
+            header?: never;
+            path: {
+                program_id: string;
+                run_no: number;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     asm_run_debugx: {
         parameters: {
             query?: {
@@ -11276,7 +11470,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DebugxOut"];
+                    "application/json": components["schemas"]["RawOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -14118,7 +14312,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RenameIn"];
+                "application/json": components["schemas"]["ProgramPatchIn"];
             };
         };
         responses: {
@@ -14128,7 +14322,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RenameOut"];
+                    "application/json": components["schemas"]["ProgramPatchOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
@@ -14328,6 +14522,42 @@ export interface operations {
             };
         };
     };
+    asm_run_raw_v1: {
+        parameters: {
+            query?: {
+                from?: number;
+                to?: number | null;
+            };
+            header?: never;
+            path: {
+                program_id: string;
+                run_no: number;
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawOut"];
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
     asm_run_debugx_v1: {
         parameters: {
             query?: {
@@ -14350,7 +14580,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DebugxOut"];
+                    "application/json": components["schemas"]["RawOut"];
                 };
             };
             /** @description Any refusal: one shape, machine-readable code */
