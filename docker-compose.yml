@@ -101,6 +101,22 @@ services:
       - asm-queue:/queue
     mem_limit: 3g
     cpus: 1.5
+    # Своя проверка здоровья, потому что унаследованная из образа не годится:
+    # там она стучится по HTTP на `/health`, а воркер HTTP не слушает вовсе —
+    # и контейнер, делающий свою работу, вечно значился `unhealthy`. Ложная
+    # тревога хуже её отсутствия: оператор перестаёт верить `docker compose ps`
+    # и пропускает настоящую.
+    #
+    # Проверяется то, без чего воркер бесполезен, даже будучи живым: база
+    # отвечает и том пишется. Сердцебиение для этого не годится — его пишет
+    # только взявший задание (`jobs/models.Job.heartbeat_at`), и у простаивающего
+    # воркера свежего сердцебиения нет по определению.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sqlite3,sys; d=os.environ.get('KORITSU_DATA_DIR','/data'); sqlite3.connect(f'file:{d}/koritsu.db?mode=ro', uri=True).execute('select 1').fetchone(); sys.exit(0 if os.access(d, os.W_OK) else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
     # SIGTERM для воркера — «доделай начатое и не бери новых» (`jobs/worker.py`).
     # Времени на это даёт `stop_grace_period`; меньше `KORITSU_JOB_TIMEOUT_S`
     # оно быть может (задание вернётся через сердцебиение), но не должно быть

@@ -36,7 +36,6 @@ export type AgentJobResult = {
   stop?: string
   run?: string | null
   task_chars?: number
-  key_source?: string
 }
 
 /** Тело `payload` задания `agent`. */

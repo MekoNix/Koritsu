@@ -2219,7 +2219,7 @@
      "keys"
     ],
     "summary": "Providers that accept a key",
-    "description": "Lists the providers a key can be stored for, and where a key for each would come from: `own` (yours), `shared` (the one the service runs on) or `none` (nothing to pay with). `kind` says what the key is for: `model` pays for a model run, `ink` recognises handwriting on a board. An ink provider never answers `shared`: its tariff counts socket openings, so a board runs on the person's own key or not at all. 401 unauthenticated.",
+    "description": "Lists the providers a key can be stored for. `has_key` says whether you have a working key for each one; a run goes on your own key and on no other, so a provider without a key cannot be used. `kind` says what the key is for: `model` pays for a model run, `ink` recognises handwriting on a board. `model` carries the model chosen for that provider, empty meaning the preset default. 401 unauthenticated.",
     "operationId": "list_key_providers",
     "responses": {
      "200": {
@@ -2230,6 +2230,183 @@
          "additionalProperties": true,
          "type": "object",
          "title": "Response List Key Providers"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/keys/ink": {
+   "put": {
+    "tags": [
+     "keys"
+    ],
+    "summary": "Store both handwriting keys at once",
+    "description": "Stores the MyScript application key and HMAC key together; previous ones are revoked. Both are required: a signature is built from the pair, and half of it recognises nothing. The response carries the last four characters of each. 400 invalid_key, 422 validation_failed.",
+    "operationId": "set_ink_keys",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InkKeysIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "type": "object",
+         "title": "Response Set Ink Keys"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "keys"
+    ],
+    "summary": "Revoke both handwriting keys",
+    "description": "Revokes the handwriting key pair. Revoking one of the two would leave a key that recognises nothing, so both go. Nothing stored answers alike. 401 unauthenticated.",
+    "operationId": "revoke_ink_keys",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/keys/{provider}/models": {
+   "get": {
+    "tags": [
+     "keys"
+    ],
+    "summary": "Models this provider offers",
+    "description": "Asks the provider itself, with your key, which models it has and caches the answer for half an hour; `refresh=true` goes past the cache. `source` says where the list came from: `provider` answered, or `preset` when it did not, and the list is what we know without it, with `note` saying why. 400 unknown_provider, 401 unauthenticated.",
+    "operationId": "list_provider_models",
+    "parameters": [
+     {
+      "name": "provider",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Provider"
+      }
+     },
+     {
+      "name": "refresh",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Refresh"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response List Provider Models"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Any refusal: one shape, machine-readable code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/keys/{provider}/model": {
+   "put": {
+    "tags": [
+     "keys"
+    ],
+    "summary": "Choose the model of a provider",
+    "description": "Chooses which model of the provider your runs use. An empty string returns to the preset default. The name is not checked against the provider catalog: a working name missing from the catalog is a thing that happens, and refusing it would forbid a model that works. 400 unknown_provider, 404 not_found.",
+    "operationId": "set_provider_model",
+    "parameters": [
+     {
+      "name": "provider",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Provider"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ModelIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": true,
+         "title": "Response Set Provider Model"
         }
        }
       }
@@ -17703,6 +17880,29 @@
     "title": "HealthOut",
     "description": "Ответ `/health` — единственный маршрут службы, чей отказ не `ErrorOut`.\n\nИсключение намеренное и ровно одно. `/health` отвечает не клиенту, а прокси,\nи в обоих случаях — и когда жив, и когда база не отвечает — отдаёт одно и то\nже тело: прокси читает не `code`, а статус. Завернуть 503 в форму ошибки\nзначило бы описать `/health` двумя телами вместо одного, ничего не выиграв."
    },
+   "InkKeysIn": {
+    "properties": {
+     "application_key": {
+      "type": "string",
+      "maxLength": 512,
+      "title": "Application Key",
+      "description": "MyScript applicationKey"
+     },
+     "hmac_key": {
+      "type": "string",
+      "maxLength": 512,
+      "title": "Hmac Key",
+      "description": "MyScript hmacKey"
+     }
+    },
+    "type": "object",
+    "required": [
+     "application_key",
+     "hmac_key"
+    ],
+    "title": "InkKeysIn",
+    "description": "Тело `PUT /api/keys/ink` — пара ключей MyScript.\n\nДва поля в одном теле, а не два запроса: пара и есть единица настройки.\nИмена полей — те же, что у MyScript в личном кабинете (`applicationKey`,\n`hmacKey`), только в змеином регистре: человек переносит их глазами, и\nпереименовывать их по дороге значит заставлять его гадать."
+   },
    "JobIn": {
     "properties": {
      "kind": {
@@ -18087,6 +18287,20 @@
      "len"
     ],
     "title": "MemoryRangeIn"
+   },
+   "ModelIn": {
+    "properties": {
+     "model": {
+      "type": "string",
+      "maxLength": 128,
+      "title": "Model",
+      "description": "Model name at the provider; empty resets",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "ModelIn",
+    "description": "Тело `PUT /api/keys/{provider}/model`. Пусто — умолчание пресета."
    },
    "ModelKeyIn": {
     "properties": {
@@ -21827,6 +22041,9 @@
   "agent_refused",
   "already_finished",
   "already_member",
+  "asm_chat_failed",
+  "asm_failed",
+  "asm_unavailable",
   "bad_outputs",
   "bad_result",
   "bad_template",
@@ -21866,6 +22083,10 @@
   "last_owner",
   "limit_exhausted",
   "method_not_allowed",
+  "model_auth",
+  "model_not_found",
+  "model_rate_limit",
+  "model_unreachable",
   "nickname_taken",
   "no_file",
   "no_handler",
@@ -21886,9 +22107,12 @@
   "quota_exceeded",
   "rate_limited",
   "run_failed",
+  "run_not_ready",
   "scene_conflict",
   "scene_stale",
   "scene_too_big",
+  "source_conflict",
+  "source_too_big",
   "source_too_large",
   "steps_failed",
   "tag_refused",

@@ -689,10 +689,74 @@ export interface paths {
         };
         /**
          * Providers that accept a key
-         * @description Lists the providers a key can be stored for, and where a key for each would come from: `own` (yours), `shared` (the one the service runs on) or `none` (nothing to pay with). `kind` says what the key is for: `model` pays for a model run, `ink` recognises handwriting on a board. An ink provider never answers `shared`: its tariff counts socket openings, so a board runs on the person's own key or not at all. 401 unauthenticated.
+         * @description Lists the providers a key can be stored for. `has_key` says whether you have a working key for each one; a run goes on your own key and on no other, so a provider without a key cannot be used. `kind` says what the key is for: `model` pays for a model run, `ink` recognises handwriting on a board. `model` carries the model chosen for that provider, empty meaning the preset default. 401 unauthenticated.
          */
         get: operations["list_key_providers"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys/ink": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Store both handwriting keys at once
+         * @description Stores the MyScript application key and HMAC key together; previous ones are revoked. Both are required: a signature is built from the pair, and half of it recognises nothing. The response carries the last four characters of each. 400 invalid_key, 422 validation_failed.
+         */
+        put: operations["set_ink_keys"];
+        post?: never;
+        /**
+         * Revoke both handwriting keys
+         * @description Revokes the handwriting key pair. Revoking one of the two would leave a key that recognises nothing, so both go. Nothing stored answers alike. 401 unauthenticated.
+         */
+        delete: operations["revoke_ink_keys"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys/{provider}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Models this provider offers
+         * @description Asks the provider itself, with your key, which models it has and caches the answer for half an hour; `refresh=true` goes past the cache. `source` says where the list came from: `provider` answered, or `preset` when it did not, and the list is what we know without it, with `note` saying why. 400 unknown_provider, 401 unauthenticated.
+         */
+        get: operations["list_provider_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys/{provider}/model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Choose the model of a provider
+         * @description Chooses which model of the provider your runs use. An empty string returns to the preset default. The name is not checked against the provider catalog: a working name missing from the catalog is a thing that happens, and refusing it would forbid a model that works. 400 unknown_provider, 404 not_found.
+         */
+        put: operations["set_provider_model"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5781,6 +5845,27 @@ export interface components {
             db: string;
         };
         /**
+         * InkKeysIn
+         * @description Тело `PUT /api/keys/ink` — пара ключей MyScript.
+         *
+         *     Два поля в одном теле, а не два запроса: пара и есть единица настройки.
+         *     Имена полей — те же, что у MyScript в личном кабинете (`applicationKey`,
+         *     `hmacKey`), только в змеином регистре: человек переносит их глазами, и
+         *     переименовывать их по дороге значит заставлять его гадать.
+         */
+        InkKeysIn: {
+            /**
+             * Application Key
+             * @description MyScript applicationKey
+             */
+            application_key: string;
+            /**
+             * Hmac Key
+             * @description MyScript hmacKey
+             */
+            hmac_key: string;
+        };
+        /**
          * JobIn
          * @description Тело постановки задания.
          *
@@ -5991,6 +6076,18 @@ export interface components {
             off: string;
             /** Len */
             len: number;
+        };
+        /**
+         * ModelIn
+         * @description Тело `PUT /api/keys/{provider}/model`. Пусто — умолчание пресета.
+         */
+        ModelIn: {
+            /**
+             * Model
+             * @description Model name at the provider; empty resets
+             * @default
+             */
+            model: string;
         };
         /**
          * ModelKeyIn
@@ -9778,6 +9875,140 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    set_ink_keys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InkKeysIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    revoke_ink_keys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    list_provider_models: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Any refusal: one shape, machine-readable code */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+        };
+    };
+    set_provider_model: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

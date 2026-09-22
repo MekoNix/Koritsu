@@ -7,6 +7,9 @@ models — таблица ключей моделей.
 всё остальное — `provider`, кто и когда — открыто и нужно, чтобы показать список
 и найти нужный ключ, не расшифровывая ни одного.
 
+**Выбранная модель — столбец `model`.** Пресет `llm` говорит, с кем
+разговаривать; модель — какой именно. Пусто означает умолчание пресета.
+
 **Отзыв, а не удаление.** `revoked_at` вместо `DELETE`, потому что отозванный
 ключ — это событие безопасности («ключ утёк, я его сменил»), и запись о нём
 переживает саму строку. Расшифровка отозванного не делается никогда
@@ -34,6 +37,11 @@ from ..ids import ID_LEN
 
 # Длина имени поставщика: это имя пресета `llm.presets`, а не свободный текст.
 PROVIDER_MAX = 64
+
+# Имя модели у поставщика: `claude-opus-5`, `google/gemini-2.5-flash-lite`.
+# Сто двадцать восемь знаков — с запасом: у OpenRouter имя составное
+# («поставщик/модель»), и оно самое длинное из встречающихся.
+MODEL_MAX = 128
 
 # Шифртекст Fernet на ключе поставщика: base64 от «версия + метка времени +
 # IV + шифр + HMAC». Для ключей длиной в сотню знаков это сотни байт; 1024 — с
@@ -67,6 +75,15 @@ class ModelKey(Row):
     # Последние четыре знака — единственное, что видит человек.
     last4: Mapped[str] = mapped_column(String(8), default="")
 
+    # Выбранная модель поставщика. Пусто — умолчание пресета (`llm.presets`),
+    # то есть ровно то, что работало до появления выбора.
+    #
+    # Рядом с ключом, а не отдельной таблицей: ключ — условие работы поставщика,
+    # и модель без ключа применить некуда. Отзыв ключа уносит и выбор, и это
+    # правильно: поставщика больше нет.
+    model: Mapped[str] = mapped_column(String(MODEL_MAX), default="",
+                                       server_default="")
+
     revoked_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), default=None)
 
@@ -87,9 +104,10 @@ class ModelKey(Row):
             "id": self.id,
             "provider": self.provider,
             "last4": self.last4,
+            "model": self.model or "",
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
         }
 
 
-__all__ = ["ModelKey", "PROVIDER_MAX", "CIPHERTEXT_MAX"]
+__all__ = ["ModelKey", "PROVIDER_MAX", "CIPHERTEXT_MAX", "MODEL_MAX"]

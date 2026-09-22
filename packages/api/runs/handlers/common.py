@@ -63,6 +63,60 @@ from .. import limits, model
 
 CANCELLED_BEFORE = "cancelled_before"
 
+# ── беда поставщика, названная так, чтобы её можно было починить ────────────
+#
+# Прогон, оборвавшийся на стороне поставщика, раньше уезжал наружу одним
+# `run_failed` — «прогон модели не удался, попробуйте другой пресет». Совет
+# неверен ровно в тех случаях, которые случаются чаще всего: непринятый ключ
+# чинится в настройках, молчащий поставщик — ожиданием, несуществующая модель —
+# выбором другой. Поэтому вид ошибки слоя (`llm.ErrorKind`, он же
+# `AgentResult.error_kind`) превращается здесь в свой код отказа, у которого в
+# словаре сайта свои слова.
+#
+# Виды, которых тут нет (`context_overflow`, `bad_response`, `refused`,
+# `limit_exceeded`), остаются `run_failed` намеренно: они про сам разговор с
+# моделью, а не про доступ к ней, и «почини ключ» сказало бы человеку неправду.
+MODEL_AUTH = "model_auth"
+MODEL_UNREACHABLE = "model_unreachable"
+MODEL_NOT_FOUND = "model_not_found"
+MODEL_RATE_LIMIT = "model_rate_limit"
+
+# Код отказа отдельным словарём, а ответ отдельным, хотя напрашивается один на
+# пару: перечень кодов службы собирается разбором исходников
+# (`tests/api/test_error_codes.py`), и он умеет читать `ApiError(СЛОВАРЬ[ключ])`,
+# но не умеет — код, вынутый из кортежа в локальную переменную. Код отказа
+# обязан быть виден снаружи без запуска, поэтому здесь он стоит так, как его
+# видно.
+_КОД_ПО_ВИДУ = {
+    "auth": MODEL_AUTH,
+    "not_found": MODEL_NOT_FOUND,
+    "rate_limit": MODEL_RATE_LIMIT,
+    "transport": MODEL_UNREACHABLE,
+    "timeout": MODEL_UNREACHABLE,
+}
+
+_ОТВЕТ_ПО_ВИДУ = {
+    "auth": (402, "The provider did not accept the key: check it in settings"),
+    "not_found": (400, "The provider has no such model: choose another one"),
+    "rate_limit": (429, "The provider throttled the request: try again later"),
+    "transport": (502, "The provider did not answer"),
+    "timeout": (502, "The provider did not answer in time"),
+}
+
+
+def беда_поставщика(вид: str, *, where: str) -> ApiError | None:
+    """Вид ошибки слоя → отказ с человеческим кодом. `None` — не наш случай.
+
+    `None`, а не «общий отказ», потому что решение, чем закончить задание,
+    принимает обработчик: у него есть ещё и свои исходы (`agent_refused`,
+    потолок ходов), и подменять их отсюда значило бы решать за него.
+    """
+    имя = str(вид or "")
+    if имя not in _КОД_ПО_ВИДУ:
+        return None
+    статус, текст = _ОТВЕТ_ПО_ВИДУ[имя]
+    return ApiError(_КОД_ПО_ВИДУ[имя], текст, статус, where=where)
+
 
 class ЛимитКончился(ApiError):
     """Месяц кончился до первого вызова модели. Закрытое раньше — сохранено.
@@ -141,7 +195,6 @@ class Прогон:
         self._where = where
         self._вход = None
         self.ep: str = ""
-        self.источник: str = ""
         self.project = None
         self.отмена = Отмена(ctx)
 
@@ -171,7 +224,7 @@ class Прогон:
 
         self.project = self.ctx.project
         self._вход = model.endpoint(self.ctx, self._имя, where=self._where)
-        self.ep, self.источник = self._вход.__enter__()
+        self.ep = self._вход.__enter__()
         return self
 
     def __exit__(self, *беда) -> bool:

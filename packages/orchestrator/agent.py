@@ -65,6 +65,14 @@ class AgentResult:
     stop: str = ""
     outcome: str = ""
     ok: bool = False
+    # Вид ошибки слоя модели (`llm.ErrorKind`), если прогон оборвался ею:
+    # `auth`, `transport`, `not_found`, `rate_limit`. Пусто — обрыва не было
+    # или он не от слоя.
+    #
+    # Вид, а не текст: текст поставщика меняется от версии к версии и на экран
+    # не годится, а по виду служба выбирает человеку слова, которыми беду
+    # можно починить («ключ не принят» чинится не тем, чем «поставщик молчит»).
+    error_kind: str = ""
 
 
 def fill_agent(project, *, endpoint: str, keys=None, chunks=(), max_steps=None,
@@ -152,6 +160,7 @@ def fill_agent(project, *, endpoint: str, keys=None, chunks=(), max_steps=None,
                       calls=box.calls, text=result.text or "", stop=result.stop)
     if result.error is not None:
         out.problems.append(fill_mod._problem("run_failed", None, str(result.error)))
+        out.error_kind = str(getattr(result.error, "kind", "") or "")
     for code, message in _degraded_words(limits.max_steps).items():
         if code in result.degraded:
             out.problems.append(fill_mod._problem(code, None, message, "info"))

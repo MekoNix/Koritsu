@@ -15,6 +15,7 @@ import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tan
 import { api, keys, unwrap } from '@/api'
 import { СВЕЖЕСТЬ_ПОД_ПОТОКОМ } from '@/features/projects/data'
 import { useMe } from '@/api/hooks'
+import { useModelKeys } from '@/features/settings/api'
 
 import type { ReportTemplate } from '@/features/projects/types'
 
@@ -341,11 +342,10 @@ export function useRollbackValue(projectId: string | undefined, report = '') {
 // ── пресеты модели ───────────────────────────────────────────────────────────
 
 /**
- * Пресеты модели и чем по каждому платить (`own` | `shared` | `none`).
+ * Поставщики модели и есть ли у человека ключ по каждому (`has_key`).
  *
- * Без `key_source` выбор пресета был бы гаданием: свой ключ сайт видит, общий
- * ключ службы не виден ниоткуда, кроме этого ответа, и пресет, которым платить
- * нечем, даёт отказ вместо работы.
+ * Без этого ответа выбор поставщика был бы гаданием: поставщик, у которого
+ * ключа нет, даёт отказ вместо работы, а знать об этом надо до нажатия.
  */
 export function useProviders(): UseQueryResult<ProvidersBody> {
   return useQuery({
@@ -356,21 +356,36 @@ export function useProviders(): UseQueryResult<ProvidersBody> {
 }
 
 /**
- * Какой пресет предложить по умолчанию: сначала свой ключ, потом общий.
+ * Какого поставщика предложить по умолчанию: того, чей ключ завели первым.
  *
- * Свой вперёд общего по той же причине, по которой их так же выбирает служба
- * (`keys/service.resolve_key`): человек завёл ключ затем, чтобы расход был
- * виден у него. `null` — платить нечем ни по одному пресету, и экран обязан
- * сказать это словами до нажатия, а не отказом после.
+ * Правило выбрано за предсказуемость. Завёл один ключ — им и работаешь, не
+ * заходя в настройки вовсе; завёл второй — первый остаётся умолчанием, потому
+ * что менять человеку работающего агента в ответ на «попробую ещё одного»
+ * нельзя. Порядок берётся из списка ключей (`GET /api/keys` отдаёт их новыми
+ * вперёд, поэтому первым заведённым будет последний), а не из порядка пресетов
+ * в службе: тот алфавитный и к человеку отношения не имеет.
+ *
+ * Распознавание рукописи в отбор не попадает: пресета у него нет, и задание с
+ * ним служба отвергает `400 unknown_provider`. Именно этим кончалось прежнее
+ * правило, когда своим ключом у человека был только MyScript, — агент молча
+ * подставлял его и не работал ни разу.
+ *
+ * `null` — ключей нет вовсе, и экран обязан сказать это словами до нажатия, а
+ * не отказом после.
  */
-export function defaultProvider(body: ProvidersBody | undefined): string | null {
+export function defaultProvider(
+  body: ProvidersBody | undefined,
+  свои?: { provider: string; revoked_at?: string | null }[],
+): string | null {
   if (!body) return null
-  const source = body.key_source ?? {}
-  return (
-    body.providers.find((p) => source[p] === 'own') ??
-    body.providers.find((p) => source[p] === 'shared') ??
-    null
-  )
+  const модели = (body.providers ?? []).filter((p) => (body.kind?.[p] ?? 'model') === 'model')
+  const живые = (свои ?? []).filter((к) => !к.revoked_at && модели.includes(к.provider))
+  // Список приходит новыми вперёд — первый заведённый лежит в конце.
+  const первый = живые.at(-1)?.provider
+  if (первый) return первый
+  // Ключей не видно (список ещё не пришёл) — берём любого, у кого ключ есть:
+  // это тот же ответ в подавляющем большинстве случаев, и он лучше пустоты.
+  return модели.find((p) => body.has_key?.[p]) ?? null
 }
 
 /**
@@ -385,11 +400,16 @@ export function defaultProvider(body: ProvidersBody | undefined): string | null 
  * Хуком, а не аргументом `defaultProvider`: профиль читается тем же
  * `useMe`, что и вся оболочка, и просить каждый экран передать его сюда
  * значило бы четыре одинаковых строки в четырёх местах.
+ *
+ * Пустая строка в профиле — это «решает сайт», а не выбор: сравнение через
+ * `||`, а не `??`, потому что `default_endpoint` человек возвращает в
+ * умолчание именно пустым значением.
  */
 export function useDefaultEndpoint(): string | null {
   const me = useMe()
   const providers = useProviders()
-  return me.data?.default_endpoint ?? defaultProvider(providers.data)
+  const ключи = useModelKeys()
+  return me.data?.default_endpoint || defaultProvider(providers.data, ключи.data)
 }
 
 /**

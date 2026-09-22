@@ -250,7 +250,6 @@ export type BoardCheckResult = {
   mark: string
   steps_total: number
   unrecognized: number
-  key_source: string
   /** Версия сцены на старте прогона: по ней видно, что доску правили после. */
   scene_version?: number
 }

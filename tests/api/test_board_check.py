@@ -140,7 +140,7 @@ def test_проверка_доходит_до_done_и_разрешается_в_
     assert итог["mode"] == "check" and итог["verdict"] == "wrong"
     assert итог["steps_total"] == len(доска["steps"])
     assert [ш["step"] for ш in итог["steps"]] == [ш["id"] for ш in доска["steps"]]
-    assert итог["key_source"] == "own"
+    assert "key_source" not in итог, "чей ключ — вопрос без смысла: свой и только свой"
 
     # Замечание указывает на объекты той сцены, которую модель видела.
     на_холсте: set = set()

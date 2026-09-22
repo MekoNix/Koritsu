@@ -81,8 +81,7 @@ def переиграть(ctx) -> dict:
     return {"kind": решено.get("kind"), "block": решено.get("block"),
             "stages": list(решено.get("stages") or ()),
             "honest": решено.get("honest"), "note": решено.get("note"),
-            "state": снимок.get("state"), "stage": снимок.get("stage"),
-            "key_source": прогон.источник}
+            "state": снимок.get("state"), "stage": снимок.get("stage")}
 
 
 def _зарегистрировать() -> None:

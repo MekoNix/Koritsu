@@ -9,7 +9,7 @@ cards_generate — агент пишет набор карточек в черн
                "language": "ru", "topic": "Интеграл Римана" | null}
     result    {"draft_id": "<32hex>", "outcome": "done", "title": "…",
                "language": "ru", "stats": {"cards": 40, "topics": 5, …},
-               "problems": 0, "usage": {…}, "run_id": "…", "key_source": "own"}
+               "problems": 0, "usage": {…}, "run_id": "…"}
 
 **Черновик заводит постановка** (`POST /api/cards/generate`), пустым и со
 статусом `running`; задание его заполняет. Текст черновика — файл JSON набора
@@ -129,7 +129,6 @@ def сгенерировать(ctx) -> dict:
                             progress=ctx.progress, emit=ctx.emit,
                             cancelled=прогон.отмена, write_draft=записать,
                             draft_path=drafts.path(ид))
-            источник = прогон.источник
     except ApiError as беда:
         drafts.update(ид, status=НЕ_ВЫШЛО, error=беда.message
                       if hasattr(беда, "message") else str(беда))
@@ -165,7 +164,7 @@ def сгенерировать(ctx) -> dict:
             "language": str(итог.get("language") or params["language"]),
             "stats": числа, "problems": len(проблемы),
             "usage": dict(итог.get("usage") or {}),
-            "run_id": итог.get("run_id"), "key_source": источник}
+            "run_id": итог.get("run_id")}
 
 
 def _зарегистрировать() -> None:

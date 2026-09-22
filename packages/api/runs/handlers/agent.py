@@ -4,7 +4,7 @@ agent — прогон уровня 3: модель работает инстр�
     payload   {"endpoint": "deepseek", "task": "…", "keys": [...],
                "max_steps": 12, "overwrite": false, "report": "<id отчёта>"}
     result    {"filled": [...], "outcome": "done", "steps": 7, "calls": 11,
-               "problems": N, "task_chars": 240, "key_source": "own"}
+               "problems": N, "task_chars": 240}
 
 **`task` уезжает в модель недоверенным куском в рамке**: задача для агента
 приходит из запроса, потолок — 15 000 знаков. Проводится он
@@ -38,7 +38,7 @@ import orchestrator
 
 from ...errors import ApiError
 from ...jobs.registry import AGENT, register
-from .common import Прогон, отменено
+from .common import Прогон, беда_поставщика, отменено
 
 AGENT_REFUSED = "agent_refused"
 TASK_TOO_LONG = "task_too_long"
@@ -95,6 +95,13 @@ def прогнать_агента(ctx) -> dict:
         #
         # Стоит это после `with`: события хода и поставленные теги уже уехали в
         # поток, и падение задания их не отменяет — закрытое сохранено.
+        # Сначала — беда поставщика своими словами: «ключ не принят» человек
+        # чинит в настройках, а совет «выберите другой пресет», которым кончается
+        # общий `run_failed`, увёл бы его заводить второй ключ вместо починки
+        # первого.
+        беда = беда_поставщика(итог.error_kind, where="body.payload.endpoint")
+        if беда is not None:
+            raise беда
         raise ApiError(RUN_FAILED,
                        f"The agent run ended as '{итог.outcome}', not 'done'",
                        502, where="body.payload.task")
@@ -102,8 +109,7 @@ def прогнать_агента(ctx) -> dict:
             "ok": bool(итог.ok), "steps": итог.steps, "calls": итог.calls,
             "problems": len(итог.problems), "stop": итог.stop,
             "run": getattr(итог.run, "id", None),
-            "task_chars": len(задача),
-            "key_source": прогон.источник}
+            "task_chars": len(задача)}
 
 
 def _задача(payload: dict) -> str:

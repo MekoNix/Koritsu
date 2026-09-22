@@ -61,7 +61,7 @@ class Ктx:
 def ключ_есть(monkeypatch):
     """Ключ у человека есть — иначе `endpoint()` откажет `no_key` до пресета."""
     monkeypatch.setattr(keys, "resolve_key", lambda *a, **k: КЛЮЧ)
-    monkeypatch.setattr(keys, "source_of", lambda *a, **k: "own")
+    monkeypatch.setattr(keys, "model_of", lambda *a, **k: "")
 
 
 def настройки(tmp_path, *, env: str, адреса: dict | None = None) -> Settings:
@@ -110,25 +110,26 @@ def test_dev_прогон_идёт_на_подменённый_адрес(tmp_pa
     """Ради этого всё и заведено: пресет собран с чужим адресом, остальное —
     как обычно (протокол, модель, имя переменной с ключом)."""
     ctx = Ктx(настройки(tmp_path, env="dev", адреса={ПРЕСЕТ: АДРЕС}))
-    with runs_model.endpoint(ctx, ПРЕСЕТ) as (ep_id, откуда):
+    with runs_model.endpoint(ctx, ПРЕСЕТ) as ep_id:
         spec = llm.spec_of(ep_id)
         assert spec.base_url == АДРЕС
         assert spec.protocol == "openai"
         assert spec.api_key_env == runs_model.ИМЯ_КЛЮЧА
-        assert откуда == "own"
+        # Модель — из пресета: своей человек не выбирал (`model_of` отдаёт пусто).
+        assert spec.model == llm.presets.make(ПРЕСЕТ).model
 
 
 def test_prod_прогон_идёт_к_поставщику(tmp_path, ключ_есть):
     """Та же переменная, тот же прогон — и адрес поставщика, а не стенда."""
     ctx = Ктx(настройки(tmp_path, env="prod", адреса={ПРЕСЕТ: АДРЕС}))
-    with runs_model.endpoint(ctx, ПРЕСЕТ) as (ep_id, _):
+    with runs_model.endpoint(ctx, ПРЕСЕТ) as ep_id:
         assert llm.spec_of(ep_id).base_url == llm.presets.make(ПРЕСЕТ).base_url
 
 
 def test_без_переменной_адрес_пресета(tmp_path, ключ_есть):
     """Умолчание не трогается ничем: нет переменной — нет и разницы."""
     ctx = Ктx(настройки(tmp_path, env="dev"))
-    with runs_model.endpoint(ctx, ПРЕСЕТ) as (ep_id, _):
+    with runs_model.endpoint(ctx, ПРЕСЕТ) as ep_id:
         assert llm.spec_of(ep_id).base_url == llm.presets.make(ПРЕСЕТ).base_url
 
 

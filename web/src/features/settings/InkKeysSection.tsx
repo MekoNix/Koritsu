@@ -1,32 +1,34 @@
 /**
  * InkKeysSection — «Распознавание рукописи (MyScript)».
  *
- * Стоит в разделе «Конфигурация агентов», под ключами моделей, и это не
- * соседство по случайности: и там, и здесь человек заводит чужой ключ, которым
- * оплачивается чужая работа. Разными подразделами — потому что платят они за
- * разное: ключ модели за прогон, ключ MyScript за открытие доски.
+ * **Ключа здесь не один, а пара, и это единица настройки.** MyScript подписывает
+ * каждое соединение HMAC-ом, в котором участвуют оба ключа: `applicationKey`
+ * едет в адресе сокета, `hmacKey` подписывает и наружу не уезжает никогда. Один
+ * без другого не распознаёт ничего, поэтому форма спрашивает оба поля, кнопка
+ * одна, служба кладёт обе строки одним запросом (`PUT /api/keys/ink`), а
+ * отзыв убирает пару целиком. Заведённая половина — это не «настроено
+ * наполовину», а «не настроено», и показывать её как ключ значило бы обещать
+ * работающую доску там, где сокет закроется отказом.
  *
- * **Ключей два, и нужны оба.** MyScript подписывает каждое соединение HMAC-ом,
- * где ключом служит `applicationKey` вместе с `hmacKey`: один без другого не
- * работает вовсе. Поэтому форма спрашивает оба поля и отправляет их двумя
- * запросами подряд, а распознавание на доске включается, только когда заведены
- * оба.
+ * **В выборе модели этих ключей нет.** Они из той же таблицы, что ключи
+ * поставщиков моделей, но платят за другое: ключ модели — за прогон, ключ
+ * MyScript — за открытие доски, и пресета у него не существует вовсе. Прогон с
+ * таким поставщиком служба отвергает `400 unknown_provider`, поэтому в списках
+ * агента их нет (`types.modelProviders`), а живут они своим подразделом.
  *
- * **Ключи живут на сервере и наружу не возвращаются.** Служба отдаёт поставщика,
- * четыре последних знака и даты — как у ключей моделей. Иначе и нельзя: держать
- * ключ в браузере и одновременно прятать его невозможно, потому что соединение
- * подписывает библиотека распознавания, и ключ ей нужен в памяти. Подпись
- * считает мост службы, а браузер получает заглушки.
+ * **Ключи лежат на сервере и наружу не возвращаются.** Наружу — поставщик,
+ * четыре последних знака и даты. Иначе и нельзя: подпись считает мост службы, а
+ * браузер получает заглушки.
  */
 import { useState } from 'react'
 
 import { errorText } from '@/api'
 import { useT } from '@/i18n'
-import { Button, Card, Chip, Dialog, Icon, Input, Row, SkeletonLines, useToast } from '@/ui'
+import { Button, Card, Chip, Dialog, Icon, Input, SkeletonLines, useToast } from '@/ui'
 
-import { useAddModelKey, useKeyProviders, useModelKeys, useRevokeModelKey } from './api'
+import { useKeyProviders, useModelKeys, useRevokeInkKeys, useSetInkKeys } from './api'
 import { formatDate } from './format'
-import { isInkProvider, INK_PROVIDER_APP, INK_PROVIDER_HMAC, type ModelKey } from './types'
+import { isInkProvider, INK_PROVIDER_APP, INK_PROVIDER_HMAC } from './types'
 
 /** Кабинет, где ключи выдают. Адрес чужой и в словарь не уезжает. */
 const КАБИНЕТ = 'https://developer.myscript.com/getting-started/web'
@@ -36,26 +38,28 @@ export function InkKeysSection() {
   const toast = useToast()
   const список = useModelKeys()
   const поставщики = useKeyProviders()
-  const завести = useAddModelKey()
-  const отозвать = useRevokeModelKey()
+  const записать = useSetInkKeys()
+  const отозвать = useRevokeInkKeys()
 
   const [app, setApp] = useState('')
   const [hmac, setHmac] = useState('')
   const [беда, setБеда] = useState<string | null>(null)
-  const [отзываем, setОтзываем] = useState<ModelKey | null>(null)
+  const [отзываем, setОтзываем] = useState(false)
 
   const свои = (список.data ?? []).filter(
     (ключ) => isInkProvider(поставщики.data, ключ.provider) && !ключ.revoked_at,
   )
+  const приложение = свои.find((ключ) => ключ.provider === INK_PROVIDER_APP)
+  const подпись = свои.find((ключ) => ключ.provider === INK_PROVIDER_HMAC)
+  // Настроено — только когда есть оба. Половина пары показывается как «не
+  // настроено» с пометкой, потому что доска с ней всё равно не работает.
+  const пара = !!приложение && !!подпись
+  const половина = свои.length === 1
 
-  async function записать() {
+  async function сохранить() {
     setБеда(null)
     try {
-      // По очереди, а не разом: служба заводит по ключу за запрос, и второй
-      // обязан не уехать, если первый не принят, — иначе останется половина
-      // пары, с которой распознавание всё равно не работает.
-      if (app.trim()) await завести.mutateAsync({ provider: INK_PROVIDER_APP, key: app.trim() })
-      if (hmac.trim()) await завести.mutateAsync({ provider: INK_PROVIDER_HMAC, key: hmac.trim() })
+      await записать.mutateAsync({ application_key: app.trim(), hmac_key: hmac.trim() })
       setApp('')
       setHmac('')
     } catch (е) {
@@ -65,10 +69,18 @@ export function InkKeysSection() {
 
   return (
     <>
-      <Card title={t('settings.ink.title')} desc={t('settings.ink.text')}>
+      <Card
+        title={t('settings.ink.title')}
+        desc={t('settings.ink.text')}
+        action={
+          <Chip tone={пара ? 'ok' : половина ? 'warn' : 'muted'}>
+            {t(пара ? 'settings.ink.on' : половина ? 'settings.ink.half' : 'settings.ink.off')}
+          </Chip>
+        }
+      >
         {список.isLoading && <SkeletonLines count={2} />}
 
-        {список.data && свои.length > 0 && (
+        {свои.length > 0 && (
           <ul className="flex flex-col gap-s2">
             {свои.map((ключ) => (
               <li
@@ -83,23 +95,21 @@ export function InkKeysSection() {
                 <span className="ml-auto text-xs text-muted">
                   {t('settings.keys.created')}: {formatDate(ключ.created_at)}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setОтзываем(ключ)}
-                  aria-label={`${t('settings.keys.revoke')} ${ключ.provider}`}
-                >
-                  <Icon name="trash" size={16} />
-                  {t('settings.keys.revoke')}
-                </Button>
               </li>
             ))}
+            <li>
+              <Button variant="ghost" size="sm" onClick={() => setОтзываем(true)}>
+                <Icon name="trash" size={16} />
+                {t('settings.ink.revokePair')}
+              </Button>
+            </li>
           </ul>
         )}
 
         <div className="flex flex-col gap-s3">
           <Input
             label={t('settings.ink.app')}
+            hint={t('settings.ink.appHint')}
             type="password"
             autoComplete="off"
             spellCheck={false}
@@ -109,6 +119,7 @@ export function InkKeysSection() {
           />
           <Input
             label={t('settings.ink.hmac')}
+            hint={t('settings.ink.hmacHint')}
             type="password"
             autoComplete="off"
             spellCheck={false}
@@ -119,12 +130,14 @@ export function InkKeysSection() {
           <Button
             variant="primary"
             className="self-start"
-            loading={завести.isPending}
-            disabled={!app.trim() && !hmac.trim()}
-            onClick={() => void записать()}
+            loading={записать.isPending}
+            // Обе строки или ничего: кнопка, живая при одном заполненном поле,
+            // предлагала бы завести половину пары.
+            disabled={app.trim().length < 8 || hmac.trim().length < 8}
+            onClick={() => void сохранить()}
           >
             <Icon name="plus" size={16} />
-            {t('settings.keys.add')}
+            {t('settings.ink.save')}
           </Button>
           {беда && <p className="text-sm text-err">{беда}</p>}
         </div>
@@ -138,24 +151,23 @@ export function InkKeysSection() {
       </Card>
 
       <Dialog
-        open={отзываем !== null}
-        onOpenChange={(открыто) => !открыто && setОтзываем(null)}
-        title={t('settings.keys.revokeTitle')}
+        open={отзываем}
+        onOpenChange={setОтзываем}
+        title={t('settings.ink.revokePair')}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setОтзываем(null)}>
+            <Button variant="ghost" onClick={() => setОтзываем(false)}>
               {t('common.action.cancel')}
             </Button>
             <Button
               variant="danger"
               loading={отозвать.isPending}
-              onClick={() => {
-                if (!отзываем) return
-                отозвать.mutate(отзываем.id, {
-                  onSuccess: () => setОтзываем(null),
+              onClick={() =>
+                отозвать.mutate(undefined, {
+                  onSuccess: () => setОтзываем(false),
                   onError: (е) => toast.fail(е),
                 })
-              }}
+              }
             >
               {t('settings.keys.revoke')}
             </Button>
@@ -163,13 +175,6 @@ export function InkKeysSection() {
         }
       >
         <p className="text-sm text-ink">{t('settings.ink.revokeText')}</p>
-        {отзываем && (
-          <div className="mt-s3">
-            <Row label={t('settings.keys.last4')}>
-              <Chip tone="muted">…{отзываем.last4}</Chip>
-            </Row>
-          </div>
-        )}
       </Dialog>
     </>
   )

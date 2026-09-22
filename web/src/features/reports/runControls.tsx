@@ -7,9 +7,13 @@
  * человек смотрит одним местом — «Расход и лимиты» в настройках.
  *
  * **Пресет — это `payload.endpoint`.** Список берётся у службы вместе с тем,
- * чем по каждому платить (`own` | `shared` | `none`): пресет, которым платить
- * нечем, выбирать бессмысленно, и вместо молчаливого отказа человеку показана
+ * есть ли по каждому ключ (`has_key`): поставщик без ключа не работает вовсе —
+ * общего ключа службы нет, — и вместо молчаливого отказа человеку показана
  * ссылка в настройки.
+ *
+ * **Распознавание рукописи в список не попадает.** Оно живёт в том же ответе
+ * службы (`kind: "ink"`), но пресета у него нет, и выбранный здесь `myscript_app`
+ * был бы прогоном, который служба отвергает `400 unknown_provider`.
  */
 import { Link } from 'react-router-dom'
 
@@ -29,9 +33,12 @@ export function ModelPicker({
   disabled?: boolean
 }) {
   const t = useT()
-  const список = providers?.providers ?? []
-  const источник = providers?.key_source ?? {}
-  const платить_нечем = список.length > 0 && список.every((p) => источник[p] === 'none')
+  const список = (providers?.providers ?? []).filter(
+    (p) => (providers?.kind?.[p] ?? 'model') === 'model',
+  )
+  const есть_ключ = providers?.has_key ?? {}
+  const модель = providers?.model ?? {}
+  const платить_нечем = список.length > 0 && список.every((p) => !есть_ключ[p])
 
   if (платить_нечем || список.length === 0) {
     return (
@@ -54,10 +61,10 @@ export function ModelPicker({
         className="rounded-btn border border-line-strong bg-surface px-2 py-1 text-xs text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-45"
       >
         {список.map((p) => (
-          <option key={p} value={p} disabled={источник[p] === 'none'}>
+          <option key={p} value={p} disabled={!есть_ключ[p]}>
             {p}
-            {источник[p] === 'shared' ? ` · ${t('reports.model.shared')}` : ''}
-            {источник[p] === 'none' ? ` · ${t('reports.model.noKey')}` : ''}
+            {модель[p] ? ` · ${модель[p]}` : ''}
+            {!есть_ключ[p] ? ` · ${t('reports.model.noKey')}` : ''}
           </option>
         ))}
       </select>

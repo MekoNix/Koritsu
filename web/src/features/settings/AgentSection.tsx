@@ -2,22 +2,26 @@
  * AgentSection — «Агент и модели» (`/settings/agent`).
  *
  * Две настройки, и обе живут в профиле (`PATCH /api/auth/me`), а не в браузере:
- * пресет по умолчанию и «переписывать ли агенту ручные правки». Хранение в
+ * поставщик по умолчанию и «переписывать ли агенту ручные правки». Хранение в
  * службе здесь не прихоть — человек открывает работу с ноутбука и с чужой
  * машины, и умолчание, оставшееся в `localStorage` первой, на второй молча
  * исчезает.
  *
- * **Пресет показывается вместе с тем, чем за него платят** (`key_source` из
- * `GET /api/keys/providers`). Пометка короткая — «свой ключ», «общий ключ»,
- * «нет»: человеку здесь нужно узнать, есть ли чем платить, а не прочитать
- * абзац про устройство оплаты. Выбрать пресет без ключа служба позволит (ключ
- * может появиться завтра), поэтому пометка и стоит рядом с выбором, а не
- * вместо него.
+ * **В списке — только поставщики моделей и только те, у кого есть ключ.**
+ * Распознавание рукописи (`myscript_app`, `myscript_hmac`) в этот список не
+ * попадает: пресета у него нет вовсе, и задание с таким `endpoint` служба
+ * отвергает `400 unknown_provider` — то есть выбранный здесь MyScript был бы
+ * агентом, который не работает. Поставщик без ключа не показывается по той же
+ * причине: платить за прогон нечем, общего ключа службы нет.
  *
- * **«Ничего не выбрано» — законный ответ**, и он же умолчание: тогда пресет
- * подставляет правило сайта — сначала свой ключ, потом общий
- * (`features/reports/data.defaultProvider`). Поэтому в списке есть пустой
- * пункт, а не только пресеты.
+ * **«Ничего не выбрано» — законный ответ**, и он же умолчание: тогда берётся
+ * ключ, заведённый первым (`features/reports/data.defaultProvider`). Правило
+ * простое и предсказуемое: завёл один ключ — им и работает, не заходя сюда
+ * вовсе.
+ *
+ * Модель поставщика выбирается не здесь, а строкой самого поставщика
+ * (`ProvidersSection`): она свойство ключа, а не профиля, и стоять должна там,
+ * где видно, к какому ключу относится.
  */
 import { useState } from 'react'
 
@@ -27,13 +31,7 @@ import { useMe, useUpdateProfile } from '@/api/hooks'
 import { Card, Chip, Select, SkeletonLines, Switch } from '@/ui'
 
 import { useKeyProviders } from './api'
-import type { KeySource } from './types'
-
-const ТОН: Record<KeySource, 'ok' | 'accent' | 'warn'> = {
-  own: 'ok',
-  shared: 'accent',
-  none: 'warn',
-}
+import { modelProviders } from './types'
 
 export function AgentSection() {
   const t = useT()
@@ -41,8 +39,8 @@ export function AgentSection() {
   const providers = useKeyProviders()
   const save = useUpdateProfile()
 
-  const имена = providers.data?.providers ?? []
-  const источник = providers.data?.key_source
+  const все = modelProviders(providers.data)
+  const с_ключом = все.filter((имя) => providers.data?.has_key?.[имя])
 
   // Что человек только что выбрал, пока правка едет в службу. Без этого поле
   // на мгновение возвращается к прежнему значению — профиль обновится только
@@ -73,30 +71,23 @@ export function AgentSection() {
         disabled={providers.isLoading}
         onChange={(event) => сохранить_пресет(event.target.value)}
       >
-        {/* Пустой пункт — это «решает сайт», а не «ничего не работает». */}
+        {/* Пустой пункт — «первый заведённый ключ», а не «ничего не работает». */}
         <option value="">{t('settings.agent.presetAuto')}</option>
-        {имена.map((имя) => (
+        {с_ключом.map((имя) => (
           <option key={имя} value={имя}>
             {имя}
+            {providers.data?.model?.[имя] ? ` · ${providers.data.model[имя]}` : ''}
           </option>
         ))}
+        {/* Выбранный прежде поставщик, у которого ключа уже нет, из списка не
+            исчезает: иначе поле показывало бы пустоту там, где в профиле стоит
+            имя, и человек чинил бы не то. Пометка рядом называет беду. */}
+        {выбран && !с_ключом.includes(выбран) && (
+          <option value={выбран}>{`${выбран} — ${t('settings.agent.noKey')}`}</option>
+        )}
       </Select>
 
-      {имена.length > 0 && (
-        <ul className="flex flex-wrap gap-s2">
-          {имена.map((имя) => {
-            const состояние = источник?.[имя]
-            return (
-              <li key={имя} className="flex items-center gap-1.5">
-                <span className="font-mono text-xs text-muted">{имя}</span>
-                <Chip tone={состояние ? ТОН[состояние] : 'muted'}>
-                  {t(`settings.keys.source.${состояние ?? 'unknown'}`)}
-                </Chip>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+      {с_ключом.length === 0 && <Chip tone="warn">{t('settings.agent.nothing')}</Chip>}
 
       <label className="flex items-start gap-s3">
         <Switch

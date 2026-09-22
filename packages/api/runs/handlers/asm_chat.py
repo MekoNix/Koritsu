@@ -6,7 +6,7 @@ asm_chat — агент по трассе: один вызов модели на
                "anchor": {"kind": "flag", "name": "zf"} | null,
                "step": 17 | null, "run_no": 3 | null}
     result    {"reply": "…", "message_id": "<32hex>", "question_id": "<32hex>",
-               "key_source": "own"}
+               }
 
 **Устроено как переписка доски** (`board_check`, режим `chat`): переписка лежит
 записью состояния решения (`асм-чат`), задание читает её, чтобы модель видела
@@ -104,7 +104,7 @@ def ответить(ctx) -> dict:
         ctx.emit({"kind": ТЕКСТ, "text": итог.reply})
     ctx.progress(1, 1, note="asm")
     return {"reply": итог.reply, "message_id": реплика["id"],
-            "question_id": вопрос["id"], "key_source": прогон.источник}
+            "question_id": вопрос["id"]}
 
 
 def _зарегистрировать() -> None:

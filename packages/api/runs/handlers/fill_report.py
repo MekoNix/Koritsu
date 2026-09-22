@@ -4,8 +4,7 @@ fill_report — заполнить весь отчёт. Уровень 2 орк�
     payload   {"endpoint": "deepseek", "keys": ["цель", "выводы"],
                "overwrite": false, "prompt": "писать в прошедшем времени",
                "report": "<id отчёта>"}
-    result    {"filled": ["цель", …], "outcome": "done", "problems": N,
-               "key_source": "shared"}
+    result    {"filled": ["цель", …], "outcome": "done", "problems": N}
 
 Здесь исполняются два обещания сразу, и оба держатся на потоке:
 
@@ -76,8 +75,7 @@ def заполнить_отчёт(ctx) -> dict:
 
     return {"filled": list(итог.filled), "outcome": итог.outcome,
             "ok": bool(итог.ok), "problems": len(итог.problems),
-            "stop": итог.stop, "run": getattr(итог.run, "id", None),
-            "key_source": прогон.источник}
+            "stop": итог.stop, "run": getattr(итог.run, "id", None)}
 
 
 def _зарегистрировать() -> None:

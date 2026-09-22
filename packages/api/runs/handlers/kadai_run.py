@@ -10,7 +10,7 @@ kadai_run — сценарий работы над документом: сем�
                "outputs": {...},
                "artifacts": {"docx": …, "pdf": …, "archive": …,
                              "archive_light": …},
-               "preview": "7c4…", "key_source": "shared"}
+               "preview": "7c4…"}
 
 **Какое решение работы считается, говорит `run_id`.** В работе их несколько, и
 у каждого свой ход стадий, своё условие и свой список блоков; читает поле
@@ -176,8 +176,7 @@ def прогнать(ctx) -> dict:
             "hold": снимок.get("hold"),
             "outputs": dict(снимок.get("outputs") or {}),
             "problems": len(снимок.get("problems") or ()),
-            "preview": превью,
-            "key_source": прогон.источник}
+            "preview": превью}
     if собрано:
         # `artifacts` — то же поле, каким отвечает `build` (`runs/handlers/build.py`),
         # и читает его колокольчик (`notifications.service.артефакты`). Без него

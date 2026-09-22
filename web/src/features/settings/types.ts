@@ -11,6 +11,8 @@ export type ModelKey = {
   provider: string
   /** Последние четыре знака — единственное, что служба рассказывает о ключе. */
   last4: string
+  /** Выбранная модель поставщика. Пусто — умолчание пресета. */
+  model?: string
   created_at: string | null
   revoked_at: string | null
 }
@@ -44,27 +46,56 @@ export function isInkProvider(providers: KeyProviders | undefined, provider: str
 }
 
 /**
- * Чем платит человек за этого поставщика:
- * `own` — свой ключ, `shared` — общий ключ службы, `none` — платить нечем.
+ * Поставщики моделей — те, кем агент вообще может работать.
+ *
+ * Отдельной функцией, потому что спрашивают её трое: выбор пресета агента,
+ * список ключей и подстановка умолчания. Список, собранный по месту, однажды
+ * забыл бы отфильтровать чернила — и в выборе пресета появился бы
+ * `myscript_app`, у которого пресета не существует вовсе, а прогон с ним
+ * служба отвергает `400 unknown_provider`.
  */
-export type KeySource = 'own' | 'shared' | 'none'
+export function modelProviders(providers: KeyProviders | undefined): string[] {
+  return (providers?.providers ?? []).filter((имя) => !isInkProvider(providers, имя))
+}
 
 /**
  * Тело `GET /api/keys/providers`.
  *
- * `key_source` появился в службе позже списка, поэтому поле необязательное:
- * пока его нет, экран не догадывается про общий ключ, а просто не показывает
- * пометку. Терпимость здесь дешевле сайта, падающего от отсутствия поля.
+ * `has_key` — двоичный ответ, и другим он быть не может: прогон идёт на ключе
+ * самого человека и ни на чьём другом, общего ключа службы нет. Раньше здесь
+ * стоял `key_source` с тремя значениями, третьим из которых был «общий ключ»;
+ * поставщик без ключа теперь просто недоступен, и экран говорит об этом прямо,
+ * а не оттенком пометки.
  */
 export type KeyProviders = {
   providers: string[]
-  key_source?: Partial<Record<string, KeySource>>
+  /** Есть ли у человека рабочий ключ этого поставщика. */
+  has_key?: Partial<Record<string, boolean>>
   /**
    * Чем поставщик занят: `model` — вызовы модели, `ink` — распознавание
    * рукописи. Поле появилось позже списка, поэтому необязательное: пока его
    * нет, поставщиков распознавания отбирает список имён (`INK_PROVIDERS`).
    */
   kind?: Partial<Record<string, 'model' | 'ink'>>
+  /** Выбранная модель поставщика. Пусто — умолчание пресета. */
+  model?: Partial<Record<string, string>>
+}
+
+/** Одна модель поставщика: `GET /api/keys/{provider}/models`. */
+export type ProviderModel = { id: string; title: string }
+
+/**
+ * Тело `GET /api/keys/{provider}/models`.
+ *
+ * `source` отвечает на вопрос, который человек задаёт, не увидев в списке
+ * знакомого имени: список пришёл от поставщика (`provider`) или это то немногое,
+ * что мы знаем без него (`preset`). Во втором случае `note` называет причину
+ * словом из `llm.ErrorKind` — `auth`, `transport`, `no_key`.
+ */
+export type ProviderModels = {
+  models: ProviderModel[]
+  source: 'provider' | 'preset'
+  note?: string
 }
 
 /**

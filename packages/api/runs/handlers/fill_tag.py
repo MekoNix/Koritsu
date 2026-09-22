@@ -3,7 +3,7 @@ fill_tag — заполнить один тег. Уровень 1 оркестр
 
     payload   {"key": "цель", "endpoint": "deepseek", "overwrite": false,
                "report": "<id отчёта>"}
-    result    {"key": …, "version": 3, "ok": true, "key_source": "own",
+    result    {"key": …, "version": 3, "ok": true,
                "flags": [...], "stop": "end_turn"}
 
 **Текст уезжает одним куском, а не по мере генерации, и это не недоделка.**
@@ -74,8 +74,7 @@ def заполнить_тег(ctx) -> dict:
                        502, where="body.payload.key")
     return {"key": fill.key, "ok": True,
             "version": getattr(fill.version, "n", None),
-            "flags": list(fill.flags or ()), "stop": fill.stop,
-            "key_source": прогон.источник}
+            "flags": list(fill.flags or ()), "stop": fill.stop}
 
 
 def _текстом(value) -> str:

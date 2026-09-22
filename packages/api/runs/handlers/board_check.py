@@ -15,7 +15,7 @@ board_check — репетитор доски: один вызов модели 
                "hint": null, "drill": null,
                "scene_artifact": "<16hex>", "digest_sha": "<64hex>",
                "mark": "80d0f1", "steps_total": 3, "unrecognized": 1,
-               "key_source": "own"}
+               }
 
 **Переписка — четвёртый режим того же задания.** `chat` — сообщение человека
 по доске и ответ словами: без вердикта, без разбора по строкам. Переписка
@@ -221,8 +221,7 @@ def проверить(ctx) -> dict:
             "mark": str(getattr(итог, "mark", "") or ""),
             "steps_total": len(шаги),
             "unrecognized": sum(1 for ш in шаги
-                                if not str(ш.get("latex") or "").strip()),
-            "key_source": прогон.источник}
+                                if not str(ш.get("latex") or "").strip())}
 
 
 def вердиктов_запись(сказанное, ид: str) -> dict:

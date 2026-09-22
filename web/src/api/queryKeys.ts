@@ -209,6 +209,8 @@ export const keys = {
   /** Свои шаблоны отчётов: их читают и настройки, и диалог «Новая работа». */
   templates: ['templates'] as const,
   keyProviders: ['key-providers'] as const,
+  /** Модели одного поставщика: `GET /api/keys/{provider}/models`. */
+  providerModels: (provider: string) => ['provider-models', provider] as const,
   apiTokens: ['api-tokens'] as const,
   // Админка. Всё под одним корнем, чтобы правка человека гасила и
   // список, и его карточку одним `invalidateQueries({ queryKey: ['admin'] })`.

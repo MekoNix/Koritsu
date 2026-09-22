@@ -142,7 +142,40 @@ export async function signUpAndLogin(page: Page, prefix: string): Promise<string
 
   // Признак входа — оболочка: сайдбар с пунктом «Проекты» есть только внутри.
   await expect(page.getByRole('link', { name: t('shell.nav.projects') })).toBeVisible()
+
+  // Ключ поставщика — сразу, каждому. Раньше эту роль играл общий ключ стенда
+  // в окружении службы (`KORITSU_PROVIDER_KEY_DEEPSEEK`), но общих ключей у
+  // службы больше нет: прогон идёт на ключе того, кто его завёл. Без ключа
+  // поставщика не было бы ни в одном списке, и проверки прогонов падали бы не
+  // на том, что проверяют.
+  await addModelKey(page)
   return email
+}
+
+/**
+ * Завести ключ поставщика запросом, а не экраном.
+ *
+ * Экраном — значило бы гонять форму настроек в каждой из двух десятков
+ * проверок ради одной строки состояния; сам экран ключей проверяется отдельно
+ * (`settings.spec.ts`). Запрос идёт клиентом того же контекста, поэтому едет с
+ * той же cookie-сессией, что и страница, и с тем же заголовком `X-CSRF-Token`,
+ * которого служба требует от всех небезопасных методов.
+ *
+ * Ключ поддельный и настоящему поставщику не показывается: на стенде адрес
+ * модели подменён (`KORITSU_LLM_BASE_URL_DEEPSEEK`), и отвечает подделка.
+ */
+export async function addModelKey(
+  page: Page,
+  provider = 'deepseek',
+  key = 'fake-key-for-stand',
+): Promise<void> {
+  const куки = await page.context().cookies()
+  const csrf = куки.find((c) => c.name === 'koritsu_csrf')?.value ?? ''
+  const ответ = await page.request.post('/api/keys', {
+    headers: { 'X-CSRF-Token': csrf },
+    data: { provider, key },
+  })
+  expect(ответ.status(), await ответ.text()).toBe(201)
 }
 
 /**

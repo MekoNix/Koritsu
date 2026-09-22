@@ -168,8 +168,8 @@ function PanelBody({
   const providers = useProviders()
   const поле = useRef<HTMLTextAreaElement>(null)
 
-  // Пресет по умолчанию: выбор человека из профиля, а если его нет — правило
-  // сайта «сначала свой ключ, потом общий» (`useDefaultEndpoint`).
+  // Поставщик по умолчанию: выбор человека из профиля, а если его нет —
+  // правило сайта «ключ, заведённый первым» (`useDefaultEndpoint`).
   const умолчание = useDefaultEndpoint()
   useEffect(() => {
     if (endpoint !== null) return

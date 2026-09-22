@@ -1,16 +1,23 @@
 """
 service — что можно делать с ключами моделей и где ключ снова становится текстом.
 
-**И свой, и общий.** У человека может быть собственный
-ключ поставщика; если его нет, работает общий ключ владельца сервиса (по
-подписке, с лимитами через `llm.journal`). Оба пути сходятся в одной функции —
-`resolve_key`, — и это не удобство, а условие: два места, решающих «чьим ключом
-платим», разошлись бы, и разошлись бы в сторону «бесплатно всем».
+**Ключ только свой.** Прогон идёт на ключе того, кто его завёл, и ни на чьём
+другом: общего ключа службы нет вовсе. Это правило, а не настройка, и держится
+оно одной функцией — `resolve_key`, за которой стоит ровно один источник.
 
     resolve_key(settings, session, user_id, provider)
-        свой ключ  → secret_for(...)               строка из базы, расшифрованная
-        иначе      → KORITSU_PROVIDER_KEY_<PROVIDER>   общий ключ владельца
-        иначе      → None                          платить нечем
+        свой ключ  → secret_for(...)   строка из базы, расшифрованная
+        иначе      → None              платить нечем
+
+Так решено потому, что расход за прогон обязан быть виден там, где его можно
+проверить, — в кабинете человека у поставщика. Общий ключ прятал бы расход в
+чужом кабинете и делал бы «сколько я потратил» вопросом без ответа.
+
+**У ключа есть выбранная модель** (`model`). Пресет говорит, с кем
+разговаривать, модель — какой именно. Лежит она строкой рядом с ключом, а не
+отдельной таблицей: без ключа поставщик недоступен вовсе, и выбранная для него
+модель — это свойство ключа, а не человека. Смена ключа выбор сохраняет
+(`add_key` переносит его на новую строку): человек сменил ключ, а не модель.
 
 **Расшифровка живёт ровно в одном месте** — `secret_for`. Ключ расшифровывается
 в памяти только в момент вызова поставщика: чтобы вызвать
@@ -35,7 +42,6 @@ service — что можно делать с ключами моделей и �
 """
 from __future__ import annotations
 
-import os
 import re
 
 from sqlalchemy import select
@@ -48,14 +54,11 @@ from ..errors import ApiError
 from ..log import беды
 from ..settings import Settings
 from . import crypto
-from .models import ModelKey
+from .models import MODEL_MAX, ModelKey
 
 UNKNOWN_PROVIDER = "unknown_provider"
 INVALID_KEY = "invalid_key"
 NOT_FOUND = "not_found"
-
-# Переменная окружения с общим ключом владельца: `KORITSU_PROVIDER_KEY_DEEPSEEK`.
-ОБЩИЙ_ПРЕФИКС = "KORITSU_PROVIDER_KEY_"
 
 # Что вообще может быть ключом поставщика: печатные знаки без пробелов.
 # Проверка от опечатки (скопировали вместе с переводом строки), а не от злого
@@ -162,6 +165,9 @@ def add_key(s: Session, settings: Settings, user_id: str, provider: str,
 
     Сам ключ в объект не кладётся и из этой функции не возвращается: на выходе
     строка базы, у которой есть только шифртекст и `last4`.
+
+    Выбранная модель прежнего ключа переносится на новый: смена ключа — это
+    смена ключа, а не отмена всех настроек поставщика.
     """
     имя = check_provider(provider)
     очищенный = (ключ or "").strip()
@@ -172,13 +178,18 @@ def add_key(s: Session, settings: Settings, user_id: str, provider: str,
                        "Provider key must be 8 to 512 printable characters "
                        "without spaces", 400, where="body.key")
 
+    модель = ""
     for прежний in list_keys(s, user_id):
         if прежний.provider == имя:
+            # Выбранная модель переезжает на новую строку: человек сменил ключ,
+            # а не модель, и молча вернуть его к умолчанию пресета значило бы
+            # поменять ему настройку, о которой он не просил.
+            модель = модель or (прежний.model or "")
             прежний.revoked_at = now()
 
     строка = ModelKey(user_id=user_id, provider=имя,
                       ciphertext=crypto.зашифровать(settings.secret, очищенный),
-                      last4=crypto.хвост(очищенный))
+                      last4=crypto.хвост(очищенный), model=модель)
     s.add(строка)
     s.flush()                    # `id` и `created_at` — до ответа клиенту
     return строка
@@ -218,11 +229,7 @@ def secret_for(s: Session, settings: Settings, user_id: str,
     provider`) на один: расшифровка невозможна без `settings.secret`, а читать
     окружение по месту вместо настроек — ровно то, что запрещает `settings.py`.
     """
-    строка = s.scalars(
-        select(ModelKey)
-        .where(ModelKey.user_id == user_id, ModelKey.provider == provider,
-               ModelKey.revoked_at.is_(None))
-        .order_by(ModelKey.created_at.desc())).first()
+    строка = _живой(s, user_id, provider)
     if строка is None:
         return None
     try:
@@ -235,59 +242,72 @@ def secret_for(s: Session, settings: Settings, user_id: str,
         return None
 
 
-def common_key(provider: str) -> str | None:
-    """Общий ключ владельца из окружения: `KORITSU_PROVIDER_KEY_<PROVIDER>`.
-
-    В `Settings` ему не место: там список закрыт, а поставщиков добавляют, не
-    пересобирая службу. Зато правило чтения то же — пустая строка это «не
-    задано», а не «пустой ключ».
-    """
-    значение = (os.environ.get(ОБЩИЙ_ПРЕФИКС + provider.upper()) or "").strip()
-    return значение or None
-
-
 def resolve_key(settings: Settings, s: Session, user_id: str,
                 provider: str) -> str | None:
-    """Чем платим за этот вызов: своим ключом, общим или ничем.
-
-    Свой вперёд общего намеренно. Человек, заведший свой ключ, платит
-    поставщику сам, и тратить на него общую квоту владельца было бы и дороже
-    нам, и неожиданно ему: он завёл ключ ровно затем, чтобы расход был виден в
-    его кабинете у поставщика.
+    """Чем платим за этот вызов: своим ключом или ничем.
 
     `None` — «платить нечем»: вызывающий обязан отказать человеку внятно
-    («заведите ключ или включите подписку»), а не звать поставщика без ключа и
-    показывать его `401`.
+    («заведите ключ поставщика»), а не звать поставщика без ключа и показывать
+    его `401` как свою беду.
     """
-    свой = secret_for(s, settings, user_id, provider)
-    if свой:
-        return свой
-    return common_key(provider)
+    return secret_for(s, settings, user_id, provider)
 
 
-def source_of(settings: Settings, s: Session, user_id: str,
-              provider: str) -> str:
-    """Откуда взялся бы ключ: `own`, `shared` или `none`. Без самого ключа.
+def has_key(settings: Settings, s: Session, user_id: str,
+            provider: str) -> bool:
+    """Есть ли чем платить по этому поставщику. Самого ключа наружу не идёт.
 
-    Нужно интерфейсу и журналу расхода: показать «этот прогон пошёл на общий
-    ключ» можно и нужно, а показать сам ключ — нельзя.
-
-    **У чернил общего ключа не бывает.** Тариф распознавания считает открытия
-    сокета, а не токены, и общий ключ означал бы, что забытая вкладка одного
-    человека тратит бесплатные открытия всех остальных — молча и без учёта, у
-    кого сколько осталось. Поэтому мост берёт только свой ключ
-    (`modules/board/ink.py`), и ответ здесь говорит про него же: иначе экран
-    обещал бы работающее распознавание там, где сокет закроется отказом.
+    Спрашивается расшифровкой, а не наличием строки, и это важно: строка,
+    которая не читается (сменили `KORITSU_SECRET`, испортили шифртекст), —
+    это «ключа нет», а не «ключ есть». Иначе экран обещал бы работающего
+    агента там, где первый же прогон откажет.
     """
-    if secret_for(s, settings, user_id, provider):
-        return "own"
-    if kind_of(provider) == ЧЕРНИЛА:
-        return "none"
-    return "shared" if common_key(provider) else "none"
+    return bool(secret_for(s, settings, user_id, provider))
+
+
+def model_of(s: Session, user_id: str, provider: str) -> str:
+    """Выбранная модель поставщика или пусто. Пусто — «как в пресете».
+
+    Пустая строка законна и означает умолчание пресета: человек, не выбиравший
+    модель, работает тем же, чем работал до появления выбора.
+    """
+    строка = _живой(s, user_id, provider)
+    return (строка.model or "") if строка is not None else ""
+
+
+def set_model(s: Session, user_id: str, provider: str, model: str) -> str:
+    """Выбрать модель поставщика. Пусто — вернуться к умолчанию пресета.
+
+    Кладётся на строку живого ключа: без ключа поставщик недоступен, и выбор
+    модели для него было бы некуда применить. Нет ключа — `404`, тем же словом,
+    что и отзыв чужого ключа: «такого у вас нет».
+
+    Имя модели не сверяется со списком поставщика намеренно. Список приходит от
+    поставщика и бывает неполным (`deepseek-chat` работает, а в `/v1/models` его
+    нет — живая проба 2026-09-03), и отказать по нему значило бы запретить
+    рабочее имя. Ошибку в имени покажет первый прогон — отказом `model_not_found`,
+    у которого есть свои слова.
+    """
+    строка = _живой(s, user_id, provider)
+    if строка is None:
+        raise ApiError(NOT_FOUND, f"No key for provider '{provider}'", 404,
+                       where="path.provider")
+    строка.model = (model or "").strip()[:MODEL_MAX]
+    строка.updated_at = now()
+    return строка.model
+
+
+def _живой(s: Session, user_id: str, provider: str) -> ModelKey | None:
+    """Живой ключ человека по поставщику. Один запрос на всех спрашивающих."""
+    return s.scalars(
+        select(ModelKey)
+        .where(ModelKey.user_id == user_id, ModelKey.provider == provider,
+               ModelKey.revoked_at.is_(None))
+        .order_by(ModelKey.created_at.desc())).first()
 
 
 __all__ = ["providers", "model_providers", "kind_of", "check_provider",
-           "list_keys", "add_key", "revoke",
-           "secret_for", "common_key", "resolve_key", "source_of",
-           "UNKNOWN_PROVIDER", "INVALID_KEY", "NOT_FOUND", "ОБЩИЙ_ПРЕФИКС",
+           "list_keys", "add_key", "revoke", "model_of", "set_model",
+           "secret_for", "resolve_key", "has_key",
+           "UNKNOWN_PROVIDER", "INVALID_KEY", "NOT_FOUND",
            "МОДЕЛЬ", "ЧЕРНИЛА", "ЧЕРНИЛЬНЫЕ"]

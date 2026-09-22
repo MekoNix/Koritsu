@@ -87,6 +87,9 @@ class RunResult:
     stop: str = ""
     outcome: str = ""
     ok: bool = False
+    # Вид ошибки слоя модели (`llm.ErrorKind`), если прогон оборвался ею.
+    # Зачем вид, а не текст, объяснено у `agent.AgentResult.error_kind`.
+    error_kind: str = ""
 
 
 # ── уровень 1 ────────────────────────────────────────────────────────────────
@@ -250,6 +253,7 @@ def fill_report(project, *, endpoint: str, keys=None, chunks=(), effort=None,
         error = exc
     if error is not None:
         out.problems.append(_problem("stream_failed", None, trouble_words(error)))
+        out.error_kind = str(getattr(error, "kind", "") or "")
 
     tail = tags.close()
     for key, raw in tail["broken"]:

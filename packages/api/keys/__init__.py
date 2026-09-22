@@ -1,15 +1,14 @@
 """
-keys — ключи моделей: свой ключ человека и общий ключ владельца.
+keys — ключи поставщиков: свой ключ человека и выбранная им модель.
 
-И свой ключ, и общий по подписке. Свой ключ лежит на диске
+Свой ключ лежит на диске
 зашифрованным секретом сервера, расшифровывается только в момент вызова
 поставщика, никогда не пишется в журнал и не отдаётся клиенту — человек видит
-последние четыре знака. Общий ключ владельца берётся из окружения
-(`KORITSU_PROVIDER_KEY_<PROVIDER>`) и тратится по подписке с лимитами через
-`llm.journal`.
+последние четыре знака. Общего ключа службы нет: прогон идёт на ключе того, кто его завёл, и ни на
+чьём другом — расход обязан быть виден там, где его можно проверить.
 
     таблица  model_keys        id, user_id, provider, ciphertext, last4,
-                               created_at, updated_at, revoked_at
+                               model, created_at, updated_at, revoked_at
     схема    HKDF-SHA256(settings.secret, соль пакета) → Fernet, метка `v1:`
     маршруты /api/keys         список, поставщики, завести, отозвать
 
@@ -19,7 +18,7 @@ keys — ключи моделей: свой ключ человека и общ
         свой ключ текстом. **Единственное место расшифровки во всей службе.**
 
     keys.resolve_key(settings, session, user_id, provider) -> str | None
-        чем платим: свой ключ, иначе общий, иначе ничем.
+        чем платим: свой ключ или ничем.
 
 Правило, которое этот подпакет держит и за всех остальных: **ключ не попадает в
 журнал ни в каком виде** — ни текстом, ни шифртекстом, ни куском. Сообщения об
@@ -28,11 +27,13 @@ keys — ключи моделей: свой ключ человека и общ
 """
 from .crypto import КлючНеЧитается, зашифровать, расшифровать, хвост
 from .models import ModelKey
-from .service import (add_key, check_provider, common_key, list_keys, providers,
-                      resolve_key, revoke, secret_for, source_of)
+from . import catalog
+from .service import (add_key, check_provider, has_key, list_keys, model_of,
+                      model_providers, providers, resolve_key, revoke,
+                      secret_for, set_model)
 from .routes import router
 
-__all__ = ["ModelKey", "router", "secret_for", "resolve_key", "common_key",
-           "source_of", "add_key", "revoke", "list_keys", "providers",
-           "check_provider", "зашифровать", "расшифровать", "хвост",
-           "КлючНеЧитается"]
+__all__ = ["ModelKey", "router", "secret_for", "resolve_key", "has_key",
+           "add_key", "revoke", "list_keys", "providers", "model_providers",
+           "model_of", "set_model", "catalog", "check_provider",
+           "зашифровать", "расшифровать", "хвост", "КлючНеЧитается"]

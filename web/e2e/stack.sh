@@ -75,7 +75,6 @@ export KORITSU_TRUST_PROXY=no
 # тот же порт, иначе токен подтверждения некуда нести.
 export KORITSU_BASE_URL="http://$host:$API_PORT"
 # Общий ключ поставщика: с ним прогон идёт и у человека без своего ключа.
-export KORITSU_PROVIDER_KEY_DEEPSEEK=fake-key
 # То самое, ради чего заведена dev-настройка: пресет `deepseek` ходит на стенд.
 export KORITSU_LLM_BASE_URL_DEEPSEEK="http://$host:$FAKE_PORT"
 # Очередь опрашивается чаще боевого: на стенде важна не экономия запросов к
@@ -167,7 +166,6 @@ export KORITSU_SECRET="$KORITSU_SECRET"
 export KORITSU_ENV="$KORITSU_ENV"
 export KORITSU_TRUST_PROXY="$KORITSU_TRUST_PROXY"
 export KORITSU_BASE_URL="$KORITSU_BASE_URL"
-export KORITSU_PROVIDER_KEY_DEEPSEEK="$KORITSU_PROVIDER_KEY_DEEPSEEK"
 export KORITSU_LLM_BASE_URL_DEEPSEEK="$KORITSU_LLM_BASE_URL_DEEPSEEK"
 export KORITSU_WORKER_POLL_S="$KORITSU_WORKER_POLL_S"
 export KORITSU_REGISTRATIONS_PER_IP_PER_DAY="$KORITSU_REGISTRATIONS_PER_IP_PER_DAY"

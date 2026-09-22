@@ -34,6 +34,11 @@ class AnthropicBackend(Backend):
     protocol = "anthropic"
     stream_path = "/v1/messages"
     complete_path = "/v1/messages"
+    # Список моделей у протокола есть, и отвечает он той же формой, что
+    # openai-совместимые (`{"data": [{"id": …}]}`), плюс `display_name` —
+    # человеческое имя, которого у остальных нет. Нужен он шагу 1 пробы и
+    # выбору модели в настройках (`api/keys/catalog.py`).
+    models_path = "/v1/models"
     count_path = "/v1/messages/count_tokens"
     # Те же имена, что читает `_usage_from`: чтение, запись и разбивка записи
     # по TTL. По их присутствию шаг пробы про кэш отличает промах от «endpoint

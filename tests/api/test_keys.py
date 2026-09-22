@@ -44,25 +44,25 @@ def test_поставщики_только_с_ключом(клиент, хоз�
     assert "claude_cli_proba" not in список
 
 
-def test_key_source_говорит_чем_платить(клиент, хозяин, monkeypatch):
-    """`key_source` на каждый пресет: `none` → `shared` → `own`.
+def test_has_key_говорит_чем_платить(клиент, хозяин, monkeypatch):
+    """`has_key` на каждый пресет: нет ключа → есть ключ.
 
-    Экран прогона выбирает пресет ДО нажатия, и выбрать тот, которым платить
-    нечем, — это отказ вместо работы. Свой ключ сайт видит списком, общий ключ
-    службы не виден ниоткуда, кроме этого поля, поэтому оно и проверяется на
-    всех трёх состояниях подряд, а не на одном.
+    Экран прогона выбирает поставщика ДО нажатия, и выбрать того, у кого ключа
+    нет, — это отказ вместо работы. Ответ двоичный, потому что источник ключа
+    ровно один: свой. Общего ключа службы нет, и завести его окружением нельзя —
+    проверка ниже держит и это.
     """
-    источник = lambda: клиент.get("/api/keys/providers").json()["key_source"]  # noqa: E731
+    есть = lambda: клиент.get("/api/keys/providers").json()["has_key"]  # noqa: E731
 
-    assert источник()["deepseek"] == "none", "ни своего, ни общего"
+    assert есть()["deepseek"] is False, "своего ключа нет"
 
-    monkeypatch.setenv(keys.service.ОБЩИЙ_ПРЕФИКС + "DEEPSEEK", "sk-общий-владельца")
-    assert источник()["deepseek"] == "shared"
-    assert источник()["anthropic"] == "none", "общий у одного не красит соседей"
+    monkeypatch.setenv("KORITSU_PROVIDER_KEY_DEEPSEEK", "sk-общий-владельца")
+    assert есть()["deepseek"] is False, "общий ключ окружения больше не в счёт"
 
     assert клиент.post("/api/keys",
                        json={"provider": "deepseek", "key": КЛЮЧ}).status_code == 201
-    assert источник()["deepseek"] == "own", "свой ключ впереди общего"
+    assert есть()["deepseek"] is True, "свой ключ"
+    assert есть()["anthropic"] is False, "ключ одного не красит соседей"
     # Ключ не уезжает вместе с источником — то же отрицательное утверждение,
     # что и во всём этом файле.
     assert КЛЮЧ not in клиент.get("/api/keys/providers").text
@@ -179,28 +179,22 @@ def test_чужой_ключ_отозвать_нельзя(app, клиент, х
 
 # ── свой ключ против общего ──────────────────────────────────────────────────
 
-def test_resolve_key_падает_на_общий(app, клиент, хозяин, settings, monkeypatch):
-    """И свой, и общий. Свой вперёд — он оплачен человеком."""
+def test_платим_только_своим(app, клиент, хозяин, settings, monkeypatch):
+    """Ключ у прогона свой и другого не бывает.
+
+    Проверка отрицательная и потому ценная: переменная окружения с «общим
+    ключом владельца» когда-то работала, и вернуть её случайной строкой в
+    `resolve_key` было бы легко. Здесь она стоит заведённой — и не считается.
+    """
+    monkeypatch.setenv("KORITSU_PROVIDER_KEY_DEEPSEEK", "sk-общий-владельца")
     with app.state.db.session_scope() as s:
         assert keys.resolve_key(settings, s, хозяин.id, "deepseek") is None
-        assert keys.source_of(settings, s, хозяин.id, "deepseek") == "none"
-
-    monkeypatch.setenv(keys.service.ОБЩИЙ_ПРЕФИКС + "DEEPSEEK", "sk-общий-владельца")
-    with app.state.db.session_scope() as s:
-        assert keys.resolve_key(settings, s, хозяин.id,
-                                "deepseek") == "sk-общий-владельца"
-        assert keys.source_of(settings, s, хозяин.id, "deepseek") == "shared"
+        assert keys.has_key(settings, s, хозяин.id, "deepseek") is False
 
     клиент.post("/api/keys", json={"provider": "deepseek", "key": КЛЮЧ})
     with app.state.db.session_scope() as s:
         assert keys.resolve_key(settings, s, хозяин.id, "deepseek") == КЛЮЧ
-        assert keys.source_of(settings, s, хозяин.id, "deepseek") == "own"
-
-
-def test_пустая_переменная_это_не_ключ(monkeypatch):
-    """`KORITSU_PROVIDER_KEY_DEEPSEEK=` в compose означает «не задано»."""
-    monkeypatch.setenv(keys.service.ОБЩИЙ_ПРЕФИКС + "DEEPSEEK", "   ")
-    assert keys.common_key("deepseek") is None
+        assert keys.has_key(settings, s, хозяин.id, "deepseek") is True
 
 
 # ── журнал ───────────────────────────────────────────────────────────────────

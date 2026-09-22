@@ -56,6 +56,8 @@ from api.db import Db, alembic_config, current_revision
     "f3d6a08b5c14",              # project_diagrams (код и параметры схем)
     "a7c2e51f8b03",              # users.avatar_version (своя картинка)
     "b6d3f0a17c92",              # project_runs.preview_artifact_id (первая страница)
+    "c5e2b7d91a40",              # cards: заходы, попытки, прогресс, настройки
+    "a7f31c9b2604",              # model_keys.model (выбранная модель поставщика)
 )
 
 ГОЛОВА = ЦЕПОЧКА[-1]
@@ -185,6 +187,8 @@ def test_каждая_ступень_по_одной(том, cfg):
         {"e7a4c19b3d02"},
         {"f3d6a08b5c14"},
         {"a7c2e51f8b03"},
+        {"b6d3f0a17c92"},
+        {"c5e2b7d91a40"},
         {ГОЛОВА},
     ]
     # Ступеней ровно столько же, сколько ревизий: `zip` молча обрезал бы список

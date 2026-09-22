@@ -8,7 +8,7 @@
  * обратно.
  *
  * Собственной разметки здесь нет намеренно — только порядок карточек. Сами
- * карточки остаются там же, где были (`AgentSection`, `ModelKeysSection`,
+ * карточки остаются там же, где были (`AgentSection`, `ProvidersSection`,
  * `InkKeysSection`): у каждой своя работа со службой, и слить их в один файл
  * значило бы получить экран, который делает четыре запроса и правит три разных
  * ресурса.
@@ -18,13 +18,13 @@
  */
 import { AgentSection } from './AgentSection'
 import { InkKeysSection } from './InkKeysSection'
-import { ModelKeysSection } from './ModelKeysSection'
+import { ProvidersSection } from './ProvidersSection'
 
 export function AgentConfigSection() {
   return (
     <>
       <AgentSection />
-      <ModelKeysSection />
+      <ProvidersSection />
       <InkKeysSection />
     </>
   )

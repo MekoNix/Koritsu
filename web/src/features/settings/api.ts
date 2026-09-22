@@ -12,7 +12,13 @@ import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tan
 import { api, keys as cacheKeys, unwrap } from '@/api'
 import type { Me } from '@/api/types'
 
-import type { ApiToken, ApiTokenCreated, KeyProviders, ModelKey } from './types'
+import type {
+  ApiToken,
+  ApiTokenCreated,
+  KeyProviders,
+  ModelKey,
+  ProviderModels,
+} from './types'
 
 // ── ключи моделей ────────────────────────────────────────────────────────────
 
@@ -24,14 +30,14 @@ export function useModelKeys(): UseQueryResult<ModelKey[]> {
 }
 
 /**
- * Поставщики, для которых ключ вообще имеет смысл, и чем за каждого платят
- * (`key_source`, если служба его уже отдаёт).
+ * Поставщики, для которых ключ вообще имеет смысл, есть ли у человека ключ и
+ * какая модель выбрана.
  *
- * Возвращается целиком, а не одним полем `providers`: `key_source` приезжает
+ * Возвращается целиком, а не одним полем `providers`: остальные поля приезжают
  * тем же ответом, и раскладывать один ответ по двум запросам значило бы дать
  * им разойтись.
  *
- * Ключ сбрасывается вместе со списком своих ключей: завёл ключ — `key_source`
+ * Ключ сбрасывается вместе со списком своих ключей: завёл ключ — `has_key`
  * для этого поставщика стал другим.
  */
 export function useKeyProviders(): UseQueryResult<KeyProviders> {
@@ -59,6 +65,103 @@ export function useRevokeModelKey() {
   return useMutation({
     mutationFn: (keyId: string) =>
       unwrap(api.DELETE('/api/keys/{key_id}', { params: { path: { key_id: keyId } } })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: cacheKeys.modelKeys })
+      void qc.invalidateQueries({ queryKey: cacheKeys.keyProviders })
+    },
+  })
+}
+
+/**
+ * Какие модели есть у поставщика. Спрашивает служба, а она — самого поставщика.
+ *
+ * `enabled` по ключу: без ключа поставщик список не отдаёт, и запрос вернул бы
+ * имя из пресета — то же самое, что уже лежит в `providers.model`. Лишний
+ * поход в сеть ради известного ответа не делается.
+ *
+ * Свежесть — полчаса, как и кэш службы: два кэша с разным сроком дают экран,
+ * который «обновился», показав прежнее.
+ */
+export function useProviderModels(
+  provider: string,
+  enabled = true,
+): UseQueryResult<ProviderModels> {
+  return useQuery({
+    queryKey: cacheKeys.providerModels(provider),
+    enabled: !!provider && enabled,
+    staleTime: 30 * 60_000,
+    queryFn: () =>
+      unwrap<ProviderModels>(
+        api.GET('/api/keys/{provider}/models', { params: { path: { provider } } }),
+      ),
+  })
+}
+
+/** Перечитать список моделей мимо кэша службы: кнопка «обновить». */
+export function useRefreshProviderModels() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (provider: string) =>
+      unwrap<ProviderModels>(
+        api.GET('/api/keys/{provider}/models', {
+          params: { path: { provider }, query: { refresh: true } },
+        }),
+      ),
+    onSuccess: (тело, provider) => {
+      qc.setQueryData(cacheKeys.providerModels(provider), тело)
+    },
+  })
+}
+
+/**
+ * Выбрать модель поставщика.
+ *
+ * Сбрасывается только список поставщиков: выбранная модель приезжает в нём
+ * полем `model`, а список моделей от выбора не меняется.
+ */
+export function useSetProviderModel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ provider, model }: { provider: string; model: string }) =>
+      unwrap<{ provider: string; model: string }>(
+        api.PUT('/api/keys/{provider}/model', {
+          params: { path: { provider } },
+          body: { model },
+        }),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: cacheKeys.keyProviders })
+      void qc.invalidateQueries({ queryKey: cacheKeys.modelKeys })
+    },
+  })
+}
+
+// ── ключи распознавания рукописи ─────────────────────────────────────────────
+
+/**
+ * Завести пару ключей MyScript одним запросом.
+ *
+ * Одним, а не двумя подряд: подпись строится из обоих ключей сразу, и
+ * заведённая половина пары — это не «настроено наполовину», а «не настроено».
+ * Служба кладёт обе строки в одной сессии (`PUT /api/keys/ink`).
+ */
+export function useSetInkKeys() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { application_key: string; hmac_key: string }) =>
+      unwrap<{ keys: ModelKey[] }>(api.PUT('/api/keys/ink', { body })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: cacheKeys.modelKeys })
+      void qc.invalidateQueries({ queryKey: cacheKeys.keyProviders })
+    },
+  })
+}
+
+/** Отозвать пару целиком: половина пары не распознаёт ничего. */
+export function useRevokeInkKeys() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => unwrap(api.DELETE('/api/keys/ink')),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: cacheKeys.modelKeys })
       void qc.invalidateQueries({ queryKey: cacheKeys.keyProviders })

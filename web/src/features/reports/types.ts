@@ -148,13 +148,16 @@ export type VersionBody = { key: string; version: VersionHead; value: TagValue }
 export type ValueWritten = { key: string; version: number; source: string; at: string }
 
 /**
- * `packages/api/keys/routes.py: поставщики()` — пресеты модели и чем по ним
- * платить. `key_source`: `own` — свой ключ, `shared` — общий ключ службы,
- * `none` — платить нечем, прогон откажет.
+ * `packages/api/keys/routes.py: поставщики()` — поставщики и что про них
+ * известно. `has_key` — есть ли у человека рабочий ключ; ключ свой и другого не
+ * бывает, поэтому ответ двоичный. `kind` отделяет модели от распознавания
+ * рукописи, `model` несёт выбранную модель (пусто — умолчание пресета).
  */
 export type ProvidersBody = {
   providers: string[]
-  key_source: Record<string, 'own' | 'shared' | 'none'>
+  has_key?: Partial<Record<string, boolean>>
+  kind?: Partial<Record<string, 'model' | 'ink'>>
+  model?: Partial<Record<string, string>>
 }
 
 /** Результат задания `build` (`packages/api/runs/handlers/build.py`). */

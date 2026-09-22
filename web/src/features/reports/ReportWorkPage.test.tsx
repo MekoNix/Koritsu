@@ -114,7 +114,8 @@ function служба(теги: unknown[] = ТЕГИ, конструкции: st
       return Promise.resolve(
         json({
           providers: ['deepseek', 'anthropic'],
-          key_source: { deepseek: 'shared', anthropic: 'none' },
+          has_key: { deepseek: true, anthropic: false },
+          kind: { deepseek: 'model', anthropic: 'model' },
         }),
       )
     if (pathname === '/api/usage')
